@@ -229,7 +229,7 @@ function ModDetailPage() {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)]">
+      <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] shadow-[var(--shadow-md)]">
         {gallery.length > 0 && (
           <div className="relative aspect-[21/9] overflow-hidden bg-[var(--color-secondary)]">
             <img
