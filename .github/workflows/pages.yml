@@ -5,6 +5,7 @@ on:
     branches: [main, master, overhaul]
     paths:
       - "docs/**"
+      - ".github/workflows/pages.yml"
       - "install/install-steamdeck.sh"
       - "scripts/sync-install-docs.mjs"
   workflow_dispatch:
