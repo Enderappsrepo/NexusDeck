@@ -58,7 +58,7 @@ function CollectionsPage() {
 
       <h1 className="mb-6 text-3xl font-bold">Collections</h1>
 
-      {error && (
+      {!!error && (
         <ApiErrorBanner
           context="collections"
           error={error}

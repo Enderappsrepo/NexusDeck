@@ -141,7 +141,7 @@ function LibraryPage() {
         </div>
       </div>
 
-      {error && (
+      {!!error && (
         <ApiErrorBanner context="generic" error={error} onRetry={() => setError(null)} />
       )}
 

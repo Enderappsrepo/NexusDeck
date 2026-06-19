@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import { useGamepadBackHandler } from "@/hooks/useGamepadTabs";
 import { useAppBack } from "@/hooks/useAppBack";
 

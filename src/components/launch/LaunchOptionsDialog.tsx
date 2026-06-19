@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { AppDialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,7 +81,7 @@ export function LaunchOptionsDialog({
   };
 
   const pickExecutable = async () => {
-    const selected = await open({
+    const selected = await openFileDialog({
       multiple: false,
       filters: [{ name: "Executable", extensions: ["exe"] }],
     });

@@ -42,9 +42,19 @@ function parseFiltersFromSearch(search: Record<string, unknown>): ModSearchFilte
   };
 }
 
+export interface ModsSearch {
+  q?: string;
+  modId?: number;
+  category?: string;
+  tags?: string;
+  minEndorsements?: number;
+  hideAdult?: boolean;
+  updatedDays?: number;
+}
+
 export const Route = createFileRoute("/games/$domain/mods/")({
   component: ModBrowserPage,
-  validateSearch: (s: Record<string, unknown>) => ({
+  validateSearch: (s: Record<string, unknown>): ModsSearch => ({
     q: typeof s.q === "string" ? s.q : undefined,
     modId: typeof s.modId === "number" ? s.modId : undefined,
     category: typeof s.category === "string" ? s.category : undefined,

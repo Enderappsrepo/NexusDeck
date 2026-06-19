@@ -4,6 +4,7 @@ import { ArrowLeft, Download } from "lucide-react";
 import { useGamesStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { CollectionInstallDialog } from "@/components/collections/CollectionInstallDialog";
+import type { CollectionDetail } from "@/lib/nexus/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -51,7 +52,7 @@ function CollectionDetailPage() {
       </Link>
 
       {loading && <ListRowSkeleton count={5} />}
-      {error && (
+      {!!error && (
         <ApiErrorBanner
           context="collection-detail"
           error={error}

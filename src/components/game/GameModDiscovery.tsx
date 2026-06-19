@@ -87,7 +87,7 @@ export function GameModDiscovery({ domain, signedIn }: GameModDiscoveryProps) {
         }
         action={
           <div className="flex flex-wrap justify-center gap-2">
-            {error && (
+            {!!error && (
               <Button variant="secondary" onClick={loadDiscovery}>
                 Retry
               </Button>
