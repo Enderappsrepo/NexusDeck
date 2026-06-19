@@ -166,9 +166,11 @@ jobs:
           find artifacts -type f \( -name '*.AppImage' -o -name '*.exe' \) -exec cp {} release/ \;
           cp install/install-steamdeck.sh release/install-steamdeck.sh
           cp install/install-steamdeck.sh release/i.sh
+          cp install/uninstall-steamdeck.sh release/uninstall-steamdeck.sh
+          cp install/uninstall-steamdeck.sh release/u.sh
           sed -i "s|nexusdeck/nexusdeck|${GITHUB_REPOSITORY}|g" release/install-steamdeck.sh
           sed -i "s|nexusdeck/nexusdeck|${GITHUB_REPOSITORY}|g" release/i.sh
-          chmod +x release/install-steamdeck.sh release/i.sh
+          chmod +x release/install-steamdeck.sh release/i.sh release/uninstall-steamdeck.sh release/u.sh
           cd release && sha256sum * > SHA256SUMS.txt
           ls -la
 

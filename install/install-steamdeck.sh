@@ -322,6 +322,10 @@ main() {
   echo
   echo "  API key: https://www.nexusmods.com/users/myaccount?tab=api+access"
   echo
+  echo -e "${BOLD}To uninstall later:${NC}"
+  echo "  curl -fsSL https://github.com/${GITHUB_REPO}/releases/latest/download/u.sh | bash"
+  echo "  (Steam's Uninstall button does not work for non-Steam shortcuts.)"
+  echo
 
   if prompt_yes_no "Launch NexusDeck now for setup?" y; then
     info "Starting NexusDeck..."
