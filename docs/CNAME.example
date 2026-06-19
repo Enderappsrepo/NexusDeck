@@ -1,0 +1,3 @@
+# Optional: set a custom domain for the short install URL.
+# Uncomment and replace with your domain, then point DNS (CNAME) to YOUR_USER.github.io
+# get.nexusdeck.app
