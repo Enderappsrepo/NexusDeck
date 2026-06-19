@@ -38,7 +38,7 @@ pub fn prepare_linux_webview() {}
 #[cfg(target_os = "linux")]
 fn configure_linux_webview(app: &tauri::AppHandle) -> crate::error::Result<()> {
     use tauri::Manager;
-    use webkit2gtk::prelude::*;
+    use webkit2gtk::{HardwareAccelerationPolicy, SettingsExt, WebViewExt};
 
     let window = app
         .get_webview_window("main")
@@ -48,7 +48,7 @@ fn configure_linux_webview(app: &tauri::AppHandle) -> crate::error::Result<()> {
         .with_webview(|webview| {
             let wv = webview.inner();
             if let Some(settings) = wv.settings() {
-                settings.set_hardware_acceleration_enabled(false);
+                settings.set_hardware_acceleration_policy(HardwareAccelerationPolicy::Never);
                 settings.set_enable_webgl(false);
             }
         })
