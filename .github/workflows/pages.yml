@@ -27,9 +27,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync install script to docs
-        run: node scripts/sync-install-docs.mjs "${{ github.repository }}"
-
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
