@@ -1,0 +1,16 @@
+query SearchMods($filter: ModsFilter, $sort: [ModsSort!], $offset: Int, $count: Int) {
+  legacyMods(filter: $filter, sort: $sort, offset: $offset, count: $count) {
+    nodes {
+      modId
+      name
+      summary
+      author
+      endorsements
+      downloads
+      updatedAt
+      version
+      pictureUrl
+    }
+    totalCount
+  }
+}

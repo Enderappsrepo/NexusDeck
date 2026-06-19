@@ -1,0 +1,61 @@
+{
+  "rules": [
+    {
+      "id": "too_many_texture_mods",
+      "severity": "warning",
+      "condition": {
+        "category_count": { "category": "texture", "gte": 5 }
+      },
+      "message": "5+ texture overhauls detected — expect VRAM pressure on Deck. Pick one main overhaul.",
+      "deck_tip": "Use Potato Quality textures or reduce texture mod count."
+    },
+    {
+      "id": "f4se_required",
+      "severity": "error",
+      "condition": {
+        "installed_name_contains": ["F4SE", "Script Extender"],
+        "f4se_missing": true
+      },
+      "message": "Script extender mods installed but F4SE not detected.",
+      "deck_tip": "Run the F4SE wizard step before launching modded Fallout 4."
+    },
+    {
+      "id": "proton_enb",
+      "severity": "info",
+      "condition": {
+        "installed_name_contains": ["ENB"],
+        "platform": "linux"
+      },
+      "message": "ENB on Proton is experimental — backup before enabling.",
+      "deck_tip": "Disable ENB on battery mode for smoother performance."
+    },
+    {
+      "id": "too_many_weather_mods",
+      "severity": "warning",
+      "condition": {
+        "category_count": { "category": "weather", "gte": 2 }
+      },
+      "message": "Multiple weather mods may conflict and hurt FPS on Deck.",
+      "deck_tip": "Keep one weather overhaul and disable the rest."
+    },
+    {
+      "id": "high_mod_count",
+      "severity": "info",
+      "condition": {
+        "category_count": { "category": "", "gte": 50 }
+      },
+      "message": "Large mod list detected — load times and memory use will increase on Deck.",
+      "deck_tip": "Use a lightweight load order and avoid redundant gameplay overhauls."
+    },
+    {
+      "id": "bodyslide_on_deck",
+      "severity": "warning",
+      "condition": {
+        "installed_name_contains": ["BodySlide", "CBBE"],
+        "platform": "linux"
+      },
+      "message": "BodySlide/CBBE tooling is desktop-oriented and may be awkward on Deck.",
+      "deck_tip": "Pre-build BodySlide presets on a PC, then copy the output to Deck."
+    }
+  ]
+}

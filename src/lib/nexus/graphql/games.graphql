@@ -1,0 +1,10 @@
+query ListGames($filter: GamesSearchFilter, $count: Int) {
+  games(filter: $filter, count: $count, sort: [{ name: { direction: ASC } }]) {
+    nodes {
+      id
+      name
+      domainName
+    }
+    totalCount
+  }
+}

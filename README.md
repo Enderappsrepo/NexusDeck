@@ -1,0 +1,163 @@
+# NexusDeck
+
+A lightweight, controller-friendly Nexus Mods client for **Steam Deck** and **Windows**.
+
+NexusDeck lets you browse, download, and install mods with a console-like UI optimized for handheld PCs. Fallout 4 is the first fully supported game.
+
+## Features
+
+### Core
+- Cross-platform: Windows (NSIS + portable) and Linux (AppImage / Flatpak-ready)
+- Controller & gamepad navigation (D-pad, A/B, L1/R1 tabs, shoulder buttons)
+- Nexus Mods API integration (GraphQL v2 browse + REST v1 downloads)
+- Secure API key storage via OS keyring
+- Steam library auto-detection (`libraryfolders.vdf`)
+- Fallout 4 Setup Wizard (path, staging, F4SE, profile, test deploy)
+- Advanced mod search with category, tag, trending, and endorsement filters
+- Download queue with resume, cancel, retry, concurrency limit, and speed cap
+- Auto-install prompt after download completes
+- Basic install/deploy to game Data folder with conflict preview
+- Installed mod library with enable/disable, compare, and update detection
+- NXM protocol handler (`nxm://` links)
+- Profile backup/restore and diagnostics export
+
+### Advanced
+- **Mod Comparison** — side-by-side overlap and conflict matrix
+- **Dependency Resolver** — visual graph + queue missing requirements
+- **Mod Previewer** — archive file tree + PNG/JPG texture preview
+- **Collections Installer** — browse and batch-download Nexus Collections
+- **Auto-Update** — safe backup before patching installed mods
+- **Endorsement & Tracking** — endorse/abstain and track mods in-app
+- **Deck Performance Advisor** — FO4-specific Proton/VRAM guidance
+- **Modlist Export** — LOOT, Mod Organizer 2, Vortex JSON, Markdown
+- **Community Hub Lite** — comment links and issue reporting
+- **Battery Mode** — reduced concurrency and animations on Deck
+
+## Prerequisites
+
+### All platforms
+- [Node.js](https://nodejs.org/) 20+
+- [Rust](https://rustup.rs/) 1.77+
+- [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+
+### Linux / Steam Deck
+- For **AppImage**: `webkit2gtk-4.1` (not included on SteamOS — prefer Flatpak)
+- For **Flatpak build**: `flatpak`, `flatpak-builder`
+
+## Development
+
+```bash
+cd nexusdeck
+npm install
+npm run tauri dev
+```
+
+## Build
+
+### Windows
+```bash
+npm run tauri build
+# Output: src-tauri/target/release/bundle/nsis/ and portable exe
+```
+
+### Linux AppImage
+```bash
+npm run tauri build
+# Output: src-tauri/target/release/bundle/appimage/
+```
+
+### Flatpak (Steam Deck recommended)
+```bash
+flatpak-builder --force-clean build-dir flatpak/com.nexusdeck.NexusDeck.yml
+```
+
+## First Launch
+
+1. Enter your [Nexus Mods API key](https://www.nexusmods.com/users/myaccount?tab=api+access)
+2. NexusDeck auto-detects Steam and Fallout 4 if installed
+3. Run the Setup Wizard for Fallout 4
+4. Browse mods from the game dashboard
+
+## Usage Guide
+
+### Mod Browser
+- Use **category chips** and **tag filters** to narrow results
+- Sort by endorsements, downloads, recently updated, or trending
+- Tap a mod for detail, dependencies, endorse/track, and download
+
+### Download Queue
+- Open the queue panel at the bottom of the screen
+- **Cancel** or **Retry** individual downloads
+- Configure max concurrent downloads and speed limit in **Settings**
+- Downloads resume automatically after app restart (`.nexusdeck.part` files)
+
+### Library
+- Enable/disable mods, check for updates, export modlist
+- Select two mods and tap **Compare** for overlap analysis
+- Use **Backup & Update** when a new version is available
+
+### Collections
+- Browse collections from the game dashboard
+- Preview bundle contents before batch download
+
+### Controller
+- **D-pad** — navigate focusable elements
+- **A** — activate / click
+- **B** — go back
+- **L1/R1** — switch tabs (mod detail, compare view)
+
+## Steam Deck Tips
+
+- **Flatpak** is recommended on SteamOS (bundles WebKit dependencies)
+- Enable **Battery Mode** in Settings to limit download concurrency
+- In Desktop Mode, Steam Input may intercept controllers — launch from Gaming Mode or disable Steam Input for NexusDeck
+- Add NexusDeck as a non-Steam game for Gaming Mode access
+- Review **Deck Advisor** warnings before heavy texture overhauls
+
+## Manual Verification Checklist
+
+1. **Filters** — Apply a category filter; result count updates
+2. **Download queue** — Queue 3 downloads; only 2 run concurrently
+3. **Resume** — Kill app mid-download; relaunch and confirm progress continues
+4. **Compare** — Compare two installed mods; overlap list appears
+5. **Dependencies** — Open mod with requirements; queue missing deps
+6. **Collections** — Open a collection; batch download enqueues
+7. **Updates** — Library shows update badge when mod has new version
+8. **Endorse** — Endorse a mod from detail page
+9. **Export** — Export modlist as LOOT format from library
+10. **Controller-only** — Navigate home → browse → download → install without mouse
+
+## API Compliance
+
+NexusDeck sends required headers on every request:
+- `Application-Name: NexusDeck`
+- `Application-Version: {version}`
+- `apikey: {user key}`
+
+Client-side throttling respects Nexus rate limits. **Register with Nexus Mods support** before public release ([Acceptable Use Policy](https://help.nexusmods.com/article/114-api-acceptable-use-policy)).
+
+## Architecture
+
+```
+React/TypeScript UI  →  Tauri IPC  →  Rust services
+                                      ├── NexusClient (GraphQL + REST)
+                                      ├── DownloadManager (queue, resume)
+                                      ├── DependencyResolver
+                                      ├── Compare / Preview / Collections
+                                      ├── DeckAdvisor (FO4 rules)
+                                      ├── GamePlugin registry (FO4)
+                                      ├── SQLite (profiles, mods, downloads)
+                                      └── keyring (API key)
+```
+
+## Project Structure
+
+- `src/` — React frontend (routes, stores, components)
+- `src-tauri/src/` — Rust backend (commands, services, games)
+- `src-tauri/src/games/rules/` — per-game Deck advisor rules
+- `flatpak/` — Flatpak manifest
+- `.github/workflows/` — CI build pipelines
+
+## License
+
+MIT

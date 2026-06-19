@@ -1,0 +1,472 @@
+export interface FileConflict {
+  path: string;
+  existing_mod: string;
+  new_mod: string;
+}
+
+export interface DeployPlan {
+  strategy: string;
+  source_subpath?: string | null;
+  target: string;
+  requires_confirmation: boolean;
+  description: string;
+}
+
+export interface ArchiveEntry {
+  path: string;
+  is_dir: boolean;
+  size: number;
+}
+
+export interface StrategyOption {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface InstallOptions {
+  strategy: string;
+  enable_mod: boolean;
+  overwrite_files: boolean;
+}
+
+export interface InstallPreview {
+  entries: ArchiveEntry[];
+  deploy_files: string[];
+  plan: DeployPlan;
+  conflicts: FileConflict[];
+  file_count: number;
+  skipped_existing: number;
+  strategies: StrategyOption[];
+  archive_folders: string[];
+}
+
+export interface StagingFile {
+  name: string;
+  path: string;
+  size: number;
+  modified_at: number;
+}
+
+export interface NexusBrowserUrls {
+  mod_page: string;
+  files_tab: string;
+  file_page?: string | null;
+  premium_info_url: string;
+  notes: string;
+}
+
+export interface ScriptExtenderInstallInfo {
+  domain: string;
+  label: string;
+  download_url?: string | null;
+  website_url: string;
+  runtime: string;
+  notes: string;
+  supports_auto_download: boolean;
+  supports_steam_launcher_patch: boolean;
+}
+
+/** @deprecated Use ScriptExtenderInstallInfo */
+export type F4seInstallInfo = Pick<
+  ScriptExtenderInstallInfo,
+  "download_url" | "website_url" | "runtime" | "notes"
+>;
+
+export interface NexusUser {
+  user_id: number;
+  name: string;
+  is_premium: boolean;
+  is_supporter: boolean;
+}
+
+export interface Profile {
+  id: string;
+  game_domain: string;
+  name: string;
+  game_path: string;
+  staging_path: string;
+  proton_prefix_path?: string | null;
+  created_at: number;
+}
+
+export interface GameCandidate {
+  app_id: number;
+  name: string;
+  install_path: string;
+  library_path: string;
+  proton_prefix_path?: string | null;
+}
+
+export interface GameSummary {
+  id: number;
+  name: string;
+  domain_name: string;
+}
+
+export interface ModSummary {
+  mod_id: number;
+  name: string;
+  summary: string;
+  picture_url?: string | null;
+  author: string;
+  endorsements: number;
+  mod_downloads: number;
+  updated_timestamp: number;
+  version: string;
+  adult_content?: boolean;
+}
+
+export interface ModDetail {
+  mod_id: number;
+  name: string;
+  summary: string;
+  description_html: string;
+  author: string;
+  uploader: string;
+  category: string;
+  endorsements: number;
+  mod_downloads: number;
+  updated_timestamp: number;
+  version: string;
+  picture_url?: string | null;
+  hero_image_url?: string | null;
+  tags: string[];
+  screenshots: string[];
+  adult_content: boolean;
+  game_id: number;
+  game_domain: string;
+  viewer_endorsed: boolean;
+  viewer_tracked: boolean;
+}
+
+export interface ModFileInfo {
+  file_id: number;
+  name: string;
+  file_name: string;
+  version: string;
+  category_name: string;
+  is_primary: boolean;
+  size_kb: number;
+}
+
+/** Actual on-disk archive name from Nexus (includes .7z / .zip). */
+export function modFileDownloadName(file: ModFileInfo): string {
+  const archive = file.file_name?.trim();
+  return archive || file.name;
+}
+
+export interface InstalledMod {
+  id: string;
+  profile_id: string;
+  nexus_mod_id: number;
+  nexus_file_id?: number | null;
+  name: string;
+  version?: string | null;
+  enabled: boolean;
+  installed_files_json: string;
+  installed_at: number;
+}
+
+export interface DownloadProgress {
+  id: string;
+  game_domain: string;
+  mod_id: number;
+  file_id: number;
+  file_name: string;
+  bytes_done: number;
+  bytes_total: number;
+  status: string;
+  dest_path: string;
+  mod_name?: string;
+  profile_id?: string;
+}
+
+export interface DownloadRecord {
+  id: string;
+  game_domain: string;
+  mod_id: number;
+  file_id: number;
+  url: string;
+  dest_path: string;
+  bytes_done: number;
+  bytes_total: number;
+  status: string;
+  created_at: number;
+  mod_name: string;
+  profile_id: string;
+}
+
+export function downloadRecordToProgress(record: DownloadRecord): DownloadProgress {
+  const fileName =
+    (record.dest_path.split(/[/\\]/).pop() ?? record.mod_name) || "download";
+  return {
+    id: record.id,
+    game_domain: record.game_domain,
+    mod_id: record.mod_id,
+    file_id: record.file_id,
+    file_name: fileName,
+    bytes_done: record.bytes_done,
+    bytes_total: record.bytes_total,
+    status: record.status,
+    dest_path: record.dest_path,
+    mod_name: record.mod_name,
+    profile_id: record.profile_id,
+  };
+}
+
+export interface DownloadSettings {
+  max_concurrent: number;
+  speed_limit_kbps: number;
+}
+
+export interface ModSearchFilters {
+  category?: string | null;
+  tags: string[];
+  min_endorsements?: number | null;
+  hide_adult: boolean;
+  updated_since_days?: number | null;
+}
+
+export interface ModSearchResult {
+  mods: ModSummary[];
+  total_count: number;
+}
+
+export interface ModCategory {
+  category_id: number;
+  name: string;
+}
+
+export interface ModCompareSide {
+  name: string;
+  source: string;
+  file_count: number;
+  plugin_count: number;
+}
+
+export interface OverlapEntry {
+  path: string;
+  severity: string;
+  is_plugin: boolean;
+}
+
+export interface ModCompareResult {
+  mod_a: ModCompareSide;
+  mod_b: ModCompareSide;
+  overlapping_paths: OverlapEntry[];
+  conflicts_with_installed: FileConflict[];
+  unique_to_a: number;
+  unique_to_b: number;
+}
+
+export interface RawRequirement {
+  mod_id: number;
+  name: string;
+  game_domain: string;
+  optional: boolean;
+}
+
+export interface ModRequirement {
+  mod_id: number;
+  name: string;
+  game_domain: string;
+  optional: boolean;
+  installed: boolean;
+  downloaded: boolean;
+}
+
+export interface DependencyNode {
+  mod_id: number;
+  parent_mod_id: number | null;
+  depth: number;
+  installed: boolean;
+  downloaded: boolean;
+  requirements: RawRequirement[];
+}
+
+export interface DependencyGraph {
+  root_mod_id: number;
+  nodes: DependencyNode[];
+  missing_required: ModRequirement[];
+  cycles: number[][];
+}
+
+export interface PreviewNode {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  children: PreviewNode[];
+  previewable: boolean;
+}
+
+export interface PreviewFileResult {
+  path: string;
+  mime_type: string;
+  data: number[];
+}
+
+export interface CollectionSummary {
+  name: string;
+  slug: string;
+  summary?: string | null;
+  mod_count: number;
+  author: string;
+  revision_number: number;
+}
+
+export interface CollectionModEntry {
+  mod_id: number;
+  file_id: number | null;
+  name: string;
+  optional: boolean;
+  version: string;
+}
+
+export interface CollectionDetail {
+  name: string;
+  slug: string;
+  author: string;
+  mod_count: number;
+  mods: CollectionModEntry[];
+}
+
+export interface ModUpdateInfo {
+  installed_mod_id: string;
+  nexus_mod_id: number;
+  name: string;
+  installed_version: string | null;
+  latest_version: string;
+  latest_file_id: number;
+  changelog_available: boolean;
+}
+
+export interface UpdatedModEntry {
+  mod_id: number;
+  name: string;
+  updated_timestamp: number;
+}
+
+export interface AdvisorFinding {
+  rule_id: string;
+  severity: string;
+  message: string;
+  deck_tip: string | null;
+  affected_mods: string[];
+}
+
+export interface ModlistExport {
+  format: string;
+  content: string;
+}
+
+export interface UserEndorsement {
+  game_domain: string;
+  mod_id: number;
+  version: string;
+}
+
+export interface TrackedMod {
+  game_domain: string;
+  mod_id: number;
+  name: string;
+}
+
+export interface WizardStepResult {
+  step: string;
+  success: boolean;
+  data: unknown;
+  message: string;
+}
+
+export interface ScriptExtenderStatus {
+  installed: boolean;
+  version?: string | null;
+  loader_path?: string | null;
+  message: string;
+}
+
+export interface SupportedGameInfo {
+  domain: string;
+  display_name: string;
+  script_extender_label?: string | null;
+}
+
+export interface InstallResult {
+  mod: InstalledMod;
+  plan: DeployPlan;
+  conflicts: FileConflict[];
+  files_installed: number;
+}
+
+export interface LaunchConfig {
+  id: string;
+  profile_id: string;
+  name: string;
+  use_f4se: boolean;
+  launch_method: string;
+  custom_executable?: string | null;
+  args_json: string;
+  pre_launch_actions_json: string;
+  is_default: boolean;
+  last_used_at?: number | null;
+  created_at: number;
+}
+
+export interface LaunchCheckItem {
+  code: string;
+  message: string;
+  severity: string;
+}
+
+export interface LaunchValidationResult {
+  blockers: LaunchCheckItem[];
+  warnings: LaunchCheckItem[];
+}
+
+export interface GameRunningState {
+  running: boolean;
+  profile_id: string;
+  pid?: number | null;
+  started_at?: number | null;
+  config_id?: string | null;
+}
+
+export interface LaunchOptions {
+  skip_validation?: boolean;
+  safe_launch?: boolean;
+  sync_plugins?: boolean;
+  extra_args?: string[];
+}
+
+export interface LaunchResult {
+  success: boolean;
+  message: string;
+  method: string;
+  history_id: string;
+}
+
+export interface LaunchSettings {
+  always_ask_before_launch: boolean;
+  close_app_after_launch: boolean;
+  safe_launch_default: boolean;
+  default_deck_args: boolean;
+  global_launch_hotkey?: string | null;
+}
+
+export interface PlaytimeStats {
+  total_secs: number;
+  last_played_at?: number | null;
+  session_count: number;
+}
+
+export interface SteamShortcutInfo {
+  id: string;
+  profile_id: string;
+  config_id: string;
+  display_name: string;
+  steam_uri: string;
+  app_id_generated?: number | null;
+  created_at: number;
+}
