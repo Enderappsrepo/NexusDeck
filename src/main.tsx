@@ -1,11 +1,16 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
+import { RouteError } from "@/components/ui/RouteError";
+import { RoutePending } from "@/components/ui/RoutePending";
 import { routeTree } from "./routeTree.gen";
 import "./styles/globals.css";
-import "tauri-plugin-gamepad-api";
 
-const router = createRouter({ routeTree });
+const router = createRouter({
+  routeTree,
+  defaultPendingComponent: RoutePending,
+  defaultErrorComponent: RouteError,
+});
 
 declare module "@tanstack/react-router" {
   interface Register {

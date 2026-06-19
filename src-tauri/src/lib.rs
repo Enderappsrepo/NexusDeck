@@ -12,10 +12,35 @@ use tauri_plugin_deep_link::DeepLinkExt;
 use commands::*;
 use services::download_manager::DownloadManager;
 use services::nexus_client::NexusClient;
+use services::platform::is_steam_deck;
 use services::process_monitor::ProcessMonitor;
+
+#[cfg(target_os = "linux")]
+fn set_env_if_unset(key: &str, value: &str) {
+    if std::env::var(key).is_err() {
+        // SAFETY: called once on the main thread before any other threads start.
+        unsafe { std::env::set_var(key, value) };
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn prepare_linux_webview() {
+    // Ubuntu-built AppImages often show a blank WebKit window on SteamOS.
+    // https://v2.tauri.app/develop/debug/linux-graphics/
+    set_env_if_unset("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    set_env_if_unset("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+
+    if is_steam_deck() {
+        // Force XWayland on Steam Deck; native Wayland + CI AppImages is a common blank-window cause.
+        set_env_if_unset("GDK_BACKEND", "x11");
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    prepare_linux_webview();
+
     env_logger::init();
 
     let nexus_client = Arc::new(NexusClient::new());

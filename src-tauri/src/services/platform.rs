@@ -15,7 +15,7 @@ pub struct PlatformInfo {
 
 pub fn detect_platform() -> PlatformInfo {
     let is_linux = cfg!(target_os = "linux");
-    let is_steam_deck = is_linux && detect_steam_deck();
+    let is_steam_deck = is_linux && is_steam_deck();
     let is_flatpak = is_flatpak_sandbox();
     let steamos_version = if is_steam_deck {
         read_steamos_version()
@@ -33,7 +33,7 @@ pub fn detect_platform() -> PlatformInfo {
     }
 }
 
-fn detect_steam_deck() -> bool {
+pub fn is_steam_deck() -> bool {
     if std::env::var("SteamOS").is_ok() || std::env::var("STEAMOS").is_ok() {
         return true;
     }
@@ -48,6 +48,10 @@ fn detect_steam_deck() -> bool {
     }
 
     Path::new("/home/deck").is_dir()
+}
+
+fn detect_steam_deck() -> bool {
+    is_steam_deck()
 }
 
 fn is_flatpak_sandbox() -> bool {

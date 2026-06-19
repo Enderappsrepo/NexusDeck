@@ -22,6 +22,7 @@ BIN_DIR="${HOME}/.local/bin"
 DESKTOP_DIR="${HOME}/.local/share/applications"
 APPIMAGE_NAME="NexusDeck.AppImage"
 APPIMAGE_PATH="${INSTALL_DIR}/${APPIMAGE_NAME}"
+LAUNCHER_PATH="${INSTALL_DIR}/nexusdeck-launch.sh"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -233,6 +234,18 @@ install_appimage() {
   chmod +x "$APPIMAGE_PATH"
 }
 
+create_launcher() {
+  cat >"$LAUNCHER_PATH" <<EOF
+#!/usr/bin/env bash
+# SteamOS WebKit workarounds for Ubuntu-built AppImages
+export WEBKIT_DISABLE_DMABUF_RENDERER="\${WEBKIT_DISABLE_DMABUF_RENDERER:-1}"
+export WEBKIT_DISABLE_COMPOSITING_MODE="\${WEBKIT_DISABLE_COMPOSITING_MODE:-1}"
+export GDK_BACKEND="\${GDK_BACKEND:-x11}"
+exec "${APPIMAGE_PATH}" "\$@"
+EOF
+  chmod +x "$LAUNCHER_PATH"
+}
+
 create_desktop_entry() {
   mkdir -p "$DESKTOP_DIR" "$BIN_DIR"
   local desktop_file="${DESKTOP_DIR}/nexusdeck.desktop"
@@ -240,14 +253,14 @@ create_desktop_entry() {
 [Desktop Entry]
 Name=${APP_NAME}
 Comment=Lightweight Nexus Mods client for Steam Deck
-Exec=${APPIMAGE_PATH}
+Exec=${LAUNCHER_PATH}
 Icon=${APPIMAGE_PATH}
 Terminal=false
 Type=Application
 Categories=Game;Utility;
 StartupWMClass=nexusdeck
 EOF
-  ln -sf "$APPIMAGE_PATH" "${BIN_DIR}/nexusdeck"
+  ln -sf "$LAUNCHER_PATH" "${BIN_DIR}/nexusdeck"
   ok "Created desktop entry and ~/.local/bin/nexusdeck symlink"
 }
 
@@ -282,6 +295,7 @@ main() {
   prompt_yes_no "Continue with installation?" y || exit 0
 
   install_appimage
+  create_launcher
   create_desktop_entry
 
   local steam_path=""
@@ -289,7 +303,7 @@ main() {
     ok "Steam found at ${steam_path}"
     echo
     if prompt_yes_no "Add NexusDeck to Steam library for Gaming Mode?" y; then
-      add_to_steam_shortcuts "$steam_path" "$APP_NAME" "$APPIMAGE_PATH" "$INSTALL_DIR"
+      add_to_steam_shortcuts "$steam_path" "$APP_NAME" "$LAUNCHER_PATH" "$INSTALL_DIR"
       warn "Restart Steam for the shortcut to appear"
     fi
   else
@@ -309,7 +323,7 @@ main() {
 
   if prompt_yes_no "Launch NexusDeck now for setup?" y; then
     info "Starting NexusDeck..."
-    nohup "$APPIMAGE_PATH" >/dev/null 2>&1 &
+    nohup "$LAUNCHER_PATH" >/dev/null 2>&1 &
     ok "NexusDeck launched — complete the in-app setup wizard"
   fi
 }

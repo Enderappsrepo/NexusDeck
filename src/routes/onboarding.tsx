@@ -21,7 +21,7 @@ const STEP_LABELS = ["Welcome", "Steam", "Library", "API Key", "Finish"];
 
 function OnboardingPage() {
   const navigate = useNavigate();
-  const { login, loading, error, user } = useAuthStore();
+  const { login, loading, error, user, initialized } = useAuthStore();
   const [step, setStep] = useState<OnboardingStep>("welcome");
   const [platform, setPlatform] = useState<PlatformInfo | null>(null);
   const [steamPath, setSteamPath] = useState<string | null>(null);
@@ -33,7 +33,16 @@ function OnboardingPage() {
   const [steamError, setSteamError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
 
-  const stepIndex = STEPS.indexOf(step);
+  useEffect(() => {
+    if (user && step === "finish") return;
+    if (user && step !== "apikey") {
+      setStep("finish");
+    }
+  }, [user, step]);
+
+  const visibleStep: OnboardingStep =
+    user && step !== "apikey" && step !== "finish" ? "finish" : step;
+  const stepIndex = STEPS.indexOf(visibleStep);
 
   const scanSteam = async () => {
     const steam = await api.detectSteamInstall();
@@ -56,13 +65,6 @@ function OnboardingPage() {
       void scanSteam();
     }
   }, [step, detectedGames.length]);
-
-  useEffect(() => {
-    if (user && step === "finish") return;
-    if (user && step !== "apikey") {
-      setStep("finish");
-    }
-  }, [user, step]);
 
   const handleContinue = async () => {
     if (step === "welcome") {
@@ -119,8 +121,13 @@ function OnboardingPage() {
     }
   };
 
-  if (user && step !== "finish" && step !== "apikey") {
-    return null;
+  if (!initialized) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-[var(--color-primary)] border-t-transparent motion-reduce:animate-none" />
+        <p className="text-[var(--color-muted)]">Starting NexusDeck…</p>
+      </div>
+    );
   }
 
   return (
@@ -145,31 +152,31 @@ function OnboardingPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-2xl sm:text-3xl">
-            {step === "welcome" && (
+            {visibleStep === "welcome" && (
               <>
                 <Sparkles className="h-6 w-6 text-[var(--color-primary)]" />
                 Welcome
               </>
             )}
-            {step === "steam" && (
+            {visibleStep === "steam" && (
               <>
                 <Gamepad2 className="h-6 w-6 text-[var(--color-primary)]" />
                 Steam detection
               </>
             )}
-            {step === "library" && (
+            {visibleStep === "library" && (
               <>
                 <Gamepad2 className="h-6 w-6 text-[var(--color-primary)]" />
                 Add to Steam library
               </>
             )}
-            {step === "apikey" && (
+            {visibleStep === "apikey" && (
               <>
                 <KeyRound className="h-6 w-6 text-[var(--color-primary)]" />
                 Connect Nexus Mods
               </>
             )}
-            {step === "finish" && (
+            {visibleStep === "finish" && (
               <>
                 <Rocket className="h-6 w-6 text-[var(--color-primary)]" />
                 Ready to go
@@ -177,20 +184,20 @@ function OnboardingPage() {
             )}
           </CardTitle>
           <CardDescription>
-            {step === "welcome" &&
+            {visibleStep === "welcome" &&
               "A lightweight mod manager built for Steam Deck and Windows."}
-            {step === "steam" &&
+            {visibleStep === "steam" &&
               "NexusDeck works with your existing Steam library and Proton prefixes."}
-            {step === "library" &&
+            {visibleStep === "library" &&
               "Launch NexusDeck from Gaming Mode like any other game."}
-            {step === "apikey" &&
+            {visibleStep === "apikey" &&
               "Enter your personal API key to browse and download mods."}
-            {step === "finish" &&
+            {visibleStep === "finish" &&
               "You're connected. Set up Fallout 4 or explore the app."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {step === "welcome" && (
+          {visibleStep === "welcome" && (
             <ul className="list-inside list-disc space-y-2 text-[var(--color-muted)]">
               <li>Controller-friendly interface</li>
               <li>Auto-detect Steam games</li>
@@ -199,7 +206,7 @@ function OnboardingPage() {
             </ul>
           )}
 
-          {step === "steam" && (
+          {visibleStep === "steam" && (
             <div className="space-y-3 text-sm">
               {steamPath ? (
                 <p className="rounded-xl bg-[var(--color-secondary)] p-4">
@@ -222,7 +229,7 @@ function OnboardingPage() {
             </div>
           )}
 
-          {step === "library" && (
+          {visibleStep === "library" && (
             <div className="space-y-4">
               <p className="text-sm text-[var(--color-muted)]">
                 Adding NexusDeck to Steam lets you launch it from Big Picture or
@@ -260,7 +267,7 @@ function OnboardingPage() {
             </div>
           )}
 
-          {step === "apikey" && (
+          {visibleStep === "apikey" && (
             <>
               <Input
                 type="password"
@@ -281,7 +288,7 @@ function OnboardingPage() {
             </>
           )}
 
-          {step === "finish" && (
+          {visibleStep === "finish" && (
             <div className="space-y-4">
               {detectedGames.length > 0 ? (
                 <p className="text-sm text-[var(--color-muted)]">
@@ -324,21 +331,21 @@ function OnboardingPage() {
             </div>
           )}
 
-          {step !== "finish" && (
+          {visibleStep !== "finish" && (
             <Button
               size="lg"
               onClick={handleContinue}
               disabled={
                 loading ||
-                (step === "apikey" && !apiKey.trim()) ||
+                (visibleStep === "apikey" && !apiKey.trim()) ||
                 addingToSteam
               }
             >
               {loading
                 ? "Connecting..."
-                : step === "welcome"
+                : visibleStep === "welcome"
                   ? "Get Started"
-                  : step === "apikey"
+                  : visibleStep === "apikey"
                     ? "Connect"
                     : "Continue"}
             </Button>

@@ -1,4 +1,4 @@
-import { createRootRoute, Outlet, useNavigate } from "@tanstack/react-router";
+import { createRootRoute, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { AppShell } from "@/components/layout/AppShell";
@@ -10,9 +10,17 @@ import { useFocusNavigation } from "@/hooks/useFocusNavigation";
 import { useGamepadBack } from "@/hooks/useGamepadBack";
 import { useLaunchStore } from "@/stores/launchStore";
 import { api } from "@/lib/commands";
+import { ensureGamepadPolyfill } from "@/lib/gamepadPolyfill";
 import type { DownloadProgress, ModFileInfo, Profile } from "@/lib/nexus/types";
 
 export const Route = createRootRoute({
+  beforeLoad: async ({ location }) => {
+    if (location.pathname === "/onboarding") return;
+    const done = await api.isOnboardingComplete();
+    if (!done) {
+      throw redirect({ to: "/onboarding" });
+    }
+  },
   component: RootLayout,
 });
 
@@ -29,6 +37,8 @@ function resolveProfile(
 function RootLayout() {
   const containerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isOnboarding = pathname === "/onboarding";
   const initialize = useAuthStore((s) => s.initialize);
   const profiles = useGamesStore((s) => s.profiles);
   const loadProfiles = useGamesStore((s) => s.loadProfiles);
@@ -52,16 +62,14 @@ function RootLayout() {
   useGamepadBack();
 
   useEffect(() => {
+    void ensureGamepadPolyfill();
     initialize();
     loadProfiles();
     loadLaunchSettings();
     api.listDownloads().then(hydrateFromRecords);
     const unsubLaunch = subscribeLaunchEvents();
-    api.isOnboardingComplete().then((done) => {
-      if (!done) navigate({ to: "/onboarding" });
-    });
     return () => unsubLaunch();
-  }, [initialize, loadProfiles, hydrateFromRecords, navigate, subscribeLaunchEvents, loadLaunchSettings]);
+  }, [initialize, loadProfiles, hydrateFromRecords, subscribeLaunchEvents, loadLaunchSettings]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -130,21 +138,29 @@ function RootLayout() {
 
   return (
     <div ref={containerRef} className="h-full">
-      <AppShell>
-        <Outlet />
-      </AppShell>
-      <DownloadQueuePanel />
+      {isOnboarding ? (
+        <main className="h-full overflow-auto p-6 scrollbar-thin">
+          <Outlet />
+        </main>
+      ) : (
+        <AppShell>
+          <Outlet />
+        </AppShell>
+      )}
+      {!isOnboarding && <DownloadQueuePanel />}
 
-      <InstallPromptDialog
-        open={!!installPrompt}
-        onOpenChange={(open) => !open && setInstallPrompt(null)}
-        download={installPrompt}
-        profile={promptProfile ?? null}
-        onInstall={handleInstallNow}
-        onDismiss={() => setInstallPrompt(null)}
-      />
+      {!isOnboarding && (
+        <InstallPromptDialog
+          open={!!installPrompt}
+          onOpenChange={(open) => !open && setInstallPrompt(null)}
+          download={installPrompt}
+          profile={promptProfile ?? null}
+          onInstall={handleInstallNow}
+          onDismiss={() => setInstallPrompt(null)}
+        />
+      )}
 
-      {pendingInstall && (
+      {!isOnboarding && pendingInstall && (
         <ModInstallDialog
           open
           onOpenChange={(open) => !open && setPendingInstall(null)}
