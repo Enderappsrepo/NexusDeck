@@ -494,4 +494,13 @@ export const api = {
 
   batchLaunchTools: (profileId: string, toolIds: string[]) =>
     invoke<string[]>("batch_launch_tools", { profileId, toolIds }),
+
+  logStartupEvent: (step: string, detail?: string) =>
+    invoke<void>("log_startup_event", { step, detail: detail ?? null }),
+
+  getStartupDiagnostics: () => invoke<string>("get_startup_diagnostics"),
+
+  getStartupLogPath: () => invoke<string>("get_startup_log_path"),
 };
+
+export const logStartupEvent = api.logStartupEvent;

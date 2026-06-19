@@ -1,6 +1,7 @@
 pub mod archive_options;
 pub mod paths;
 pub mod platform;
+pub mod startup_log;
 pub mod steam;
 pub mod nexus_client;
 pub mod download_manager;

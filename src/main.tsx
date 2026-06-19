@@ -3,8 +3,17 @@ import ReactDOM from "react-dom/client";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { RouteError } from "@/components/ui/RouteError";
 import { RoutePending } from "@/components/ui/RoutePending";
+import { logStartupEvent } from "@/lib/commands";
 import { routeTree } from "./routeTree.gen";
 import "./styles/globals.css";
+
+async function bootLog(step: string, detail?: string) {
+  try {
+    await logStartupEvent(step, detail);
+  } catch {
+    // Browser dev or invoke unavailable during early boot.
+  }
+}
 
 const router = createRouter({
   routeTree,
@@ -18,13 +27,20 @@ declare module "@tanstack/react-router" {
   }
 }
 
+void bootLog("frontend_boot", "main.tsx loaded");
+
 try {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <RouterProvider router={router} />
     </React.StrictMode>
   );
+  void bootLog("react_mounted");
 } catch (error) {
+  void bootLog(
+    "react_mount_failed",
+    error instanceof Error ? error.message : String(error)
+  );
   const root = document.getElementById("root");
   if (root) {
     root.innerHTML = `

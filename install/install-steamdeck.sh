@@ -23,6 +23,7 @@ DESKTOP_DIR="${HOME}/.local/share/applications"
 APPIMAGE_NAME="NexusDeck.AppImage"
 APPIMAGE_PATH="${INSTALL_DIR}/${APPIMAGE_NAME}"
 LAUNCHER_PATH="${INSTALL_DIR}/nexusdeck-launch.sh"
+ICON_PATH="${INSTALL_DIR}/icon.png"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -234,6 +235,27 @@ install_appimage() {
   chmod +x "$APPIMAGE_PATH"
 }
 
+extract_app_icon() {
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  (
+    cd "$tmp_dir" || exit 0
+    "$APPIMAGE_PATH" --appimage-extract >/dev/null 2>&1 || true
+    if [[ -f squashfs-root/.DirIcon ]]; then
+      cp -f squashfs-root/.DirIcon "$ICON_PATH"
+    elif [[ -f squashfs-root/nexusdeck.png ]]; then
+      cp -f squashfs-root/nexusdeck.png "$ICON_PATH"
+    fi
+  )
+  rm -rf "$tmp_dir"
+
+  if [[ -f "$ICON_PATH" ]]; then
+    ok "Installed app icon"
+  else
+    warn "Could not extract icon — desktop entry may show a generic icon"
+  fi
+}
+
 create_launcher() {
   cat >"$LAUNCHER_PATH" <<EOF
 #!/usr/bin/env bash
@@ -251,12 +273,14 @@ EOF
 create_desktop_entry() {
   mkdir -p "$DESKTOP_DIR" "$BIN_DIR"
   local desktop_file="${DESKTOP_DIR}/nexusdeck.desktop"
+  local icon_ref="$APPIMAGE_PATH"
+  [[ -f "$ICON_PATH" ]] && icon_ref="$ICON_PATH"
   cat >"$desktop_file" <<EOF
 [Desktop Entry]
 Name=${APP_NAME}
 Comment=Lightweight Nexus Mods client for Steam Deck
 Exec=${LAUNCHER_PATH}
-Icon=${APPIMAGE_PATH}
+Icon=${icon_ref}
 Terminal=false
 Type=Application
 Categories=Game;Utility;
@@ -297,6 +321,7 @@ main() {
   prompt_yes_no "Continue with installation?" y || exit 0
 
   install_appimage
+  extract_app_icon
   create_launcher
   create_desktop_entry
 

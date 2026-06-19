@@ -13,6 +13,7 @@ use commands::*;
 use services::download_manager::DownloadManager;
 use services::nexus_client::NexusClient;
 use services::process_monitor::ProcessMonitor;
+use services::startup_log;
 
 #[cfg(target_os = "linux")]
 fn force_env(key: &str, value: &str) {
@@ -81,10 +82,16 @@ pub fn run() {
         .manage(download_manager.clone())
         .manage(process_monitor.clone())
         .setup(move |app| {
+            let log_path = startup_log::init()?;
+            startup_log::log_step("setup", &format!("log at {}", log_path.display()));
+
             db::init_db()?;
 
             #[cfg(target_os = "linux")]
-            configure_linux_webview(app.handle())?;
+            {
+                configure_linux_webview(app.handle())?;
+                startup_log::log_step("linux_webview", "hardware acceleration disabled");
+            }
 
             process_monitor.set_app_handle(app.handle().clone());
             process_monitor.start_polling();
@@ -220,6 +227,9 @@ pub fn run() {
             apply_game_settings_preset,
             pick_launch_executable,
             batch_launch_tools,
+            log_startup_event,
+            get_startup_diagnostics,
+            get_startup_log_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
