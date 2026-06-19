@@ -7,7 +7,7 @@ NexusDeck lets you browse, download, and install mods with a console-like UI opt
 ## Features
 
 ### Core
-- Cross-platform: Windows (NSIS + portable) and Linux (AppImage / Flatpak-ready)
+- Cross-platform: Windows (NSIS + portable) and Linux (Flatpak for Steam Deck / SteamOS)
 - Controller & gamepad navigation (D-pad, A/B, L1/R1 tabs, shoulder buttons)
 - Nexus Mods API integration (GraphQL v2 browse + REST v1 downloads)
 - Secure API key storage via OS keyring
@@ -41,8 +41,8 @@ NexusDeck lets you browse, download, and install mods with a console-like UI opt
 - [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
 
 ### Linux / Steam Deck
-- For **AppImage**: `webkit2gtk-4.1` (not included on SteamOS — prefer Flatpak)
-- For **Flatpak build**: `flatpak`, `flatpak-builder`
+- **Flatpak** is the only supported Linux install (bundles WebKitGTK for SteamOS)
+- For local Flatpak builds: `flatpak`, `flatpak-builder`, Flathub remote
 
 ## Development
 
@@ -60,15 +60,11 @@ npm run tauri build
 # Output: src-tauri/target/release/bundle/nsis/ and portable exe
 ```
 
-### Linux AppImage
+### Linux (Flatpak — Steam Deck recommended)
 ```bash
-npm run tauri build
-# Output: src-tauri/target/release/bundle/appimage/
-```
-
-### Flatpak (Steam Deck recommended)
-```bash
-flatpak-builder --force-clean build-dir flatpak/com.nexusdeck.NexusDeck.yml
+npm run tauri build -- --no-bundle
+# CI packages src-tauri/target/release/nexusdeck into a Flatpak bundle
+flatpak-builder --force-clean build-dir flatpak/com.nexusdeck.app.yml
 ```
 
 ## Steam Deck Install
@@ -90,11 +86,12 @@ curl -fsSL https://github.com/YOUR_USER/NexusDeck/releases/latest/download/i.sh 
 **Enable the short URL** (one-time): GitHub repo → **Settings → Pages → Build from branch `main` / folder `/docs`**, or push to `main` and let the **Pages** workflow deploy automatically.
 
 The installer will:
-1. Download the latest NexusDeck AppImage
-2. Install to `~/.local/share/nexusdeck/`
-3. Create a desktop launcher
-4. Optionally add NexusDeck to your Steam library for Gaming Mode
-5. Launch the app for first-time setup (API key + game wizard)
+1. Download the latest NexusDeck Flatpak bundle
+2. Install `com.nexusdeck.app` for your user
+3. Register `nxm://` mod links
+4. Remove any legacy AppImage install
+5. Optionally add NexusDeck to your Steam library for Gaming Mode
+6. Launch the app for first-time setup (API key + game wizard)
 
 **Optional custom domain** (shortest): add `docs/CNAME` with e.g. `get.nexusdeck.app`, point DNS at GitHub Pages, then:
 
@@ -102,16 +99,22 @@ The installer will:
 curl -fsSL https://get.nexusdeck.app/i.sh | bash
 ```
 
-**Local install** (if you built the AppImage yourself):
+**Local install** (if you built the Flatpak yourself):
 
 ```bash
-NEXUSDECK_APPIMAGE_PATH=/path/to/NexusDeck.AppImage ./install-steamdeck.sh
+NEXUSDECK_FLATPAK_PATH=/path/to/NexusDeck_0.3.0.flatpak ./install-steamdeck.sh
 ```
 
 **Override GitHub repo** (forks / pre-release):
 
 ```bash
-NEXUSDECK_GITHUB_REPO=your-org/nexusdeck ./install-steamdeck.sh
+NEXUSDECK_GITHUB_REPO=your-org/NexusDeck ./install-steamdeck.sh
+```
+
+**Uninstall:**
+
+```bash
+curl -fsSL https://github.com/YOUR_USER/NexusDeck/releases/latest/download/u.sh | bash
 ```
 
 After install, complete the in-app setup wizard to connect your Nexus API key and configure Fallout 4.
@@ -135,22 +138,22 @@ gh repo create NexusDeck --public --source=. --remote=origin --push
 
 ### Automatic releases
 
-Every version tag triggers the **Release** workflow, which builds Linux + Windows installers and publishes them to GitHub Releases.
+Every version tag triggers the **Release** workflow, which builds Linux Flatpak + Windows installers and publishes them to GitHub Releases.
 
 **From your machine (recommended):**
 
 ```bash
-npm run release 0.1.0
+npm run release 0.3.0
 ```
 
 This will:
 1. Sync version in `package.json`, `tauri.conf.json`, and `Cargo.toml`
-2. Commit, tag `v0.1.0`, and push to GitHub
+2. Commit, tag `v0.3.0`, and push to GitHub
 3. Trigger CI to build and upload:
-   - `NexusDeck_0.1.0_linux.AppImage`
-   - `NexusDeck_0.1.0_windows-setup.exe`
-   - `NexusDeck_0.1.0_windows-portable.exe`
-   - `install-steamdeck.sh` (with your repo URL baked in)
+   - `NexusDeck_0.3.0.flatpak`
+   - `NexusDeck_0.3.0_windows-setup.exe`
+   - `NexusDeck_0.3.0_windows-portable.exe`
+   - `install-steamdeck.sh` / `i.sh` and `uninstall-steamdeck.sh` / `u.sh`
    - `SHA256SUMS.txt`
 
 **From GitHub UI (no local tag):**
@@ -166,7 +169,7 @@ git push origin v0.1.0
 
 ### CI on every push
 
-The **CI** workflow builds Linux AppImage and Windows NSIS on every push/PR to `main`, `master`, or `overhaul` to catch breakages before release.
+The **CI** workflow builds Linux Flatpak and Windows NSIS on every push/PR to `main`, `master`, or `overhaul` to catch breakages before release.
 
 ## First Launch
 
@@ -205,7 +208,7 @@ The **CI** workflow builds Linux AppImage and Windows NSIS on every push/PR to `
 
 ## Steam Deck Tips
 
-- **Flatpak** is recommended on SteamOS (bundles WebKit dependencies)
+- **Flatpak** is required on SteamOS — run `flatpak run com.nexusdeck.app` or use the Steam shortcut from the installer
 - Enable **Battery Mode** in Settings to limit download concurrency
 - In Desktop Mode, Steam Input may intercept controllers — launch from Gaming Mode or disable Steam Input for NexusDeck
 - Add NexusDeck as a non-Steam game for Gaming Mode access
@@ -252,7 +255,7 @@ React/TypeScript UI  →  Tauri IPC  →  Rust services
 - `src/` — React frontend (routes, stores, components)
 - `src-tauri/src/` — Rust backend (commands, services, games)
 - `src-tauri/src/games/rules/` — per-game Deck advisor rules
-- `flatpak/` — Flatpak manifest
+- `flatpak/` — Flatpak manifest, desktop entry, and AppStream metadata
 - `.github/workflows/` — CI build pipelines
 
 ## License

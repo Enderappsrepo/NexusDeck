@@ -41,14 +41,54 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build Tauri AppImage
-        run: npm run tauri build -- --bundles appimage
+      - name: Build Linux binary
+        run: npm run tauri build -- --no-bundle
 
       - uses: actions/upload-artifact@v4
         with:
-          name: nexusdeck-linux-ci
+          name: nexusdeck-linux-binary-ci
           retention-days: 7
-          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          path: src-tauri/target/release/nexusdeck
+
+  build-flatpak:
+    needs: build-linux
+    runs-on: ubuntu-latest
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:gnome-48
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: nexusdeck-linux-binary-ci
+          path: flatpak/
+
+      - name: Prepare Flatpak sources
+        run: |
+          chmod +x flatpak/nexusdeck
+          cp src-tauri/icons/32x32.png flatpak/
+          cp src-tauri/icons/128x128.png flatpak/
+          cp src-tauri/icons/icon.png flatpak/
+
+      - name: Install GNOME 48 runtime
+        run: |
+          flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install -y --noninteractive flathub org.gnome.Platform//48 org.gnome.Sdk//48
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: NexusDeck-ci.flatpak
+          manifest-path: flatpak/com.nexusdeck.app.yml
+          cache-key: flatpak-ci-${{ github.sha }}
+          upload-artifact: false
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexusdeck-flatpak-ci
+          retention-days: 7
+          path: NexusDeck-ci.flatpak
 
   build-windows:
     runs-on: windows-latest

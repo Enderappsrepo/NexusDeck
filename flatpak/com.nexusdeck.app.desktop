@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=NexusDeck
+Comment=Lightweight Nexus Mods client for Steam Deck and Linux
+Exec=nexusdeck
+Icon=com.nexusdeck.app
+Type=Application
+Categories=Game;Utility;
+Keywords=nexus;mods;steam;deck;fallout;
+StartupNotify=true
+StartupWMClass=nexusdeck
+Terminal=false
+MimeType=x-scheme-handler/nxm;

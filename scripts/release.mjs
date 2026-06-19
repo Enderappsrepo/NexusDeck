@@ -81,11 +81,11 @@ run(`git push origin ${tag}`);
 
 console.log(`
 Done! GitHub Actions will build and publish:
-  - NexusDeck_${version}_linux.AppImage
+  - NexusDeck_${version}.flatpak
   - NexusDeck_${version}_windows-setup.exe
   - NexusDeck_${version}_windows-portable.exe
   - install-steamdeck.sh
-  - i.sh (short filename for curl one-liners)
+  - i.sh / u.sh (short filenames for curl one-liners)
   - SHA256SUMS.txt
 
 Track progress:

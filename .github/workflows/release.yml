@@ -90,18 +90,52 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build AppImage
-        run: npm run tauri build -- --bundles appimage
-
-      - name: Rename AppImage
-        run: |
-          APPIMAGE=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -n1)
-          cp "$APPIMAGE" "NexusDeck_${{ needs.prepare.outputs.version }}_linux.AppImage"
+      - name: Build Linux binary
+        run: npm run tauri build -- --no-bundle
 
       - uses: actions/upload-artifact@v4
         with:
-          name: nexusdeck-linux
-          path: NexusDeck_${{ needs.prepare.outputs.version }}_linux.AppImage
+          name: nexusdeck-linux-binary
+          path: src-tauri/target/release/nexusdeck
+
+  build-flatpak:
+    needs: [prepare, build-linux]
+    runs-on: ubuntu-latest
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:gnome-48
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: nexusdeck-linux-binary
+          path: flatpak/
+
+      - name: Prepare Flatpak sources
+        run: |
+          chmod +x flatpak/nexusdeck
+          cp src-tauri/icons/32x32.png flatpak/
+          cp src-tauri/icons/128x128.png flatpak/
+          cp src-tauri/icons/icon.png flatpak/
+
+      - name: Install GNOME 48 runtime
+        run: |
+          flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install -y --noninteractive flathub org.gnome.Platform//48 org.gnome.Sdk//48
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: NexusDeck_${{ needs.prepare.outputs.version }}.flatpak
+          manifest-path: flatpak/com.nexusdeck.app.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+          upload-artifact: false
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexusdeck-flatpak
+          path: NexusDeck_${{ needs.prepare.outputs.version }}.flatpak
 
   build-windows:
     needs: prepare
@@ -148,7 +182,7 @@ jobs:
           path: dist-release/*.exe
 
   publish:
-    needs: [prepare, build-linux, build-windows]
+    needs: [prepare, build-linux, build-flatpak, build-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -163,13 +197,15 @@ jobs:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.AppImage' -o -name '*.exe' \) -exec cp {} release/ \;
+          find artifacts -type f \( -name '*.flatpak' -o -name '*.exe' \) -exec cp {} release/ \;
           cp install/install-steamdeck.sh release/install-steamdeck.sh
           cp install/install-steamdeck.sh release/i.sh
           cp install/uninstall-steamdeck.sh release/uninstall-steamdeck.sh
           cp install/uninstall-steamdeck.sh release/u.sh
-          sed -i "s|nexusdeck/nexusdeck|${GITHUB_REPOSITORY}|g" release/install-steamdeck.sh
-          sed -i "s|nexusdeck/nexusdeck|${GITHUB_REPOSITORY}|g" release/i.sh
+          sed -i "s|Enderappsrepo/NexusDeck|${GITHUB_REPOSITORY}|g" release/install-steamdeck.sh
+          sed -i "s|Enderappsrepo/NexusDeck|${GITHUB_REPOSITORY}|g" release/i.sh
+          sed -i "s|Enderappsrepo/NexusDeck|${GITHUB_REPOSITORY}|g" release/uninstall-steamdeck.sh
+          sed -i "s|Enderappsrepo/NexusDeck|${GITHUB_REPOSITORY}|g" release/u.sh
           chmod +x release/install-steamdeck.sh release/i.sh release/uninstall-steamdeck.sh release/u.sh
           cd release && sha256sum * > SHA256SUMS.txt
           ls -la

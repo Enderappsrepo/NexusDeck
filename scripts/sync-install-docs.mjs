@@ -23,7 +23,7 @@ function repoFromRemote() {
   } catch {
     /* no remote */
   }
-  return "nexusdeck/nexusdeck";
+  return "Enderappsrepo/NexusDeck";
 }
 
 const repo = process.argv[2] || repoFromRemote();
@@ -34,7 +34,7 @@ const releaseUrl = `https://github.com/${repo}/releases/latest/download/i.sh`;
 mkdirSync(docsDir, { recursive: true });
 
 let script = readFileSync(join(root, "install", "install-steamdeck.sh"), "utf8");
-script = script.replace(/nexusdeck\/nexusdeck/g, repo);
+script = script.replace(/Enderappsrepo\/NexusDeck/g, repo);
 writeFileSync(join(docsDir, "i.sh"), script, "utf8");
 
 const html = `<!DOCTYPE html>

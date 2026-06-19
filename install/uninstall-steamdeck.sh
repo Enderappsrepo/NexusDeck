@@ -1,25 +1,24 @@
 #!/usr/bin/env bash
-# NexusDeck Steam Deck uninstaller
+# NexusDeck Steam Deck / Linux uninstaller (Flatpak)
 # Usage:
-#   curl -fsSL https://github.com/OWNER/REPO/releases/latest/download/u.sh | bash
+#   curl -fsSL https://github.com/Enderappsrepo/NexusDeck/releases/latest/download/u.sh | bash
 #   ./uninstall-steamdeck.sh
 #
 # Environment overrides:
-#   NEXUSDECK_INSTALL_DIR   Install directory (default: ~/.local/share/nexusdeck)
 #   NEXUSDECK_KEEP_DATA     Set to 1 to keep settings/database in ~/.config/nexusdeck
 
 set -euo pipefail
 
 APP_NAME="NexusDeck"
-INSTALL_DIR="${NEXUSDECK_INSTALL_DIR:-$HOME/.local/share/nexusdeck}"
+APP_ID="com.nexusdeck.app"
+FLATPAK_CMD="flatpak run ${APP_ID}"
+LEGACY_INSTALL_DIR="${NEXUSDECK_INSTALL_DIR:-$HOME/.local/share/nexusdeck}"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/nexusdeck"
 BIN_DIR="${HOME}/.local/bin"
 DESKTOP_DIR="${HOME}/.local/share/applications"
-APPIMAGE_PATH="${INSTALL_DIR}/NexusDeck.AppImage"
-LAUNCHER_PATH="${INSTALL_DIR}/nexusdeck-launch.sh"
+LEGACY_LAUNCHER="${LEGACY_INSTALL_DIR}/nexusdeck-launch.sh"
+LEGACY_APPIMAGE="${LEGACY_INSTALL_DIR}/NexusDeck.AppImage"
 DESKTOP_FILE="${DESKTOP_DIR}/nexusdeck.desktop"
-ICON_PATH="${INSTALL_DIR}/icon.png"
-ICON_THEME_PATH="${HOME}/.local/share/icons/hicolor/256x256/apps/com.nexusdeck.app.png"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -41,6 +40,10 @@ prompt_yes_no() {
   read -r -p "$(echo -e "${BOLD}${question}${NC} [${hint}]: ")" reply
   reply="${reply:-$default}"
   [[ "$reply" =~ ^[Yy] ]]
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
 }
 
 find_steam_path() {
@@ -87,7 +90,7 @@ remove_steam_shortcut() {
 
   require_cmd python3
   local result
-  result="$(python3 - "$shortcuts_path" "$APP_NAME" "$LAUNCHER_PATH" "$APPIMAGE_PATH" "$INSTALL_DIR" <<'PY'
+  result="$(python3 - "$shortcuts_path" "$APP_NAME" "$FLATPAK_CMD" "$LEGACY_LAUNCHER" "$LEGACY_APPIMAGE" "$LEGACY_INSTALL_DIR" <<'PY'
 import sys
 from pathlib import Path
 
@@ -145,32 +148,32 @@ PY
   esac
 }
 
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
-}
-
 stop_running_app() {
   if command -v pkill >/dev/null 2>&1; then
+    pkill -f "${APP_ID}" >/dev/null 2>&1 || true
     pkill -f "NexusDeck.AppImage" >/dev/null 2>&1 || true
     pkill -f "nexusdeck-launch.sh" >/dev/null 2>&1 || true
   fi
 }
 
-remove_launcher_files() {
-  [[ -L "${BIN_DIR}/nexusdeck" || -f "${BIN_DIR}/nexusdeck" ]] && rm -f "${BIN_DIR}/nexusdeck" && ok "Removed ${BIN_DIR}/nexusdeck"
-  [[ -f "$DESKTOP_FILE" ]] && rm -f "$DESKTOP_FILE" && ok "Removed desktop entry"
-  [[ -f "$ICON_THEME_PATH" ]] && rm -f "$ICON_THEME_PATH" && ok "Removed icon cache entry"
-  if command -v update-desktop-database >/dev/null 2>&1; then
-    update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
+remove_flatpak() {
+  if flatpak info --user "$APP_ID" >/dev/null 2>&1; then
+    flatpak uninstall -y --user "$APP_ID" || flatpak uninstall -y --user "$APP_ID" --delete-data
+    ok "Uninstalled Flatpak ${APP_ID}"
+  else
+    warn "Flatpak ${APP_ID} is not installed"
   fi
 }
 
-remove_install_dir() {
-  if [[ -d "$INSTALL_DIR" ]]; then
-    rm -rf "$INSTALL_DIR"
-    ok "Removed ${INSTALL_DIR}"
-  else
-    warn "Install directory not found: ${INSTALL_DIR}"
+remove_legacy_files() {
+  [[ -L "${BIN_DIR}/nexusdeck" || -f "${BIN_DIR}/nexusdeck" ]] && rm -f "${BIN_DIR}/nexusdeck" && ok "Removed ${BIN_DIR}/nexusdeck"
+  [[ -f "$DESKTOP_FILE" ]] && rm -f "$DESKTOP_FILE" && ok "Removed legacy desktop entry"
+  if [[ -d "$LEGACY_INSTALL_DIR" ]]; then
+    rm -rf "$LEGACY_INSTALL_DIR"
+    ok "Removed legacy install dir ${LEGACY_INSTALL_DIR}"
+  fi
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
   fi
 }
 
@@ -195,12 +198,12 @@ main() {
   print_header
 
   warn "Steam's \"Uninstall\" / \"Manage add-on\" buttons do not remove non-Steam shortcuts."
-  echo "This script removes NexusDeck properly from your system and Steam library."
+  echo "This script removes NexusDeck Flatpak and any legacy AppImage install."
   echo
 
   echo -e "${BOLD}Will remove:${NC}"
-  echo "  • ${INSTALL_DIR}"
-  echo "  • Desktop launcher and ~/.local/bin/nexusdeck"
+  echo "  • Flatpak ${APP_ID}"
+  echo "  • Legacy AppImage files (if present)"
   echo "  • Steam library shortcut (if present)"
   if [[ "${NEXUSDECK_KEEP_DATA:-0}" == "1" ]]; then
     echo "  • Keep settings in ${CONFIG_DIR}"
@@ -213,8 +216,8 @@ main() {
 
   stop_running_app
   remove_steam_shortcut
-  remove_launcher_files
-  remove_install_dir
+  remove_flatpak
+  remove_legacy_files
 
   if [[ "${NEXUSDECK_KEEP_DATA:-0}" == "1" ]]; then
     ok "Kept user data in ${CONFIG_DIR}"
@@ -230,7 +233,6 @@ main() {
   echo -e "${BOLD}If NexusDeck still appears in Steam:${NC}"
   echo "  1. Restart Steam"
   echo "  2. Desktop Mode: Steam → NexusDeck → gear icon → Remove from library"
-  echo "  3. Or run this uninstall script again after restarting Steam"
   echo
 }
 

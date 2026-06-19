@@ -1,28 +1,23 @@
 #!/usr/bin/env bash
-# NexusDeck Steam Deck installer
+# NexusDeck Steam Deck / Linux installer (Flatpak)
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/install/install-steamdeck.sh | bash
+#   curl -fsSL https://github.com/Enderappsrepo/NexusDeck/releases/latest/download/i.sh | bash
 #   ./install-steamdeck.sh
 #
 # Environment overrides:
 #   NEXUSDECK_GITHUB_REPO   GitHub owner/repo (default: Enderappsrepo/NexusDeck)
 #   NEXUSDECK_VERSION       Release tag (default: latest)
-#   NEXUSDECK_APPIMAGE_PATH Local AppImage path (skips download)
-#   NEXUSDECK_INSTALL_DIR   Install directory (default: ~/.local/share/nexusdeck)
+#   NEXUSDECK_FLATPAK_PATH  Local .flatpak path (skips download)
 #   NEXUSDECK_NO_STEAM      Set to 1 to skip adding to Steam library
 
 set -euo pipefail
 
 APP_NAME="NexusDeck"
 APP_ID="com.nexusdeck.app"
+FLATPAK_CMD="flatpak run ${APP_ID}"
 GITHUB_REPO="${NEXUSDECK_GITHUB_REPO:-Enderappsrepo/NexusDeck}"
 VERSION="${NEXUSDECK_VERSION:-latest}"
-INSTALL_DIR="${NEXUSDECK_INSTALL_DIR:-$HOME/.local/share/nexusdeck}"
-BIN_DIR="${HOME}/.local/bin"
-DESKTOP_DIR="${HOME}/.local/share/applications"
-APPIMAGE_NAME="NexusDeck.AppImage"
-APPIMAGE_PATH="${INSTALL_DIR}/${APPIMAGE_NAME}"
-LAUNCHER_PATH="${INSTALL_DIR}/nexusdeck-launch.sh"
+LEGACY_INSTALL_DIR="${NEXUSDECK_INSTALL_DIR:-$HOME/.local/share/nexusdeck}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -46,6 +41,10 @@ prompt_yes_no() {
   [[ "$reply" =~ ^[Yy] ]]
 }
 
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
+}
+
 is_steam_deck() {
   [[ -n "${SteamOS:-}" || -n "${STEAMOS:-}" ]] && return 0
   [[ -d /home/deck ]] && return 0
@@ -58,8 +57,79 @@ is_steam_deck() {
   return 1
 }
 
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
+ensure_flatpak() {
+  require_cmd flatpak
+  if ! flatpak remote-list --columns=name | grep -qx flathub; then
+    info "Adding Flathub remote..."
+    flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+  fi
+  ok "Flatpak ready"
+}
+
+download_latest_flatpak() {
+  require_cmd curl
+  require_cmd python3
+
+  local api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/${VERSION}"
+  info "Fetching release info from ${GITHUB_REPO} (${VERSION})..."
+
+  local release_json
+  release_json="$(curl -fsSL -H "Accept: application/vnd.github+json" "$api_url")" \
+    || fail "Could not fetch release info. Set NEXUSDECK_FLATPAK_PATH to install from a local file."
+
+  local asset_url asset_name
+  asset_url="$(python3 - <<'PY' "$release_json"
+import json, sys
+data = json.loads(sys.argv[1])
+for asset in data.get("assets", []):
+    name = asset.get("name", "")
+    if name.endswith(".flatpak") and "nexusdeck" in name.lower():
+        print(asset["browser_download_url"])
+        break
+PY
+)" || true
+
+  [[ -n "$asset_url" ]] || fail "No Flatpak bundle found in release. Wait for CI to finish or set NEXUSDECK_FLATPAK_PATH."
+
+  asset_name="$(basename "$asset_url")"
+  local tmp_file
+  tmp_file="$(mktemp --suffix=.flatpak)"
+  info "Downloading ${asset_name}..."
+  curl -fL --progress-bar "$asset_url" -o "$tmp_file"
+  ok "Downloaded ${asset_name}"
+  echo "$tmp_file"
+}
+
+install_flatpak() {
+  local bundle_path="$1"
+  [[ -f "$bundle_path" ]] || fail "Flatpak bundle not found: $bundle_path"
+
+  info "Installing ${APP_ID}..."
+  flatpak install -y --user "$bundle_path"
+  ok "Installed ${APP_ID}"
+
+  if [[ "$bundle_path" == /tmp/* ]]; then
+    rm -f "$bundle_path"
+  fi
+}
+
+register_nxm_handler() {
+  if command -v xdg-mime >/dev/null 2>&1; then
+    xdg-mime default com.nexusdeck.app.desktop x-scheme-handler/nxm || true
+    ok "Registered nxm:// link handler"
+  else
+    warn "xdg-mime not found — nxm:// links may need manual setup"
+  fi
+}
+
+remove_legacy_appimage() {
+  if [[ -d "$LEGACY_INSTALL_DIR" ]]; then
+    warn "Removing legacy AppImage install at ${LEGACY_INSTALL_DIR}..."
+    rm -rf "$LEGACY_INSTALL_DIR"
+    rm -f "${HOME}/.local/bin/nexusdeck"
+    rm -f "${HOME}/.local/share/applications/nexusdeck.desktop"
+    ok "Removed legacy AppImage files"
+  fi
 }
 
 find_steam_path() {
@@ -176,100 +246,10 @@ EOF
   ok "Added \"${display_name}\" to Steam library"
 }
 
-download_latest_appimage() {
-  require_cmd curl
-  require_cmd python3
-
-  local api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/${VERSION}"
-  info "Fetching release info from ${GITHUB_REPO} (${VERSION})..."
-
-  local release_json
-  release_json="$(curl -fsSL -H "Accept: application/vnd.github+json" "$api_url")" \
-    || fail "Could not fetch release info. Set NEXUSDECK_APPIMAGE_PATH to install from a local file."
-
-  local asset_url asset_name
-  asset_url="$(python3 - <<'PY' "$release_json"
-import json, sys
-data = json.loads(sys.argv[1])
-for asset in data.get("assets", []):
-    name = asset.get("name", "")
-    if name.endswith(".AppImage") and "nexusdeck" in name.lower():
-        print(asset["browser_download_url"])
-        break
-PY
-)" || true
-
-  if [[ -z "$asset_url" ]]; then
-    asset_url="$(python3 - <<'PY' "$release_json"
-import json, sys
-data = json.loads(sys.argv[1])
-for asset in data.get("assets", []):
-    if asset.get("name", "").endswith(".AppImage"):
-        print(asset["browser_download_url"])
-        break
-PY
-)"
-  fi
-
-  [[ -n "$asset_url" ]] || fail "No AppImage found in release. Build one locally or set NEXUSDECK_APPIMAGE_PATH."
-
-  asset_name="$(basename "$asset_url")"
-  info "Downloading ${asset_name}..."
-  mkdir -p "$INSTALL_DIR"
-  curl -fL --progress-bar "$asset_url" -o "${INSTALL_DIR}/${asset_name}"
-  mv -f "${INSTALL_DIR}/${asset_name}" "$APPIMAGE_PATH"
-  ok "Downloaded to ${APPIMAGE_PATH}"
-}
-
-install_appimage() {
-  if [[ -n "${NEXUSDECK_APPIMAGE_PATH:-}" ]]; then
-    [[ -f "$NEXUSDECK_APPIMAGE_PATH" ]] || fail "Local AppImage not found: $NEXUSDECK_APPIMAGE_PATH"
-    mkdir -p "$INSTALL_DIR"
-    cp -f "$NEXUSDECK_APPIMAGE_PATH" "$APPIMAGE_PATH"
-    ok "Installed from ${NEXUSDECK_APPIMAGE_PATH}"
-  else
-    download_latest_appimage
-  fi
-
-  chmod +x "$APPIMAGE_PATH"
-}
-
-create_launcher() {
-  cat >"$LAUNCHER_PATH" <<EOF
-#!/usr/bin/env bash
-# SteamOS WebKit workarounds for Ubuntu-built AppImages
-export WEBKIT_DISABLE_DMABUF_RENDERER=1
-export WEBKIT_DISABLE_COMPOSITING_MODE=1
-export GDK_BACKEND=x11
-export WINIT_UNIX_BACKEND=x11
-export APPIMAGE_EXTRACT_AND_RUN=1
-exec "${APPIMAGE_PATH}" "\$@"
-EOF
-  chmod +x "$LAUNCHER_PATH"
-}
-
-create_desktop_entry() {
-  mkdir -p "$DESKTOP_DIR" "$BIN_DIR"
-  local desktop_file="${DESKTOP_DIR}/nexusdeck.desktop"
-  cat >"$desktop_file" <<EOF
-[Desktop Entry]
-Name=${APP_NAME}
-Comment=Lightweight Nexus Mods client for Steam Deck
-Exec=${LAUNCHER_PATH}
-Icon=${APPIMAGE_PATH}
-Terminal=false
-Type=Application
-Categories=Game;Utility;
-StartupWMClass=nexusdeck
-EOF
-  ln -sf "$LAUNCHER_PATH" "${BIN_DIR}/nexusdeck"
-  ok "Created desktop entry and ~/.local/bin/nexusdeck symlink"
-}
-
 print_header() {
   echo
   echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
-  echo -e "${BOLD}║       NexusDeck Steam Deck Setup     ║${NC}"
+  echo -e "${BOLD}║   NexusDeck Flatpak Setup (SteamOS)  ║${NC}"
   echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
   echo
 }
@@ -280,32 +260,43 @@ main() {
   if is_steam_deck; then
     ok "Steam Deck / SteamOS detected"
   else
-    warn "Steam Deck not detected — installer will still work on other Linux systems"
+    warn "Steam Deck not detected — Flatpak install still works on other Linux systems"
   fi
 
   require_cmd python3
+  ensure_flatpak
 
   echo
   info "This installer will:"
-  echo "  1. Download (or copy) the NexusDeck AppImage"
-  echo "  2. Install to ${INSTALL_DIR}"
-  echo "  3. Create a desktop launcher"
-  echo "  4. Optionally add NexusDeck to your Steam library"
-  echo "  5. Launch NexusDeck for first-time setup"
+  echo "  1. Download (or copy) the NexusDeck Flatpak bundle"
+  echo "  2. Install ${APP_ID} for your user"
+  echo "  3. Register nxm:// mod links"
+  echo "  4. Remove any legacy AppImage install"
+  echo "  5. Optionally add NexusDeck to your Steam library"
+  echo "  6. Launch NexusDeck for first-time setup"
   echo
 
   prompt_yes_no "Continue with installation?" y || exit 0
 
-  install_appimage
-  create_launcher
-  create_desktop_entry
+  local bundle_path=""
+  if [[ -n "${NEXUSDECK_FLATPAK_PATH:-}" ]]; then
+    [[ -f "$NEXUSDECK_FLATPAK_PATH" ]] || fail "Local Flatpak not found: $NEXUSDECK_FLATPAK_PATH"
+    bundle_path="$NEXUSDECK_FLATPAK_PATH"
+    ok "Using local bundle: ${bundle_path}"
+  else
+    bundle_path="$(download_latest_flatpak)"
+  fi
+
+  install_flatpak "$bundle_path"
+  register_nxm_handler
+  remove_legacy_appimage
 
   local steam_path=""
   if [[ "${NEXUSDECK_NO_STEAM:-0}" != "1" ]] && steam_path="$(find_steam_path)"; then
     ok "Steam found at ${steam_path}"
     echo
     if prompt_yes_no "Add NexusDeck to Steam library for Gaming Mode?" y; then
-      add_to_steam_shortcuts "$steam_path" "$APP_NAME" "$LAUNCHER_PATH" "$INSTALL_DIR"
+      add_to_steam_shortcuts "$steam_path" "$APP_NAME" "$FLATPAK_CMD" "$HOME"
       warn "Restart Steam for the shortcut to appear"
     fi
   else
@@ -315,17 +306,23 @@ main() {
   echo
   ok "Installation complete!"
   echo
+  echo -e "${BOLD}Launch:${NC} ${FLATPAK_CMD}"
+  echo
   echo -e "${BOLD}Next steps:${NC}"
-  echo "  1. Launch NexusDeck (Desktop shortcut or: nexusdeck)"
+  echo "  1. Launch NexusDeck (command above or Steam shortcut)"
   echo "  2. Enter your Nexus Mods API key"
   echo "  3. Run the Fallout 4 setup wizard"
   echo
   echo "  API key: https://www.nexusmods.com/users/myaccount?tab=api+access"
   echo
+  echo -e "${BOLD}To uninstall later:${NC}"
+  echo "  curl -fsSL https://github.com/${GITHUB_REPO}/releases/latest/download/u.sh | bash"
+  echo "  (Steam's Uninstall button does not work for non-Steam shortcuts.)"
+  echo
 
   if prompt_yes_no "Launch NexusDeck now for setup?" y; then
     info "Starting NexusDeck..."
-    nohup "$LAUNCHER_PATH" >/dev/null 2>&1 &
+    nohup $FLATPAK_CMD >/dev/null 2>&1 &
     ok "NexusDeck launched — complete the in-app setup wizard"
   fi
 }
