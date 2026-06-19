@@ -8,11 +8,14 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-[var(--color-primary)] text-white shadow-[var(--shadow-sm)] hover:bg-[var(--color-primary-hover)]",
-        secondary: "bg-[var(--color-secondary)] text-[var(--color-foreground)] hover:bg-[var(--color-card-hover)]",
-        outline: "border-2 border-[var(--color-border)] bg-transparent hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-card)]",
+        default:
+          "bg-[var(--color-primary)] bg-[image:var(--gradient-primary)] text-white shadow-[var(--shadow-glow)] hover:brightness-110",
+        secondary:
+          "bg-[var(--color-secondary)] text-[var(--color-foreground)] shadow-[var(--shadow-sm)] hover:bg-[var(--color-card-hover)]",
+        outline:
+          "border-2 border-[var(--color-border-strong)] bg-transparent hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-card)]",
         ghost: "hover:bg-[var(--color-card)]",
-        danger: "bg-[var(--color-danger)] text-white hover:opacity-90",
+        danger: "bg-[var(--color-danger)] text-white shadow-[var(--shadow-sm)] hover:brightness-110",
       },
       size: {
         default: "h-12 px-6",

@@ -1,28 +1,48 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #0a0a0f;
-  --color-foreground: #f0f0f5;
-  --color-card: #12121a;
-  --color-card-hover: #1a1a26;
-  --color-surface-1: #12121a;
-  --color-surface-2: #1a1a26;
+  /* Layered dark surfaces with a subtle cool tint for depth */
+  --color-background: #0a0b10;
+  --color-foreground: #f2f3f8;
+  --color-card: #15161f;
+  --color-card-hover: #1d1f2b;
+  --color-surface-1: #15161f;
+  --color-surface-2: #1d1f2b;
+  --color-surface-3: #262a39;
+
+  /* Brand: warm orange primary + cool accent for contrast */
   --color-primary: #ff6b2b;
   --color-primary-hover: #ff8552;
-  --color-secondary: #2a2a3a;
-  --color-muted: #8888a0;
-  --color-border: #2a2a3a;
+  --color-primary-strong: #ff5a1f;
+  --color-accent: #7c8cff;
+
+  --color-secondary: #262a39;
+  --color-muted: #9499b0;
+  --color-border: #2a2e3d;
+  --color-border-strong: #3a3f52;
   --color-focus: #ff6b2b;
   --color-success: #4ade80;
   --color-warning: #fbbf24;
   --color-danger: #f87171;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
+
   --font-size-base: 18px;
   --spacing-page: 1.5rem;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.55);
+
+  /* Layered shadows for genuine elevation */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 1px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 6px 18px -4px rgba(0, 0, 0, 0.55), 0 2px 6px -2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 18px 44px -10px rgba(0, 0, 0, 0.65), 0 6px 14px -6px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 6px 22px -6px rgba(255, 107, 43, 0.55);
+  --shadow-focus: 0 0 0 4px rgba(255, 107, 43, 0.28);
+
+  /* Reusable gradients */
+  --gradient-primary: linear-gradient(135deg, #ff7c3f 0%, #ff5a1f 100%);
+  --gradient-surface: linear-gradient(180deg, #181a24 0%, #111219 100%);
 }
 
 * {
@@ -32,11 +52,20 @@
 html, body, #root {
   height: 100%;
   margin: 0;
-  background: var(--color-background);
   color: var(--color-foreground);
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: "Segoe UI", "Inter", system-ui, -apple-system, sans-serif;
   font-size: var(--font-size-base);
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background:
+    radial-gradient(ellipse 90% 60% at 50% -10%, rgba(255, 107, 43, 0.08) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 50% at 100% 0%, rgba(124, 140, 255, 0.06) 0%, transparent 50%),
+    var(--color-background);
+  background-attachment: fixed;
 }
 
 :focus-visible {
@@ -46,9 +75,9 @@ html, body, #root {
 
 [data-focusable="true"]:focus-visible,
 .focusable:focus-visible {
-  outline: 3px solid var(--color-focus);
-  outline-offset: 3px;
-  box-shadow: 0 0 0 6px rgba(255, 107, 43, 0.25);
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -60,11 +89,18 @@ html, body, #root {
 }
 
 .scrollbar-thin::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
+  height: 10px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: var(--color-secondary);
-  border-radius: 4px;
+  background: var(--color-border-strong);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-primary) 45%, var(--color-border-strong));
+  background-clip: padding-box;
 }
 
 .mod-description {
@@ -140,17 +176,17 @@ html, body, #root {
 .surface-card {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
-  background: var(--color-card);
+  background: var(--gradient-surface);
   box-shadow: var(--shadow-sm);
 }
 
 .surface-card-interactive {
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
 .surface-card-interactive:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
-  box-shadow: var(--shadow-md);
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
+  box-shadow: var(--shadow-lg);
 }
 
 @media (prefers-reduced-motion: no-preference) {

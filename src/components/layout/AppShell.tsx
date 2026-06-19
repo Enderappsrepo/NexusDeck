@@ -21,14 +21,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full flex-col">
       <GameRunningBanner />
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-6">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[image:var(--gradient-surface)] px-6">
         <div className="flex min-w-0 items-center gap-2">
           <BackButton />
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary)] font-bold text-white">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[image:var(--gradient-primary)] font-bold text-white shadow-[var(--shadow-glow)]">
               ND
             </div>
-            <span className="truncate text-2xl font-bold">NexusDeck</span>
+            <span className="truncate text-2xl font-bold tracking-tight">
+              Nexus<span className="text-[var(--color-primary)]">Deck</span>
+            </span>
           </div>
         </div>
         <div className="hidden items-center gap-3 text-xs text-[var(--color-muted)] xl:flex 2xl:gap-4 2xl:text-sm">
@@ -40,7 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <nav className="flex w-20 shrink-0 flex-col items-center gap-2 border-r border-[var(--color-border)] py-4 md:w-56 md:items-stretch md:px-3">
+        <nav className="flex w-20 shrink-0 flex-col items-center gap-1.5 border-r border-[var(--color-border)] bg-[var(--color-surface-1)]/40 py-4 md:w-56 md:items-stretch md:px-3">
           {navItems.map(({ to, label, icon: Icon }) => {
             const active = pathname === to || (to !== "/" && pathname.startsWith(to));
             return (
@@ -48,14 +50,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={to}
                 to={to}
                 className={cn(
-                  "focusable flex min-h-[56px] items-center justify-center gap-3 rounded-xl px-4 py-3 font-medium transition-colors md:justify-start",
+                  "focusable flex min-h-[56px] items-center justify-center gap-3 rounded-xl px-4 py-3 font-medium transition-all md:justify-start",
                   active
-                    ? "bg-[var(--color-primary)]/15 text-[var(--color-primary)]"
+                    ? "bg-[var(--color-primary)]/12 text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-primary)]/30"
                     : "text-[var(--color-muted)] hover:bg-[var(--color-card)] hover:text-[var(--color-foreground)]"
                 )}
                 data-focusable="true"
               >
-                <Icon className="h-6 w-6 shrink-0" />
+                <Icon className={cn("h-6 w-6 shrink-0", active && "drop-shadow-[0_0_8px_rgba(255,107,43,0.6)]")} />
                 <span className="hidden md:inline">{label}</span>
               </Link>
             );

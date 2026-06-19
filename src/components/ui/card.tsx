@@ -10,7 +10,7 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(
     <div
       ref={ref}
       className={cn(
-        "rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] text-[var(--color-foreground)] shadow-[var(--shadow-sm)]",
+        "rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] text-[var(--color-foreground)] shadow-[var(--shadow-sm)]",
         interactive && "surface-card-interactive",
         className
       )}
