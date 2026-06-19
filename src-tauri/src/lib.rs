@@ -96,10 +96,8 @@ pub fn run() {
             process_monitor.set_app_handle(app.handle().clone());
             process_monitor.start_polling();
 
-            if let Ok(entry) = keyring::Entry::new("com.nexusdeck.app", "nexus_api_key") {
-                if let Ok(key) = entry.get_password() {
-                    nexus_client.set_api_key(Some(key));
-                }
+            if let Ok(Some(key)) = crate::services::credentials::retrieve_api_key() {
+                nexus_client.set_api_key(Some(key));
             }
 
             let app_handle = app.handle().clone();

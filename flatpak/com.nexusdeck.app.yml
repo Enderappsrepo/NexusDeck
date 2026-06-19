@@ -20,8 +20,10 @@ finish-args:
   - --filesystem=~/.steam
   - --filesystem=~/.local/share/Steam
   - --filesystem=/run/media:ro
-  # Keyring + notifications
+  # Keyring + secret portal + notifications
   - --talk-name=org.freedesktop.secrets
+  - --talk-name=org.freedesktop.impl.portal.Secret
+  - --talk-name=org.freedesktop.portal.Desktop
   - --talk-name=org.freedesktop.Notifications
   # Tauri single-instance plugin (com.nexusdeck.app → org.com_nexusdeck_app)
   - --talk-name=org.com_nexusdeck_app.SingleInstance

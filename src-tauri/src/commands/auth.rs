@@ -1,41 +1,10 @@
 use std::sync::Arc;
 
-use keyring::Entry;
 use tauri::State;
 
-use crate::error::{NexusDeckError, Result};
+use crate::error::Result;
+use crate::services::credentials::{delete_api_key, retrieve_api_key, store_api_key};
 use crate::services::nexus_client::{NexusClient, NexusUser};
-
-const SERVICE: &str = "com.nexusdeck.app";
-const ACCOUNT: &str = "nexus_api_key";
-
-fn store_api_key(key: &str) -> Result<()> {
-    let entry = Entry::new(SERVICE, ACCOUNT)
-        .map_err(|e| NexusDeckError::Keyring(e.to_string()))?;
-    entry
-        .set_password(key)
-        .map_err(|e| NexusDeckError::Keyring(e.to_string()))?;
-    Ok(())
-}
-
-fn retrieve_api_key() -> Result<Option<String>> {
-    let entry = Entry::new(SERVICE, ACCOUNT)
-        .map_err(|e| NexusDeckError::Keyring(e.to_string()))?;
-    match entry.get_password() {
-        Ok(key) => Ok(Some(key)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(NexusDeckError::Keyring(e.to_string())),
-    }
-}
-
-fn delete_api_key() -> Result<()> {
-    let entry = Entry::new(SERVICE, ACCOUNT)
-        .map_err(|e| NexusDeckError::Keyring(e.to_string()))?;
-    match entry.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(NexusDeckError::Keyring(e.to_string())),
-    }
-}
 
 #[tauri::command]
 pub async fn validate_and_store_api_key(

@@ -1,4 +1,5 @@
 pub mod archive_options;
+pub mod credentials;
 pub mod paths;
 pub mod platform;
 pub mod startup_log;
