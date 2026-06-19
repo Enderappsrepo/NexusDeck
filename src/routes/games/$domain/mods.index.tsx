@@ -222,7 +222,7 @@ function ModBrowserPage() {
 
       {/* Sticky toolbar */}
       <div className="mods-toolbar">
-        <div className="flex flex-col gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-[var(--shadow-sm)] sm:p-5">
+        <div className="flex flex-col gap-4 rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-4 shadow-[var(--shadow-md)] sm:p-5">
           <div className="flex flex-wrap items-end gap-3">
             <ModSearchBar
               value={query}
@@ -235,7 +235,7 @@ function ModBrowserPage() {
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value)}
-              className="focusable h-14 rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-secondary)] px-4 text-base"
+              className="focusable h-14 rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-surface-1)] px-4 text-base transition-colors focus-visible:border-[var(--color-primary)] focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none"
               data-focusable="true"
               aria-label="Sort mods by"
             >

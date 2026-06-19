@@ -111,7 +111,12 @@ function LibraryPage() {
         <LaunchButton profileId={profile.id} gameDomain={domain} compact className="w-full sm:w-auto" />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-3xl font-bold tracking-tight">Installed Mods</h1>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Installed Mods</h1>
+          <p className="mt-1 text-sm text-[var(--color-muted)]">
+            {mods.length} installed · {mods.filter((m) => m.enabled).length} enabled
+          </p>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button
             variant={compareMode ? "default" : "outline"}

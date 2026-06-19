@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useLaunchStore } from "@/stores/launchStore";
@@ -77,7 +78,12 @@ function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-3xl font-bold">Settings</h1>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+        <p className="mt-1 text-[var(--color-muted)]">
+          Account, downloads, launch behavior, and diagnostics.
+        </p>
+      </div>
 
       <Card>
         <CardHeader>
@@ -103,27 +109,23 @@ function SettingsPage() {
         <CardContent className="space-y-4">
           <label className="block space-y-2">
             <span className="text-sm text-[var(--color-muted)]">Max concurrent downloads</span>
-            <input
+            <Input
               type="number"
               min={1}
               max={8}
               value={maxConcurrent}
               onChange={(e) => setMaxConcurrent(Number(e.target.value))}
-              className="focusable h-12 w-full rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-secondary)] px-3"
-              data-focusable="true"
             />
           </label>
           <label className="block space-y-2">
             <span className="text-sm text-[var(--color-muted)]">
               Speed limit (KB/s, 0 = unlimited)
             </span>
-            <input
+            <Input
               type="number"
               min={0}
               value={speedLimit}
               onChange={(e) => setSpeedLimit(Number(e.target.value))}
-              className="focusable h-12 w-full rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-secondary)] px-3"
-              data-focusable="true"
             />
           </label>
           <Button onClick={saveDownloadSettings} disabled={settingsLoading}>
@@ -137,20 +139,15 @@ function SettingsPage() {
           <CardTitle>Steam Deck</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <label className="flex min-h-[48px] cursor-pointer items-center gap-3">
-            <input
-              type="checkbox"
-              checked={batteryMode}
-              onChange={(e) => setBatteryMode(e.target.checked)}
-              className="h-5 w-5"
-            />
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="font-medium">Battery mode</p>
+              <Label>Battery mode</Label>
               <p className="text-sm text-[var(--color-muted)]">
                 Prefer lighter downloads and disable heavy visual mods on battery.
               </p>
             </div>
-          </label>
+            <Switch checked={batteryMode} onCheckedChange={setBatteryMode} />
+          </div>
           <div className="rounded-xl bg-[var(--color-secondary)] p-4 text-sm text-[var(--color-muted)]">
             <p className="font-medium text-[var(--color-foreground)]">Gamepad shortcuts</p>
             <ul className="mt-2 space-y-1">

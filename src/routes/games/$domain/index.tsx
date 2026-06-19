@@ -252,7 +252,7 @@ function GameDashboard() {
       </section>
 
       {/* Mod search */}
-      <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 sm:p-6">
+      <section className="rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-5 shadow-[var(--shadow-sm)] sm:p-6">
         <div className="mb-4">
           <h2 className="text-xl font-bold">Search mods</h2>
           <p className="mt-1 text-sm text-[var(--color-muted)]">
