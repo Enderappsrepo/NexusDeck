@@ -45,6 +45,14 @@ function OnboardingPage() {
 
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-6 py-8">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[image:var(--gradient-primary)] text-2xl font-bold text-white shadow-[var(--shadow-glow)]">
+          ND
+        </div>
+        <span className="text-3xl font-bold tracking-tight">
+          Nexus<span className="text-[var(--color-primary)]">Deck</span>
+        </span>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle className="text-3xl">
