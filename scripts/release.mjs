@@ -60,8 +60,20 @@ if (dirty) {
 
 run(`node scripts/sync-version.mjs ${version}`);
 run("git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml");
-run(`git commit -m "chore(release): ${tag}"`);
-run(`git tag -a ${tag} -m "Release ${tag}"`);
+const staged = runCapture("git diff --cached --name-only");
+if (staged) {
+  run(`git commit -m "chore(release): ${tag}"`);
+} else {
+  console.log("> version files already at target — skipping commit");
+}
+
+try {
+  runCapture(`git rev-parse ${tag}`);
+  console.error(`Tag ${tag} already exists. Delete it first or pick a new version.`);
+  process.exit(1);
+} catch {
+  run(`git tag -a ${tag} -m "Release ${tag}"`);
+}
 
 console.log(`\nPushing ${tag} to origin (triggers Release workflow)...`);
 run("git push origin HEAD");
