@@ -24,4 +24,3 @@ pub mod script_extender;
 pub mod steam_shortcut;
 
 pub use archive_options::MergeOptions;
-pub use paths::*;

@@ -477,30 +477,6 @@ fn extract_rar(archive_path: &Path, dest: &Path) -> Result<Vec<String>> {
     Ok(extracted)
 }
 
-pub fn copy_file_or_dir(src: &Path, dest: &Path) -> Result<()> {
-    if src.is_dir() {
-        std::fs::create_dir_all(dest)?;
-        for entry in WalkDir::new(src).into_iter().filter_map(|e| e.ok()) {
-            let rel = entry.path().strip_prefix(src).unwrap();
-            let target = dest.join(rel);
-            if entry.file_type().is_dir() {
-                std::fs::create_dir_all(&target)?;
-            } else if entry.file_type().is_file() {
-                if let Some(parent) = target.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-                std::fs::copy(entry.path(), &target)?;
-            }
-        }
-    } else {
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::copy(src, dest)?;
-    }
-    Ok(())
-}
-
 use crate::services::archive_options::MergeOptions;
 
 pub fn merge_directory(

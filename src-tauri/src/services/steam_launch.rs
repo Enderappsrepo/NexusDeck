@@ -7,12 +7,6 @@ use crate::error::{NexusDeckError, Result};
 use crate::services::steam::detect_steam;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SteamInstallKind {
-    Native,
-    Flatpak,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SteamLaunchInfo {
     pub kind: String,
     pub steam_path: String,

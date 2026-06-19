@@ -13,9 +13,9 @@ use crate::services::MergeOptions;
 use crate::services::steam::GameCandidate;
 use crate::db::Profile;
 
-pub use creation_engine::{CreationEngineConfig, CreationEnginePlugin};
+pub use creation_engine::CreationEnginePlugin;
 pub use fallout4::Fallout4Plugin;
-pub use script_extender_meta::{install_info as script_extender_install_info, ScriptExtenderInstallInfo, ScriptExtenderMeta};
+pub use script_extender_meta::{install_info as script_extender_install_info, ScriptExtenderInstallInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LaunchTarget {

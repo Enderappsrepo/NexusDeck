@@ -1,7 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use walkdir::WalkDir;
-
 use crate::db::Profile;
 use crate::error::{NexusDeckError, Result};
 use crate::games::{
@@ -226,133 +224,6 @@ impl GamePlugin for Fallout4Plugin {
 }
 
 impl Fallout4Plugin {
-    pub fn install_f4se(game_root: &Path, configure_steam_launcher: bool) -> Result<ScriptExtenderStatus> {
-        const F4SE_URL: &str = "https://f4se.silverlock.org/beta/f4se_0_06_23.7z";
-
-        let temp_dir = std::env::temp_dir().join(format!("nexusdeck-f4se-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&temp_dir)?;
-        let archive_path = temp_dir.join("f4se.7z");
-
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
-            .build()
-            .map_err(|e| NexusDeckError::Other(e.to_string()))?;
-
-        let response = client
-            .get(F4SE_URL)
-            .send()
-            .map_err(|e| NexusDeckError::Other(format!("F4SE download failed: {e}")))?;
-
-        if !response.status().is_success() {
-            return Err(NexusDeckError::Other(format!(
-                "F4SE download failed: HTTP {}. Download the archive from f4se.silverlock.org and use Install from file.",
-                response.status()
-            )));
-        }
-
-        let bytes = response
-            .bytes()
-            .map_err(|e| NexusDeckError::Other(e.to_string()))?;
-        std::fs::write(&archive_path, &bytes)?;
-
-        let result = Self::install_f4se_from_archive(game_root, &archive_path, configure_steam_launcher);
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        result
-    }
-
-    pub fn install_f4se_from_archive(
-        game_root: &Path,
-        archive_path: &Path,
-        configure_steam_launcher: bool,
-    ) -> Result<ScriptExtenderStatus> {
-        if !archive_path.exists() {
-            return Err(NexusDeckError::NotFound(format!(
-                "Archive not found: {}",
-                archive_path.display()
-            )));
-        }
-
-        let temp_dir = std::env::temp_dir().join(format!("nexusdeck-f4se-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&temp_dir)?;
-        let extract_dir = temp_dir.join("extract");
-
-        crate::services::archive::extract_archive(archive_path, &extract_dir)?;
-        let f4se_root = Self::resolve_f4se_extract_root(&extract_dir)?;
-
-        merge_directory(
-            &f4se_root,
-            game_root,
-            MergeOptions {
-                overwrite: true,
-                dry_run: false,
-            },
-        )?;
-
-        if configure_steam_launcher {
-            Self::configure_steam_launcher(game_root)?;
-        }
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        Ok(Fallout4Plugin::detect_f4se_status(game_root))
-    }
-
-    fn resolve_f4se_extract_root(extract_dir: &Path) -> Result<PathBuf> {
-        if extract_dir.join("f4se_loader.exe").exists() {
-            return Ok(extract_dir.to_path_buf());
-        }
-
-        for entry in WalkDir::new(extract_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-        {
-            if entry
-                .file_name()
-                .to_string_lossy()
-                .eq_ignore_ascii_case("f4se_loader.exe")
-            {
-                return Ok(entry.path().parent().unwrap().to_path_buf());
-            }
-        }
-
-        let top_level: Vec<_> = std::fs::read_dir(extract_dir)?
-            .filter_map(|e| e.ok())
-            .collect();
-        if top_level.len() == 1 && top_level[0].path().is_dir() {
-            let sub = top_level[0].path();
-            if sub.join("f4se_loader.exe").exists() {
-                return Ok(sub);
-            }
-        }
-
-        Err(NexusDeckError::Other(
-            "Could not find f4se_loader.exe in the archive. Download F4SE from f4se.silverlock.org for your game version.".into(),
-        ))
-    }
-
-    fn configure_steam_launcher(game_root: &Path) -> Result<()> {
-        let launcher = game_root.join("Fallout4Launcher.exe");
-        let loader = game_root.join("f4se_loader.exe");
-        let backup = game_root.join("Fallout4Launcher.exe.nexusdeck_backup");
-
-        if !loader.exists() {
-            return Err(NexusDeckError::Other(
-                "f4se_loader.exe not found after install".into(),
-            ));
-        }
-
-        if launcher.exists() && !backup.exists() {
-            std::fs::rename(&launcher, &backup)?;
-        }
-
-        if launcher.exists() {
-            std::fs::remove_file(&launcher)?;
-        }
-
-        std::fs::copy(&loader, &launcher)?;
-        Ok(())
-    }
-
     pub fn resolve_plugins_txt_path(profile: &Profile) -> Option<PathBuf> {
         if cfg!(target_os = "windows") {
             dirs::data_local_dir().map(|p| p.join("Fallout4").join("plugins.txt"))
@@ -383,37 +254,6 @@ impl Fallout4Plugin {
             )
         } else {
             None
-        }
-    }
-
-    pub fn detect_f4se_status(game_root: &Path) -> ScriptExtenderStatus {
-        let loader = game_root.join("f4se_loader.exe");
-        let dll = std::fs::read_dir(game_root)
-            .ok()
-            .into_iter()
-            .flatten()
-            .filter_map(|e| e.ok())
-            .any(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .starts_with("f4se_")
-                    && e.path().extension().is_some_and(|ext| ext == "dll")
-            });
-
-        if loader.exists() || dll {
-            ScriptExtenderStatus {
-                installed: true,
-                version: Some("F4SE installed".to_string()),
-                loader_path: Some(loader.display().to_string()),
-                message: "F4SE is installed and ready.".to_string(),
-            }
-        } else {
-            ScriptExtenderStatus {
-                installed: false,
-                version: None,
-                loader_path: None,
-                message: "F4SE not detected.".to_string(),
-            }
         }
     }
 }

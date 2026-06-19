@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use crate::db::{self, InstalledMod};
+use crate::db;
 use crate::error::{NexusDeckError, Result};
 use crate::services::download_manager::DownloadManager;
 use crate::services::nexus_client::NexusClient;
@@ -100,22 +100,3 @@ pub async fn update_mod_safe(
     Ok(())
 }
 
-pub fn list_outdated_mods(installed: &[InstalledMod], latest_versions: &[(u64, String)]) -> Vec<String> {
-    let lookup: std::collections::HashMap<u64, &str> = latest_versions
-        .iter()
-        .map(|(id, v)| (*id, v.as_str()))
-        .collect();
-
-    installed
-        .iter()
-        .filter_map(|m| {
-            lookup.get(&(m.nexus_mod_id as u64)).and_then(|latest| {
-                if m.version.as_deref() != Some(*latest) {
-                    Some(m.id.clone())
-                } else {
-                    None
-                }
-            })
-        })
-        .collect()
-}

@@ -8,7 +8,7 @@ use sysinfo::{Pid, System};
 use tauri::{async_runtime::spawn, AppHandle, Emitter};
 
 use crate::db;
-use crate::error::{NexusDeckError, Result};
+use crate::error::Result;
 use crate::games::GameRegistry;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,35 +241,4 @@ impl Default for ProcessMonitor {
     fn default() -> Self {
         Self::new()
     }
-}
-
-pub fn find_running_pids(process_names: &[String]) -> Vec<u32> {
-    let mut system = System::new_all();
-    system.refresh_all();
-    system
-        .processes()
-        .iter()
-        .filter_map(|(pid, process)| {
-            let name = process.name().to_string_lossy().to_lowercase();
-            if process_names.iter().any(|n| name == n.to_lowercase()) {
-                Some(pid.as_u32())
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-pub fn ensure_not_running(profile_id: &str, game_domain: &str) -> Result<()> {
-    let plugin = GameRegistry::get(game_domain)?;
-    let names: Vec<String> = plugin
-        .process_names()
-        .into_iter()
-        .map(|s| s.to_string())
-        .collect();
-    if !find_running_pids(&names).is_empty() {
-        return Err(NexusDeckError::GameAlreadyRunning);
-    }
-    let _ = profile_id;
-    Ok(())
 }

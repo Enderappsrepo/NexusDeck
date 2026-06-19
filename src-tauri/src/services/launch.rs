@@ -111,8 +111,7 @@ pub fn launch_game(
     let mut args: Vec<String> = serde_json::from_str(&config.args_json).unwrap_or_default();
     args.extend(options.extra_args);
 
-    let mut method = String::new();
-    let direct_pid = match config.launch_method.as_str() {
+    let (direct_pid, method) = match config.launch_method.as_str() {
         "direct" | "custom" => {
             let exe = resolve_executable(&profile, &config)?;
             let pid = launch_direct_executable(
@@ -120,23 +119,22 @@ pub fn launch_game(
                 Path::new(&profile.game_path),
                 &args,
             )?;
-            method = "direct".to_string();
-            Some(pid)
+            (Some(pid), "direct".to_string())
         }
         _ => {
             let compat = resolve_compat_path(&profile, app_id);
-            if cfg!(target_os = "windows") {
+            let method = if cfg!(target_os = "windows") {
                 if launch_via_steam_uri(app_id).is_ok() {
-                    method = "steam_uri".to_string();
+                    "steam_uri".to_string()
                 } else {
                     launch_via_steam_cli(app_id, &args, compat.as_deref())?;
-                    method = "steam_cli".to_string();
+                    "steam_cli".to_string()
                 }
             } else {
                 launch_via_steam_cli(app_id, &args, compat.as_deref())?;
-                method = "steam_cli".to_string();
-            }
-            None
+                "steam_cli".to_string()
+            };
+            (None, method)
         }
     };
 
