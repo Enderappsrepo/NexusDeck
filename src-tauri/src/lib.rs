@@ -12,33 +12,53 @@ use tauri_plugin_deep_link::DeepLinkExt;
 use commands::*;
 use services::download_manager::DownloadManager;
 use services::nexus_client::NexusClient;
-use services::platform::is_steam_deck;
 use services::process_monitor::ProcessMonitor;
 
 #[cfg(target_os = "linux")]
-fn set_env_if_unset(key: &str, value: &str) {
-    if std::env::var(key).is_err() {
-        // SAFETY: called once on the main thread before any other threads start.
-        unsafe { std::env::set_var(key, value) };
-    }
+fn force_env(key: &str, value: &str) {
+    // SAFETY: called on the main thread before worker threads or WebKit start.
+    unsafe { std::env::set_var(key, value) };
 }
 
+/// Must run before Tauri/WebKit initialize. Safe to call from `main`.
 #[cfg(target_os = "linux")]
-fn prepare_linux_webview() {
-    // Ubuntu-built AppImages often show a blank WebKit window on SteamOS.
+pub fn prepare_linux_webview() {
+    // Ubuntu CI AppImages often show a blank window on SteamOS until these are set.
+    // Force values even if Steam/Wayland already exported conflicting defaults.
     // https://v2.tauri.app/develop/debug/linux-graphics/
-    set_env_if_unset("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-    set_env_if_unset("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    force_env("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    force_env("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    force_env("GDK_BACKEND", "x11");
+    force_env("WINIT_UNIX_BACKEND", "x11");
+}
 
-    if is_steam_deck() {
-        // Force XWayland on Steam Deck; native Wayland + CI AppImages is a common blank-window cause.
-        set_env_if_unset("GDK_BACKEND", "x11");
-    }
+#[cfg(not(target_os = "linux"))]
+pub fn prepare_linux_webview() {}
+
+#[cfg(target_os = "linux")]
+fn configure_linux_webview(app: &tauri::AppHandle) -> crate::error::Result<()> {
+    use tauri::Manager;
+    use webkit2gtk::prelude::*;
+
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| crate::error::NexusDeckError::Other("main window not found".into()))?;
+
+    window
+        .with_webview(|webview| {
+            let wv = webview.inner();
+            if let Some(settings) = wv.settings() {
+                settings.set_hardware_acceleration_enabled(false);
+                settings.set_enable_webgl(false);
+            }
+        })
+        .map_err(|e| crate::error::NexusDeckError::Other(e.to_string()))?;
+
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(target_os = "linux")]
     prepare_linux_webview();
 
     env_logger::init();
@@ -62,6 +82,9 @@ pub fn run() {
         .manage(process_monitor.clone())
         .setup(move |app| {
             db::init_db()?;
+
+            #[cfg(target_os = "linux")]
+            configure_linux_webview(app.handle())?;
 
             process_monitor.set_app_handle(app.handle().clone());
             process_monitor.start_polling();

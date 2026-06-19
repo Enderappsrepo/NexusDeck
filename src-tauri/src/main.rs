@@ -2,5 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    nexusdeck_lib::prepare_linux_webview();
     nexusdeck_lib::run()
 }

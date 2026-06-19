@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "NexusDeck",
         "width": 1280,
         "height": 800,

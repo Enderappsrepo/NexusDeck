@@ -1,4 +1,4 @@
-import { createRootRoute, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
+import { createRootRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { AppShell } from "@/components/layout/AppShell";
@@ -14,13 +14,6 @@ import { ensureGamepadPolyfill } from "@/lib/gamepadPolyfill";
 import type { DownloadProgress, ModFileInfo, Profile } from "@/lib/nexus/types";
 
 export const Route = createRootRoute({
-  beforeLoad: async ({ location }) => {
-    if (location.pathname === "/onboarding") return;
-    const done = await api.isOnboardingComplete();
-    if (!done) {
-      throw redirect({ to: "/onboarding" });
-    }
-  },
   component: RootLayout,
 });
 
@@ -68,8 +61,28 @@ function RootLayout() {
     loadLaunchSettings();
     api.listDownloads().then(hydrateFromRecords);
     const unsubLaunch = subscribeLaunchEvents();
+    api
+      .isOnboardingComplete()
+      .then((done) => {
+        if (!done && pathname !== "/onboarding") {
+          navigate({ to: "/onboarding" });
+        }
+      })
+      .catch(() => {
+        if (pathname !== "/onboarding") {
+          navigate({ to: "/onboarding" });
+        }
+      });
     return () => unsubLaunch();
-  }, [initialize, loadProfiles, hydrateFromRecords, subscribeLaunchEvents, loadLaunchSettings]);
+  }, [
+    initialize,
+    loadProfiles,
+    hydrateFromRecords,
+    subscribeLaunchEvents,
+    loadLaunchSettings,
+    navigate,
+    pathname,
+  ]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

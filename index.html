@@ -5,10 +5,50 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NexusDeck</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #0a0b10;
+        color: #f2f3f8;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+
+      #boot-fallback {
+        display: flex;
+        min-height: 100%;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 1rem;
+      }
+    </style>
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot-fallback">
+        <div
+          style="
+            width: 2.5rem;
+            height: 2.5rem;
+            border: 2px solid #ff6b2b;
+            border-top-color: transparent;
+            border-radius: 9999px;
+            animation: spin 1s linear infinite;
+          "
+        ></div>
+        <p style="margin: 0; color: #9499b0">Loading NexusDeck…</p>
+      </div>
+    </div>
+    <style>
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
