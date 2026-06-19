@@ -1,8 +1,28 @@
 export function RoutePending() {
   return (
-    <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 py-16">
-      <div className="h-10 w-10 animate-spin rounded-full border-2 border-[var(--color-primary)] border-t-transparent motion-reduce:animate-none" />
-      <p className="text-[var(--color-muted)]">Loading…</p>
+    <div
+      style={{
+        display: "flex",
+        minHeight: "40vh",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "1rem",
+        padding: "4rem 1rem",
+      }}
+    >
+      <div
+        style={{
+          width: "2.5rem",
+          height: "2.5rem",
+          border: "2px solid #ff6b2b",
+          borderTopColor: "transparent",
+          borderRadius: "9999px",
+          animation: "spin 1s linear infinite",
+        }}
+        aria-hidden
+      />
+      <p style={{ margin: 0, color: "#9499b0" }}>Loading…</p>
     </div>
   );
 }

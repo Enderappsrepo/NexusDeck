@@ -13,6 +13,18 @@ import { api } from "@/lib/commands";
 import { ensureGamepadPolyfill } from "@/lib/gamepadPolyfill";
 import type { DownloadProgress, ModFileInfo, Profile } from "@/lib/nexus/types";
 
+function markBootReady() {
+  window.__nexusdeckBootReady?.();
+}
+
+function BootReadyMarker() {
+  useEffect(() => {
+    markBootReady();
+    void api.logStartupEvent("router_rendered");
+  }, []);
+  return null;
+}
+
 export const Route = createRootRoute({
   component: RootLayout,
 });
@@ -150,16 +162,11 @@ function RootLayout() {
   };
 
   return (
-    <div ref={containerRef} className="h-full">
-      {isOnboarding ? (
-        <main className="h-full overflow-auto p-6 scrollbar-thin">
-          <Outlet />
-        </main>
-      ) : (
-        <AppShell>
-          <Outlet />
-        </AppShell>
-      )}
+    <div ref={containerRef} className="flex h-full min-h-screen flex-col">
+      <BootReadyMarker />
+      <AppShell hideNav={isOnboarding}>
+        <Outlet />
+      </AppShell>
       {!isOnboarding && <DownloadQueuePanel />}
 
       {!isOnboarding && (

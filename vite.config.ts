@@ -13,7 +13,8 @@ function removeCrossoriginPlugin(): Plugin {
     transformIndexHtml(html) {
       return html
         .replace(/<script([^>]*?)\scrossorigin(?:="[^"]*")?([^>]*)>/gi, "<script$1$2>")
-        .replace(/<link([^>]*?)\scrossorigin(?:="[^"]*")?([^>]*)>/gi, "<link$1$2>");
+        .replace(/<link([^>]*?)\scrossorigin(?:="[^"]*")?([^>]*)>/gi, "<link$1$2>")
+        .replace(/\scrossorigin(?:="[^"]*")?/gi, "");
     },
   };
 }
@@ -21,7 +22,8 @@ function removeCrossoriginPlugin(): Plugin {
 export default defineConfig(async () => ({
   base: "./",
   plugins: [
-    TanStackRouterVite({ target: "react", autoCodeSplitting: true }),
+    // Lazy route chunks fail silently on some WebKitGTK builds; keep one bundle for Tauri.
+    TanStackRouterVite({ target: "react", autoCodeSplitting: false }),
     react(),
     tailwindcss(),
     removeCrossoriginPlugin(),
@@ -35,6 +37,7 @@ export default defineConfig(async () => ({
     modulePreload: {
       polyfill: false,
     },
+    cssCodeSplit: false,
   },
   clearScreen: false,
   server: {

@@ -7,48 +7,109 @@
     <title>NexusDeck</title>
     <style>
       html,
-      body {
+      body,
+      #root {
         height: 100%;
+        min-height: 100vh;
         margin: 0;
         background: #0a0b10;
         color: #f2f3f8;
         font-family: "Segoe UI", system-ui, sans-serif;
       }
 
-      #boot-fallback {
+      #boot-fallback,
+      #boot-overlay {
         display: flex;
-        min-height: 100%;
+        min-height: 100vh;
         align-items: center;
         justify-content: center;
         flex-direction: column;
         gap: 1rem;
+        text-align: center;
+        padding: 2rem;
       }
-    </style>
-  </head>
 
-  <body>
-    <div id="root">
-      <div id="boot-fallback">
-        <div
-          style="
-            width: 2.5rem;
-            height: 2.5rem;
-            border: 2px solid #ff6b2b;
-            border-top-color: transparent;
-            border-radius: 9999px;
-            animation: spin 1s linear infinite;
-          "
-        ></div>
-        <p style="margin: 0; color: #9499b0">Loading NexusDeck…</p>
-      </div>
-    </div>
-    <style>
+      #boot-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        pointer-events: none;
+      }
+
+      #boot-overlay[data-hidden="true"] {
+        display: none;
+      }
+
+      .boot-spinner {
+        width: 2.5rem;
+        height: 2.5rem;
+        border: 2px solid #ff6b2b;
+        border-top-color: transparent;
+        border-radius: 9999px;
+        animation: spin 1s linear infinite;
+      }
+
+      .boot-status {
+        margin: 0;
+        color: #9499b0;
+        max-width: 32rem;
+        line-height: 1.5;
+      }
+
+      .boot-error {
+        color: #f87171;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
       @keyframes spin {
         to {
           transform: rotate(360deg);
         }
       }
     </style>
+  </head>
+
+  <body>
+    <div id="boot-overlay" aria-live="polite">
+      <div class="boot-spinner"></div>
+      <p id="boot-status" class="boot-status">Loading NexusDeck…</p>
+    </div>
+    <div id="root">
+      <div id="boot-fallback">
+        <div class="boot-spinner"></div>
+        <p class="boot-status">Loading NexusDeck…</p>
+      </div>
+    </div>
+    <script>
+      window.__nexusdeckBootStatus = function (message, isError) {
+        var el = document.getElementById("boot-status");
+        if (el) {
+          el.textContent = message;
+          el.className = isError ? "boot-status boot-error" : "boot-status";
+        }
+      };
+      window.__nexusdeckBootReady = function () {
+        var overlay = document.getElementById("boot-overlay");
+        if (overlay) overlay.setAttribute("data-hidden", "true");
+      };
+      window.addEventListener("error", function (event) {
+        window.__nexusdeckBootStatus(
+          "Startup error: " + (event.message || "unknown"),
+          true
+        );
+      });
+      window.addEventListener("unhandledrejection", function (event) {
+        var reason = event.reason;
+        var message =
+          reason instanceof Error
+            ? reason.message
+            : typeof reason === "string"
+              ? reason
+              : "Unhandled promise rejection";
+        window.__nexusdeckBootStatus("Startup error: " + message, true);
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

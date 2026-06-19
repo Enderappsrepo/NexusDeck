@@ -124,8 +124,11 @@ function OnboardingPage() {
   if (!initialized) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
-        <div className="h-10 w-10 animate-spin rounded-full border-2 border-[var(--color-primary)] border-t-transparent motion-reduce:animate-none" />
-        <p className="text-[var(--color-muted)]">Starting NexusDeck…</p>
+        <div
+          className="h-10 w-10 animate-spin rounded-full border-2 border-[#ff6b2b] border-t-transparent motion-reduce:animate-none"
+          aria-hidden
+        />
+        <p style={{ margin: 0, color: "#9499b0" }}>Starting NexusDeck…</p>
       </div>
     );
   }

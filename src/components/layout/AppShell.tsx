@@ -13,13 +13,19 @@ const navItems = [
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  hideNav = false,
+}: {
+  children: React.ReactNode;
+  hideNav?: boolean;
+}) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const toasts = useLaunchStore((s) => s.toasts);
   const dismissToast = useLaunchStore((s) => s.dismissToast);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-screen flex-col">
       <GameRunningBanner />
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[image:var(--gradient-surface)] px-6">
         <div className="flex min-w-0 items-center gap-2">
@@ -42,6 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <div className="flex min-h-0 flex-1">
+        {!hideNav && (
         <nav className="flex w-20 shrink-0 flex-col items-center gap-1.5 border-r border-[var(--color-border)] bg-[var(--color-surface-1)]/40 py-4 md:w-56 md:items-stretch md:px-3">
           {navItems.map(({ to, label, icon: Icon }) => {
             const active = pathname === to || (to !== "/" && pathname.startsWith(to));
@@ -63,6 +70,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
+        )}
 
         <main className="min-h-0 flex-1 overflow-auto p-6 scrollbar-thin">{children}</main>
       </div>
