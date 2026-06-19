@@ -70,7 +70,7 @@ function CollectionDetailPage() {
 
       {detail && (
         <>
-          <div className="mb-8 flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-6 shadow-[var(--shadow-sm)]">
+          <div className="mb-8 flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-6 shadow-[var(--shadow-md)]">
             <div>
               <h1 className="text-3xl font-bold tracking-tight">{detail.name}</h1>
               <p className="mt-2 text-[var(--color-muted)]">by {detail.author}</p>

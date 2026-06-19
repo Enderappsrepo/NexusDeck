@@ -67,7 +67,7 @@ function ComparePage() {
           <select
             value={selectedA}
             onChange={(e) => setSelectedA(e.target.value)}
-            className="focusable h-12 w-full rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-card)] px-3"
+            className="focusable h-12 w-full rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 transition-colors focus-visible:border-[var(--color-primary)] focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none"
             data-focusable="true"
           >
             <option value="">Select mod...</option>
@@ -83,7 +83,7 @@ function ComparePage() {
           <select
             value={selectedB}
             onChange={(e) => setSelectedB(e.target.value)}
-            className="focusable h-12 w-full rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-card)] px-3"
+            className="focusable h-12 w-full rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 transition-colors focus-visible:border-[var(--color-primary)] focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none"
             data-focusable="true"
           >
             <option value="">Select mod...</option>
