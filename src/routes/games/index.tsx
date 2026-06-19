@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { GameCard } from "@/components/game/GameCard";
 import { api } from "@/lib/commands";
+import { normalizeGameSummaries } from "@/lib/nexus/games";
 import { loadSupportedGames, isSupportedDomain } from "@/lib/games";
 import type { GameSummary, SupportedGameInfo } from "@/lib/nexus/types";
 
@@ -24,7 +25,7 @@ function GamesPage() {
     setLoading(true);
     api
       .listNexusGames(query, 24)
-      .then(setGames)
+      .then((games) => setGames(normalizeGameSummaries(games)))
       .catch(() => setGames([]))
       .finally(() => setLoading(false));
   }, [query]);

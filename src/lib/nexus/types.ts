@@ -470,3 +470,59 @@ export interface SteamShortcutInfo {
   app_id_generated?: number | null;
   created_at: number;
 }
+
+export interface NexusDeckSteamShortcutResult {
+  display_name: string;
+  executable: string;
+  shortcuts_path: string;
+  app_id_generated: number;
+}
+
+export interface PlatformInfo {
+  os: string;
+  is_linux: boolean;
+  is_steam_deck: boolean;
+  is_flatpak: boolean;
+  steamos_version: string | null;
+  app_version: string;
+}
+
+export interface GameSettingOption {
+  value: string;
+  label: string;
+}
+
+export interface GameSettingDefinition {
+  id: string;
+  label: string;
+  description: string;
+  file_kind: string;
+  section: string;
+  key: string;
+  kind: string;
+  category: string;
+  options?: GameSettingOption[] | null;
+}
+
+export interface GameSettingsPreset {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface GameSettingsSchema {
+  config_dir: string;
+  settings: GameSettingDefinition[];
+  presets: GameSettingsPreset[];
+}
+
+export interface GameSettingsValues {
+  config_dir: string;
+  values: Record<string, string>;
+}
+
+export interface ApplyGameSettingsResult {
+  config_dir: string;
+  backup_dir: string;
+  applied: string[];
+}

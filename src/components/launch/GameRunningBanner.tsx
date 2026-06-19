@@ -6,21 +6,18 @@ import { useLaunchStore } from "@/stores/launchStore";
 
 export function GameRunningBanner() {
   const profiles = useGamesStore((s) => s.profiles);
-  const { runningByProfile, refreshRunningState, stopGame } = useLaunchStore();
+  const { runningByProfile, refreshAllRunningStates, stopGame } = useLaunchStore();
 
   useEffect(() => {
-    profiles.forEach((p) => {
-      refreshRunningState(p.id);
-    });
+    const profileIds = profiles.map((p) => p.id);
+    if (profileIds.length === 0) return;
+
+    refreshAllRunningStates(profileIds);
     const interval = setInterval(() => {
-      profiles.forEach((p) => {
-        if (runningByProfile[p.id]?.running) {
-          refreshRunningState(p.id);
-        }
-      });
-    }, 5000);
+      refreshAllRunningStates(profileIds);
+    }, 3000);
     return () => clearInterval(interval);
-  }, [profiles, refreshRunningState, runningByProfile]);
+  }, [profiles, refreshAllRunningStates]);
 
   const active = profiles.find((p) => runningByProfile[p.id]?.running);
   if (!active) return null;

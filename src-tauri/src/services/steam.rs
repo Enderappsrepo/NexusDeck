@@ -41,7 +41,10 @@ pub fn detect_steam() -> Result<Option<SteamInstallInfo>> {
 }
 
 pub fn find_game_by_app_id(app_id: u32) -> Result<Vec<GameCandidate>> {
-    let steam_dir = SteamDir::locate().map_err(|e| NexusDeckError::Other(e.to_string()))?;
+    let steam_dir = match SteamDir::locate() {
+        Err(_) => return Ok(vec![]),
+        Ok(dir) => dir,
+    };
     let mut candidates = Vec::new();
 
     let libraries = steam_dir

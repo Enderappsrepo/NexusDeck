@@ -71,6 +71,103 @@ npm run tauri build
 flatpak-builder --force-clean build-dir flatpak/com.nexusdeck.NexusDeck.yml
 ```
 
+## Steam Deck Install
+
+**Short URL** (after GitHub Pages is enabled — see below):
+
+```bash
+curl -fsSL https://YOUR_USER.github.io/NexusDeck/i.sh | bash
+```
+
+Run `npm run install:url` to print your exact URLs after the repo is on GitHub.
+
+**Release download** (works immediately after first release, no Pages needed):
+
+```bash
+curl -fsSL https://github.com/YOUR_USER/NexusDeck/releases/latest/download/i.sh | bash
+```
+
+**Enable the short URL** (one-time): GitHub repo → **Settings → Pages → Build from branch `main` / folder `/docs`**, or push to `main` and let the **Pages** workflow deploy automatically.
+
+The installer will:
+1. Download the latest NexusDeck AppImage
+2. Install to `~/.local/share/nexusdeck/`
+3. Create a desktop launcher
+4. Optionally add NexusDeck to your Steam library for Gaming Mode
+5. Launch the app for first-time setup (API key + game wizard)
+
+**Optional custom domain** (shortest): add `docs/CNAME` with e.g. `get.nexusdeck.app`, point DNS at GitHub Pages, then:
+
+```bash
+curl -fsSL https://get.nexusdeck.app/i.sh | bash
+```
+
+**Local install** (if you built the AppImage yourself):
+
+```bash
+NEXUSDECK_APPIMAGE_PATH=/path/to/NexusDeck.AppImage ./install-steamdeck.sh
+```
+
+**Override GitHub repo** (forks / pre-release):
+
+```bash
+NEXUSDECK_GITHUB_REPO=your-org/nexusdeck ./install-steamdeck.sh
+```
+
+After install, complete the in-app setup wizard to connect your Nexus API key and configure Fallout 4.
+
+## Releasing to GitHub
+
+### One-time setup
+
+1. Install [GitHub CLI](https://cli.github.com/) and run `gh auth login`
+2. Create the remote repo and push:
+
+```bash
+npm run setup:github
+```
+
+Or manually:
+
+```bash
+gh repo create NexusDeck --public --source=. --remote=origin --push
+```
+
+### Automatic releases
+
+Every version tag triggers the **Release** workflow, which builds Linux + Windows installers and publishes them to GitHub Releases.
+
+**From your machine (recommended):**
+
+```bash
+npm run release 0.1.0
+```
+
+This will:
+1. Sync version in `package.json`, `tauri.conf.json`, and `Cargo.toml`
+2. Commit, tag `v0.1.0`, and push to GitHub
+3. Trigger CI to build and upload:
+   - `NexusDeck_0.1.0_linux.AppImage`
+   - `NexusDeck_0.1.0_windows-setup.exe`
+   - `NexusDeck_0.1.0_windows-portable.exe`
+   - `install-steamdeck.sh` (with your repo URL baked in)
+   - `SHA256SUMS.txt`
+
+**From GitHub UI (no local tag):**
+
+Go to **Actions → Release → Run workflow**, enter a version (e.g. `0.1.0`), and run.
+
+**Manual tag:**
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+### CI on every push
+
+The **CI** workflow builds Linux AppImage and Windows NSIS on every push/PR to `main`, `master`, or `overhaul` to catch breakages before release.
+
 ## First Launch
 
 1. Enter your [Nexus Mods API key](https://www.nexusmods.com/users/myaccount?tab=api+access)

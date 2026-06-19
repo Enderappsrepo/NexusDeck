@@ -24,10 +24,43 @@ export const SUPPORTED_DOMAINS = new Set(SUPPORTED_GAMES.map((g) => g.domain));
 
 let cachedGames: SupportedGameInfo[] | null = null;
 
+function normalizeSupportedGame(raw: unknown): SupportedGameInfo | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+
+  const domain =
+    typeof row.domain === "string"
+      ? row.domain
+      : typeof row.domain_name === "string"
+        ? row.domain_name
+        : null;
+  if (!domain) return null;
+
+  const display_name =
+    typeof row.display_name === "string"
+      ? row.display_name
+      : typeof row.displayName === "string"
+        ? row.displayName
+        : domain;
+
+  const script_extender_label =
+    typeof row.script_extender_label === "string"
+      ? row.script_extender_label
+      : typeof row.scriptExtenderLabel === "string"
+        ? row.scriptExtenderLabel
+        : null;
+
+  return { domain, display_name, script_extender_label };
+}
+
 export async function loadSupportedGames(): Promise<SupportedGameInfo[]> {
   if (cachedGames) return cachedGames;
   try {
-    cachedGames = await api.listSupportedGames();
+    const raw = await api.listSupportedGames();
+    const normalized = raw
+      .map(normalizeSupportedGame)
+      .filter((g): g is SupportedGameInfo => g !== null);
+    cachedGames = normalized.length > 0 ? normalized : SUPPORTED_GAMES;
     return cachedGames;
   } catch {
     return SUPPORTED_GAMES;

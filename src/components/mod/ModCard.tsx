@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { Download, Heart, ImageOff } from "lucide-react";
 import { cn, formatNumber, formatRelativeDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -8,25 +8,41 @@ interface ModCardProps {
   mod: ModSummary;
   domain: string;
   className?: string;
+  compact?: boolean;
 }
 
-export function ModCard({ mod, domain, className }: ModCardProps) {
+export function ModCard({ mod, domain, className, compact = false }: ModCardProps) {
+  const navigate = useNavigate();
+
+  const openMod = () => {
+    navigate({
+      to: "/games/$domain/mods/$modId",
+      params: { domain, modId: String(mod.mod_id) },
+    });
+  };
+
   return (
-    <Link
-      to="/games/$domain/mods/$modId"
-      params={{ domain, modId: String(mod.mod_id) }}
+    <button
+      type="button"
+      onClick={openMod}
       className={cn(
-        "focusable group flex flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] text-left shadow-[var(--shadow-sm)] transition-all hover:-translate-y-0.5 hover:border-[var(--color-primary)]/50 hover:shadow-[var(--shadow-lg)] motion-reduce:hover:translate-y-0",
+        "focusable group flex w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] text-left shadow-[var(--shadow-sm)] transition-all hover:-translate-y-0.5 hover:border-[var(--color-primary)]/50 hover:shadow-[var(--shadow-lg)] motion-reduce:hover:translate-y-0",
         className
       )}
       data-focusable="true"
     >
-      <div className="relative aspect-[16/10] w-full overflow-hidden bg-gradient-to-br from-[var(--color-secondary)] to-[var(--color-background)]">
+      <div
+        className={cn(
+          "relative w-full overflow-hidden bg-gradient-to-br from-[var(--color-secondary)] to-[var(--color-background)]",
+          compact ? "aspect-[16/9]" : "aspect-[16/10]"
+        )}
+      >
         {mod.picture_url ? (
           <img
             src={mod.picture_url}
             alt={mod.name}
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03] motion-reduce:transform-none"
+            draggable={false}
+            className="pointer-events-none h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03] motion-reduce:transform-none"
             loading="lazy"
           />
         ) : (
@@ -40,7 +56,7 @@ export function ModCard({ mod, domain, className }: ModCardProps) {
             Adult
           </Badge>
         )}
-        <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
           <span className="inline-flex items-center gap-1 rounded-lg bg-black/60 px-2 py-1 text-xs font-semibold text-white backdrop-blur-sm">
             <Heart className="h-3 w-3 text-red-400" />
@@ -55,21 +71,33 @@ export function ModCard({ mod, domain, className }: ModCardProps) {
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col gap-2 p-4">
-        <h3 className="line-clamp-2 text-base font-bold leading-snug group-hover:text-[var(--color-primary)]">
+      <div className={cn("flex flex-1 flex-col", compact ? "gap-1.5 p-3" : "gap-2 p-4")}>
+        <h3
+          className={cn(
+            "font-bold leading-snug group-hover:text-[var(--color-primary)]",
+            compact ? "line-clamp-1 text-sm" : "line-clamp-2 text-base"
+          )}
+        >
           {mod.name}
         </h3>
-        <p className="line-clamp-2 text-sm leading-relaxed text-[var(--color-muted)]">
-          {mod.summary}
-        </p>
-        <div className="mt-auto flex items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-muted)]">
+        {!compact && (
+          <p className="line-clamp-2 text-sm leading-relaxed text-[var(--color-muted)]">
+            {mod.summary}
+          </p>
+        )}
+        <div
+          className={cn(
+            "mt-auto flex items-center justify-between gap-2 text-xs text-[var(--color-muted)]",
+            compact ? "pt-1" : "border-t border-[var(--color-border)] pt-3"
+          )}
+        >
           <span className="truncate font-medium">v{mod.version}</span>
-          <span className="truncate">{mod.author}</span>
+          {!compact && <span className="truncate">{mod.author}</span>}
           {mod.updated_timestamp > 0 && (
             <span className="shrink-0">{formatRelativeDate(mod.updated_timestamp)}</span>
           )}
         </div>
       </div>
-    </Link>
+    </button>
   );
 }

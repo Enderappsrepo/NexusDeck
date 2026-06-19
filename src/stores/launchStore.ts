@@ -28,6 +28,8 @@ interface LaunchState {
   loadSettings: () => Promise<void>;
   saveSettings: (settings: LaunchSettings) => Promise<void>;
   refreshRunningState: (profileId: string) => Promise<void>;
+  refreshAllRunningStates: (profileIds: string[]) => Promise<void>;
+  isAnyGameRunning: () => boolean;
   loadPlaytime: (profileId: string) => Promise<void>;
   validateLaunch: (profileId: string, configId?: string) => Promise<LaunchValidationResult>;
   launch: (profileId: string, configId?: string, options?: LaunchOptions) => Promise<void>;
@@ -90,6 +92,20 @@ export const useLaunchStore = create<LaunchState>((set, get) => ({
     }));
   },
 
+  refreshAllRunningStates: async (profileIds) => {
+    const states = await Promise.all(
+      profileIds.map(async (profileId) => [profileId, await api.getGameRunningState(profileId)] as const)
+    );
+    set((s) => ({
+      runningByProfile: {
+        ...s.runningByProfile,
+        ...Object.fromEntries(states),
+      },
+    }));
+  },
+
+  isAnyGameRunning: () => Object.values(get().runningByProfile).some((state) => state.running),
+
   loadPlaytime: async (profileId) => {
     const stats = await api.getPlaytimeStats(profileId);
     set((s) => ({
@@ -101,11 +117,21 @@ export const useLaunchStore = create<LaunchState>((set, get) => ({
     api.validateLaunch(profileId, configId),
 
   launch: async (profileId, configId, options) => {
+    if (get().launching) return;
+    if (get().isAnyGameRunning()) {
+      get().addToast(
+        "Launch blocked",
+        "A game is already launching or running.",
+        "error"
+      );
+      return;
+    }
+
     set({ launching: true, launchStage: "validating" });
     try {
       const settings = get().settings;
       const result = await api.launchGame(profileId, configId, {
-        skip_validation: false,
+        skip_validation: options?.skip_validation ?? false,
         safe_launch: settings.safe_launch_default,
         sync_plugins: true,
         extra_args: [],
@@ -137,16 +163,6 @@ export const useLaunchStore = create<LaunchState>((set, get) => ({
 
     listen<{ profile_id: string; stage: string }>("launch:progress", (e) => {
       set({ launchStage: e.payload.stage });
-      const labels: Record<string, string> = {
-        validating: "Validating…",
-        syncing_plugins: "Syncing plugins.txt…",
-        launching: "Launching…",
-        launched: "Launched!",
-      };
-      const label = labels[e.payload.stage];
-      if (label && e.payload.stage !== "launched") {
-        get().addToast("Launching", label, "default");
-      }
     }).then((u) => unsubs.push(u));
 
     listen<{ profile_id: string; message: string }>("launch:error", (e) => {

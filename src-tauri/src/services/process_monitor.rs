@@ -27,7 +27,11 @@ struct TrackedGame {
     started_at: i64,
     history_id: String,
     known_pids: Vec<u32>,
+    process_seen: bool,
 }
+
+/// How long to keep a launch session active while waiting for the game process to appear.
+const LAUNCH_GRACE_SECS: i64 = 300;
 
 pub struct ProcessMonitor {
     inner: Arc<Mutex<MonitorInner>>,
@@ -64,6 +68,14 @@ impl ProcessMonitor {
 
     pub fn is_running(&self, profile_id: &str) -> bool {
         self.inner.lock().tracked.contains_key(profile_id)
+    }
+
+    pub fn any_running(&self) -> bool {
+        !self.inner.lock().tracked.is_empty()
+    }
+
+    pub fn active_profile_id(&self) -> Option<String> {
+        self.inner.lock().tracked.keys().next().cloned()
     }
 
     pub fn get_state(&self, profile_id: &str) -> GameRunningState {
@@ -116,6 +128,7 @@ impl ProcessMonitor {
                 started_at: chrono::Utc::now().timestamp(),
                 history_id,
                 known_pids,
+                process_seen: false,
             },
         );
 
@@ -187,15 +200,16 @@ impl ProcessMonitor {
 
         let mut system = System::new_all();
         system.refresh_all();
+        let now = chrono::Utc::now().timestamp();
 
         for profile_id in profile_ids {
-            let still_running = {
-                let inner = self.inner.lock();
-                let Some(tracked) = inner.tracked.get(&profile_id) else {
+            let (process_alive, process_seen, started_at) = {
+                let mut inner = self.inner.lock();
+                let Some(tracked) = inner.tracked.get_mut(&profile_id) else {
                     continue;
                 };
 
-                system.processes().iter().any(|(_, process)| {
+                let alive = system.processes().iter().any(|(_, process)| {
                     let name = process.name().to_string_lossy().to_lowercase();
                     tracked
                         .process_names
@@ -203,12 +217,28 @@ impl ProcessMonitor {
                         .any(|n| name == n.to_lowercase())
                 }) || tracked.known_pids.iter().any(|pid| {
                     system.process(Pid::from_u32(*pid)).is_some()
-                })
+                });
+
+                if alive {
+                    tracked.process_seen = true;
+                }
+
+                (alive, tracked.process_seen, tracked.started_at)
             };
 
-            if !still_running {
-                self.finish_tracking(&profile_id, true);
+            if process_alive {
+                continue;
             }
+
+            if !process_seen {
+                if now - started_at < LAUNCH_GRACE_SECS {
+                    continue;
+                }
+                self.finish_tracking(&profile_id, false);
+                continue;
+            }
+
+            self.finish_tracking(&profile_id, true);
         }
     }
 

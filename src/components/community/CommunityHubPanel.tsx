@@ -6,12 +6,14 @@ import { api } from "@/lib/commands";
 import type { TrackedMod, UserEndorsement } from "@/lib/nexus/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 interface CommunityHubPanelProps {
   gameDomain: string;
+  embedded?: boolean;
 }
 
-export function CommunityHubPanel({ gameDomain }: CommunityHubPanelProps) {
+export function CommunityHubPanel({ gameDomain, embedded = false }: CommunityHubPanelProps) {
   const [endorsements, setEndorsements] = useState<UserEndorsement[]>([]);
   const [tracked, setTracked] = useState<TrackedMod[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,9 +41,16 @@ export function CommunityHubPanel({ gameDomain }: CommunityHubPanelProps) {
   };
 
   return (
-    <div className="mt-8 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-6">
+    <div
+      className={cn(
+        "rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5",
+        !embedded && "mt-8 p-6"
+      )}
+    >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-lg font-semibold">Community Hub</h3>
+        <p className="text-sm text-[var(--color-muted)]">
+          Your endorsements and tracked mods on Nexus.
+        </p>
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={openNexusCommunity}>
             <ExternalLink className="h-4 w-4" />

@@ -23,7 +23,7 @@ export function SteamShortcutDialog({
 }: SteamShortcutDialogProps) {
   const { addToast } = useLaunchStore();
   const [name, setName] = useState("Fallout 4 - Modded");
-  const [writeVdf, setWriteVdf] = useState(false);
+  const [writeVdf, setWriteVdf] = useState(true);
   const [shortcuts, setShortcuts] = useState<SteamShortcutInfo[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -59,8 +59,12 @@ export function SteamShortcutDialog({
   };
 
   return (
-    <AppDialog open={open} onOpenChange={onOpenChange} title="Steam Shortcuts">
+    <AppDialog open={open} onOpenChange={onOpenChange} title="Add modded game to Steam">
       <div className="space-y-4">
+        <p className="text-sm text-[var(--color-muted)]">
+          Creates a Steam shortcut for this game profile using your current launch config
+          (F4SE, args, etc.). To add NexusDeck itself, use Settings → Steam launcher.
+        </p>
         <div>
           <Label htmlFor="shortcut-name">Display name</Label>
           <Input
@@ -71,7 +75,7 @@ export function SteamShortcutDialog({
           />
         </div>
         <div className="flex items-center justify-between">
-          <Label htmlFor="write-vdf">Write to shortcuts.vdf (experimental)</Label>
+          <Label htmlFor="write-vdf">Write to Steam shortcuts.vdf</Label>
           <Switch id="write-vdf" checked={writeVdf} onCheckedChange={setWriteVdf} />
         </div>
         <Button loading={loading} onClick={create} disabled={!configId}>

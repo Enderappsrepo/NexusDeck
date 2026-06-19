@@ -10,6 +10,7 @@ import { useLaunchStore } from "@/stores/launchStore";
 import { useAuthStore, useGamesStore, useSettingsStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { GAMEPAD_HINTS } from "@/hooks/useFocusNavigation";
+import { AddToSteamPanel } from "@/components/steam/AddToSteamPanel";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -160,6 +161,8 @@ function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <AddToSteamPanel />
 
       <Card>
         <CardHeader>

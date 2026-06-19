@@ -23,6 +23,10 @@ import type {
   LaunchValidationResult,
   PlaytimeStats,
   SteamShortcutInfo,
+  NexusDeckSteamShortcutResult,
+  GameSettingsSchema,
+  GameSettingsValues,
+  ApplyGameSettingsResult,
   ModCategory,
   ModCompareResult,
   ModDetail,
@@ -34,6 +38,7 @@ import type {
   ModUpdateInfo,
   NexusBrowserUrls,
   NexusUser,
+  PlatformInfo,
   PreviewFileResult,
   PreviewNode,
   Profile,
@@ -92,6 +97,10 @@ export const api = {
     invoke<Profile | null>("get_profile", { domain }),
 
   isOnboardingComplete: () => invoke<boolean>("is_onboarding_complete"),
+
+  completeOnboarding: () => invoke<void>("complete_onboarding"),
+
+  getPlatformInfo: () => invoke<PlatformInfo>("get_platform_info"),
 
   searchMods: (
     gameDomain: string,
@@ -464,6 +473,24 @@ export const api = {
 
   deleteSteamShortcut: (id: string) =>
     invoke<void>("delete_steam_shortcut", { id }),
+
+  addNexusDeckToSteam: (name?: string) =>
+    invoke<NexusDeckSteamShortcutResult>("add_nexusdeck_to_steam", { name: name ?? null }),
+
+  getGameSettingsSchema: (profileId: string) =>
+    invoke<GameSettingsSchema>("get_game_settings_schema", { profileId }),
+
+  getGameSettingsValues: (profileId: string) =>
+    invoke<GameSettingsValues>("get_game_settings_values", { profileId }),
+
+  applyGameSettings: (profileId: string, values: Record<string, string>) =>
+    invoke<ApplyGameSettingsResult>("apply_game_settings", { profileId, values }),
+
+  applyGameSettingsPreset: (profileId: string, presetId: string) =>
+    invoke<ApplyGameSettingsResult>("apply_game_settings_preset", {
+      profileId,
+      presetId,
+    }),
 
   batchLaunchTools: (profileId: string, toolIds: string[]) =>
     invoke<string[]>("batch_launch_tools", { profileId, toolIds }),

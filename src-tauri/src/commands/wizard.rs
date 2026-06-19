@@ -2,6 +2,7 @@ use crate::db::{self, Profile};
 use crate::error::Result;
 use crate::games::{self, SupportedGameInfo, WizardStepResult};
 use crate::services::paths::ensure_dir;
+use crate::services::platform::{self, PlatformInfo};
 use crate::services::steam::{detect_steam, find_game_by_app_id, GameCandidate, SteamInstallInfo};
 
 #[tauri::command]
@@ -42,14 +43,21 @@ pub fn create_profile(
     proton_prefix_path: Option<String>,
 ) -> Result<Profile> {
     ensure_dir(std::path::Path::new(&staging_path))?;
+    let existing = db::get_profile_by_domain(&game_domain)?;
     let profile = Profile {
-        id: uuid::Uuid::new_v4().to_string(),
+        id: existing
+            .as_ref()
+            .map(|p| p.id.clone())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         game_domain,
         name,
         game_path,
         staging_path,
         proton_prefix_path,
-        created_at: chrono::Utc::now().timestamp(),
+        created_at: existing
+            .as_ref()
+            .map(|p| p.created_at)
+            .unwrap_or_else(|| chrono::Utc::now().timestamp()),
     };
     db::save_profile(&profile)?;
     db::set_setting("onboarding_complete", "true")?;
@@ -70,6 +78,16 @@ pub fn get_profile(domain: String) -> Result<Option<Profile>> {
 #[tauri::command]
 pub fn is_onboarding_complete() -> Result<bool> {
     Ok(db::get_setting("onboarding_complete")?.as_deref() == Some("true"))
+}
+
+#[tauri::command]
+pub fn complete_onboarding() -> Result<()> {
+    db::set_setting("onboarding_complete", "true")
+}
+
+#[tauri::command]
+pub fn get_platform_info() -> Result<PlatformInfo> {
+    Ok(platform::detect_platform())
 }
 
 #[tauri::command]

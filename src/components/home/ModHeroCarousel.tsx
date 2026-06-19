@@ -55,8 +55,8 @@ export function ModHeroCarousel({ mods, domain, label = "Featured" }: ModHeroCar
             <ImageOff className="h-12 w-12 opacity-50" />
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-transparent" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-transparent" />
 
         <div className="absolute inset-x-0 bottom-0 p-5 sm:p-8">
           <Badge className="mb-3" variant="default">
@@ -81,14 +81,16 @@ export function ModHeroCarousel({ mods, domain, label = "Featured" }: ModHeroCar
             <span>v{mod.version}</span>
             <span>{mod.author}</span>
           </div>
-          <Link
-            to="/games/$domain/mods/$modId"
-            params={{ domain, modId: String(mod.mod_id) }}
-            className="focusable mt-4 inline-block"
-            data-focusable="true"
-          >
-            <Button size="lg">View mod</Button>
-          </Link>
+          <Button asChild size="lg" className="mt-4">
+            <Link
+              to="/games/$domain/mods/$modId"
+              params={{ domain, modId: String(mod.mod_id) }}
+              className="focusable"
+              data-focusable="true"
+            >
+              View mod
+            </Link>
+          </Button>
         </div>
 
         {count > 1 && (

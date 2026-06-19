@@ -17,6 +17,7 @@ import { useAuthStore, useGamesStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { loadSupportedGames, isSupportedDomain } from "@/lib/games";
 import { cn, gameGradient } from "@/lib/utils";
+import { normalizeGameSummaries } from "@/lib/nexus/games";
 import type { GameSummary, SupportedGameInfo } from "@/lib/nexus/types";
 
 export const Route = createFileRoute("/")({
@@ -38,7 +39,10 @@ function HomePage() {
   }, []);
 
   useEffect(() => {
-    api.listNexusGames("", 8).then(setGames).catch(() => setGames([]));
+    api
+      .listNexusGames("", 8)
+      .then((games) => setGames(normalizeGameSummaries(games)))
+      .catch(() => setGames([]));
   }, []);
 
   const primaryProfile = profiles[0];
@@ -132,7 +136,7 @@ function HomePage() {
             description="Pick a supported Bethesda game to start browsing, downloading, and installing mods."
             action={
               <div className="grid w-full max-w-lg gap-2 sm:grid-cols-2">
-                {supportedGames.map((g) => (
+                {supportedGames.filter((g) => g.domain).map((g) => (
                   <Link
                     key={g.domain}
                     to="/games/$domain/setup"

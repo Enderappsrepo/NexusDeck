@@ -203,7 +203,11 @@ impl GamePlugin for Fallout4Plugin {
     }
 
     fn process_names(&self) -> Vec<&str> {
-        vec!["Fallout4.exe", "Fallout4Launcher.exe"]
+        vec![
+            "Fallout4.exe",
+            "Fallout4Launcher.exe",
+            "f4se_loader.exe",
+        ]
     }
 
     fn plugins_txt_path(&self, profile: &Profile) -> Option<PathBuf> {

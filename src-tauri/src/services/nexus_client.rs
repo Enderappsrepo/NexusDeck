@@ -833,7 +833,7 @@ impl NexusClient {
         Ok(links)
     }
 
-    pub async fn list_games(&self, query: &str, count: u32) -> Result<Vec<serde_json::Value>> {
+    pub async fn list_games(&self, query: &str, count: u32) -> Result<Vec<GameSummary>> {
         let filter = if query.is_empty() {
             serde_json::Value::Null
         } else {
@@ -862,7 +862,11 @@ impl NexusClient {
         Ok(result
             .pointer("/games/nodes")
             .and_then(|n| n.as_array())
-            .cloned()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(parse_game_summary_node)
+                    .collect::<Vec<_>>()
+            })
             .unwrap_or_default())
     }
 
@@ -1384,6 +1388,21 @@ fn json_u64(value: &serde_json::Value, keys: &[&str]) -> Option<u64> {
         }
     }
     None
+}
+
+fn parse_game_summary_node(node: &serde_json::Value) -> Option<GameSummary> {
+    let id = node
+        .get("id")
+        .and_then(|v| v.as_u64())
+        .or_else(|| node.get("id").and_then(|v| v.as_str())?.parse().ok())?;
+    let name = json_str(node, &["name"])?.to_string();
+    let domain_name =
+        json_str(node, &["domain_name", "domainName", "domain", "game_domain"])?.to_string();
+    Some(GameSummary {
+        id,
+        name,
+        domain_name,
+    })
 }
 
 fn json_str<'a>(value: &'a serde_json::Value, keys: &[&str]) -> Option<&'a str> {

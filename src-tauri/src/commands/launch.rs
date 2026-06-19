@@ -15,8 +15,9 @@ use crate::services::plugins_txt::{
 use crate::services::pre_launch::LaunchValidationResult;
 use crate::services::process_monitor::{GameRunningState, ProcessMonitor};
 use crate::services::steam_shortcut::{
+    add_nexusdeck_to_steam as run_add_nexusdeck_to_steam,
     create_steam_shortcut as run_create_steam_shortcut, list_steam_shortcut_infos,
-    write_shortcut_to_steam_vdf, SteamShortcutInfo,
+    write_shortcut_to_steam_vdf, NexusDeckSteamShortcutResult, SteamShortcutInfo,
 };
 
 #[tauri::command]
@@ -151,6 +152,11 @@ pub fn list_steam_shortcuts(profile_id: String) -> Result<Vec<SteamShortcutInfo>
 #[tauri::command]
 pub fn delete_steam_shortcut(id: String) -> Result<()> {
     db::delete_steam_shortcut(&id)
+}
+
+#[tauri::command]
+pub fn add_nexusdeck_to_steam(name: Option<String>) -> Result<NexusDeckSteamShortcutResult> {
+    run_add_nexusdeck_to_steam(name)
 }
 
 #[tauri::command]

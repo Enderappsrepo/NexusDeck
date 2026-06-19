@@ -27,7 +27,9 @@ export function LaunchButton({
     loadConfigs,
     validateLaunch,
     launch,
+    isAnyGameRunning,
   } = useLaunchStore();
+  const [validating, setValidating] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -35,6 +37,8 @@ export function LaunchButton({
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
 
   const running = runningByProfile[profileId]?.running;
+  const busy = validating || launching;
+  const launchBlocked = busy || isAnyGameRunning();
 
   useEffect(() => {
     loadConfigs(profileId);
@@ -47,9 +51,17 @@ export function LaunchButton({
   }, []);
 
   const runLaunch = async (configId?: string) => {
+    if (launchBlocked) return;
+
+    setValidating(true);
     try {
       const validation = await validateLaunch(profileId, configId);
       if (validation.blockers.length > 0) {
+        useLaunchStore.getState().addToast(
+          "Launch blocked",
+          validation.blockers[0].message,
+          "error"
+        );
         return;
       }
       if (settings.always_ask_before_launch || validation.warnings.length > 0) {
@@ -58,20 +70,34 @@ export function LaunchButton({
         setConfirmOpen(true);
         return;
       }
-      await launch(profileId, configId);
+      await launch(profileId, configId, { skip_validation: true });
     } catch {
       /* toast handled in store */
+    } finally {
+      setValidating(false);
     }
   };
 
   const handleConfirm = async () => {
     setConfirmOpen(false);
     try {
-      await launch(profileId, pendingConfigId);
+      await launch(profileId, pendingConfigId, { skip_validation: true });
     } catch {
       /* toast handled */
     }
   };
+
+  const statusLabel = busy
+    ? launchStage === "syncing_plugins"
+      ? "Syncing mods…"
+      : validating || launchStage === "validating"
+        ? "Checking…"
+        : "Launching…"
+    : running
+      ? "Game Running"
+      : isAnyGameRunning()
+        ? "Another Game Active"
+        : null;
 
   if (compact) {
     return (
@@ -79,13 +105,13 @@ export function LaunchButton({
         <Button
           size="lg"
           className={className}
-          loading={launching}
-          disabled={running}
+          loading={busy}
+          disabled={launchBlocked}
           onClick={() => runLaunch()}
           data-launch-primary="true"
         >
           <Play className="h-5 w-5" />
-          {running ? "Running" : "Launch Game"}
+          {statusLabel ?? "Launch Game"}
         </Button>
         <LaunchConfirmDialog
           open={confirmOpen}
@@ -103,22 +129,20 @@ export function LaunchButton({
         <Button
           size="lg"
           className="min-h-[64px] min-w-[220px] flex-1 text-xl shadow-[var(--shadow-md)] sm:flex-none"
-          loading={launching}
-          disabled={running}
+          loading={busy}
+          disabled={launchBlocked}
           onClick={() => runLaunch()}
           data-launch-primary="true"
         >
-          {launching ? (
+          {busy ? (
             <>
               <Loader2 className="h-6 w-6 animate-spin" />
-              {launchStage === "syncing_plugins"
-                ? "Syncing mods…"
-                : launchStage === "validating"
-                  ? "Checking…"
-                  : "Launching…"}
+              {statusLabel}
             </>
           ) : running ? (
             "Game Running"
+          ) : isAnyGameRunning() ? (
+            "Another Game Active"
           ) : (
             <>
               <Play className="h-6 w-6 fill-current" />
@@ -131,6 +155,7 @@ export function LaunchButton({
           size="lg"
           className="min-h-[64px]"
           onClick={() => setQuickOpen(true)}
+          disabled={launchBlocked}
           data-focusable="true"
         >
           Quick Launch

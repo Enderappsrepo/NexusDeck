@@ -1,5 +1,6 @@
 pub mod archive_options;
 pub mod paths;
+pub mod platform;
 pub mod steam;
 pub mod nexus_client;
 pub mod download_manager;
@@ -22,5 +23,6 @@ pub mod process_monitor;
 pub mod steam_launch;
 pub mod script_extender;
 pub mod steam_shortcut;
+pub mod game_settings;
 
 pub use archive_options::MergeOptions;

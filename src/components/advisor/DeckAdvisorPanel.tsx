@@ -30,23 +30,11 @@ export function DeckAdvisorPanel({ profileId }: DeckAdvisorPanelProps) {
   }, [profileId]);
 
   if (loading) {
-    return (
-      <p className="text-sm text-[var(--color-muted)]">Analyzing profile for Deck tips...</p>
-    );
+    return null;
   }
 
   if (findings.length === 0) {
-    return (
-      <div className="rounded-xl border border-[var(--color-success)]/30 bg-[var(--color-success)]/10 p-4">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="h-5 w-5 text-[var(--color-success)]" />
-          <span className="font-medium">Deck profile looks good</span>
-        </div>
-        <p className="mt-2 text-sm text-[var(--color-muted)]">
-          No issues detected for your current mod setup.
-        </p>
-      </div>
-    );
+    return null;
   }
 
   return (

@@ -28,9 +28,16 @@ const EMPTY_FEEDS: DiscoveryFeeds = {
 interface GameModDiscoveryProps {
   domain: string;
   signedIn: boolean;
+  sections?: "hero" | "rows" | "all";
+  compact?: boolean;
 }
 
-export function GameModDiscovery({ domain, signedIn }: GameModDiscoveryProps) {
+export function GameModDiscovery({
+  domain,
+  signedIn,
+  sections = "all",
+  compact = false,
+}: GameModDiscoveryProps) {
   const [feeds, setFeeds] = useState<DiscoveryFeeds>(EMPTY_FEEDS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -107,29 +114,35 @@ export function GameModDiscovery({ domain, signedIn }: GameModDiscoveryProps) {
   }
 
   return (
-    <div className="space-y-8">
-      <ModHeroCarousel mods={feeds.featured} domain={domain} label="Top mods" />
+    <div className={compact ? "space-y-6" : "space-y-8"}>
+      {(sections === "hero" || sections === "all") && (
+        <ModHeroCarousel mods={feeds.featured} domain={domain} label="Featured" />
+      )}
 
-      <ModRowCarousel
-        title="Most endorsed"
-        subtitle="Community favorites on Nexus"
-        mods={feeds.topEndorsed}
-        domain={domain}
-      />
-
-      <ModRowCarousel
-        title="Most downloaded"
-        subtitle="Popular installs this month"
-        mods={feeds.mostDownloaded}
-        domain={domain}
-      />
-
-      <ModRowCarousel
-        title="Recently updated"
-        subtitle="Fresh releases and patches"
-        mods={feeds.recentlyUpdated}
-        domain={domain}
-      />
+      {(sections === "rows" || sections === "all") && (
+        <>
+          <ModRowCarousel
+            title="Most endorsed"
+            mods={feeds.topEndorsed}
+            domain={domain}
+            compact={compact}
+          />
+          <ModRowCarousel
+            title="Most downloaded"
+            mods={feeds.mostDownloaded}
+            domain={domain}
+            compact={compact}
+          />
+          {(sections === "rows" || sections === "all") && (
+            <ModRowCarousel
+              title="Recently updated"
+              mods={feeds.recentlyUpdated}
+              domain={domain}
+              compact={compact}
+            />
+          )}
+        </>
+      )}
     </div>
   );
 }

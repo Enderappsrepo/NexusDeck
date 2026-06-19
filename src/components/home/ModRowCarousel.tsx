@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModCard } from "@/components/mod/ModCard";
+import { cn } from "@/lib/utils";
 import type { ModSummary } from "@/lib/nexus/types";
 
 interface ModRowCarouselProps {
@@ -10,9 +11,16 @@ interface ModRowCarouselProps {
   subtitle?: string;
   mods: ModSummary[];
   domain: string;
+  compact?: boolean;
 }
 
-export function ModRowCarousel({ title, subtitle, mods, domain }: ModRowCarouselProps) {
+export function ModRowCarousel({
+  title,
+  subtitle,
+  mods,
+  domain,
+  compact = false,
+}: ModRowCarouselProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   const scroll = (direction: "left" | "right") => {
@@ -26,23 +34,25 @@ export function ModRowCarousel({ title, subtitle, mods, domain }: ModRowCarousel
 
   return (
     <section>
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-2xl font-bold">{title}</h2>
-          {subtitle && <p className="mt-1 text-sm text-[var(--color-muted)]">{subtitle}</p>}
+          <h2 className={compact ? "text-lg font-bold" : "text-2xl font-bold"}>{title}</h2>
+          {subtitle && !compact && (
+            <p className="mt-0.5 text-sm text-[var(--color-muted)]">{subtitle}</p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            to="/games/$domain/mods"
-            params={{ domain }}
-            search={{ modId: undefined }}
-            className="focusable"
-            data-focusable="true"
-          >
-            <Button variant="outline" size="sm">
+          <Button asChild variant="outline" size="sm">
+            <Link
+              to="/games/$domain/mods"
+              params={{ domain }}
+              search={{ modId: undefined }}
+              className="focusable"
+              data-focusable="true"
+            >
               See all
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <Button
             variant="secondary"
             size="icon"
@@ -68,11 +78,17 @@ export function ModRowCarousel({ title, subtitle, mods, domain }: ModRowCarousel
 
       <div
         ref={scrollerRef}
-        className="scrollbar-thin flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2"
+        className="scrollbar-thin flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1"
       >
         {mods.map((mod) => (
-          <div key={mod.mod_id} className="w-[min(100%,280px)] shrink-0 snap-start sm:w-[300px]">
-            <ModCard mod={mod} domain={domain} className="h-full" />
+          <div
+            key={mod.mod_id}
+            className={cn(
+              "shrink-0 snap-start",
+              compact ? "w-[220px] sm:w-[240px]" : "w-[min(100%,280px)] sm:w-[300px]"
+            )}
+          >
+            <ModCard mod={mod} domain={domain} className="h-full" compact={compact} />
           </div>
         ))}
       </div>

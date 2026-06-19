@@ -32,6 +32,47 @@ pub fn resolve_config(profile_id: &str, config_id: Option<&str>) -> Result<Launc
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NexusDeckSteamShortcutResult {
+    pub display_name: String,
+    pub executable: String,
+    pub shortcuts_path: String,
+    pub app_id_generated: u32,
+}
+
+pub fn add_nexusdeck_to_steam(display_name: Option<String>) -> Result<NexusDeckSteamShortcutResult> {
+    let steam = crate::services::steam::detect_steam()?
+        .ok_or_else(|| NexusDeckError::SteamNotFound("Steam not found".into()))?;
+
+    let exe = std::env::current_exe().map_err(|e| NexusDeckError::Other(e.to_string()))?;
+    let exe_str = exe.display().to_string();
+    let start_dir = exe
+        .parent()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| exe_str.clone());
+
+    let name = display_name.unwrap_or_else(|| "NexusDeck".to_string());
+    let userdata = find_steam_userdata(&steam.steam_path)?;
+    let shortcuts_path = userdata.join("config").join("shortcuts.vdf");
+
+    if shortcuts_path.exists() {
+        let backup = shortcuts_path.with_extension("vdf.nexusdeck_backup");
+        if !backup.exists() {
+            std::fs::copy(&shortcuts_path, &backup)?;
+        }
+    }
+
+    append_shortcut_vdf_text(&shortcuts_path, &name, &exe_str, "", &start_dir)?;
+    let app_id = generate_shortcut_app_id(&name, &exe_str);
+
+    Ok(NexusDeckSteamShortcutResult {
+        display_name: name,
+        executable: exe_str,
+        shortcuts_path: shortcuts_path.display().to_string(),
+        app_id_generated: app_id,
+    })
+}
+
 pub fn create_steam_shortcut(
     profile: &Profile,
     config: &LaunchConfig,
