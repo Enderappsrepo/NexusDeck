@@ -114,8 +114,10 @@ NEXUSDECK_GITHUB_REPO=your-org/NexusDeck ./install-steamdeck.sh
 **Uninstall:**
 
 ```bash
-curl -fsSL https://github.com/YOUR_USER/NexusDeck/releases/latest/download/u.sh | bash
+curl -fsSL https://YOUR_USER.github.io/NexusDeck/u.sh | bash
 ```
+
+Release asset alternative: `https://github.com/YOUR_USER/NexusDeck/releases/latest/download/u.sh`
 
 After install, complete the in-app setup wizard to connect your Nexus API key and configure Fallout 4.
 

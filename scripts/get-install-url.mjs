@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Print install URLs for this repo. */
+/** Print install and uninstall URLs for this repo. */
 
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -23,21 +23,30 @@ function repoFromRemote() {
 
 const repo = repoFromRemote();
 const [owner, name] = repo.split("/");
-const pages = `https://${owner.toLowerCase()}.github.io/${name}/i.sh`;
-const release = `https://github.com/${repo}/releases/latest/download/i.sh`;
+const pagesBase = `https://${owner.toLowerCase()}.github.io/${name}`;
+const installPages = `${pagesBase}/i.sh`;
+const uninstallPages = `${pagesBase}/u.sh`;
+const installRelease = `https://github.com/${repo}/releases/latest/download/i.sh`;
+const uninstallRelease = `https://github.com/${repo}/releases/latest/download/u.sh`;
 
 console.log(`
-NexusDeck install URLs for ${repo}
+NexusDeck URLs for ${repo}
 
-  Short (GitHub Pages):
-    ${pages}
+  Install (short):
+    ${installPages}
 
-  Release asset:
-    ${release}
+  Install (release):
+    ${installRelease}
 
-  Steam Deck one-liner:
-    curl -fsSL ${pages} | bash
+  Uninstall (short):
+    ${uninstallPages}
 
-  Optional custom domain:
-    Add docs/CNAME with e.g. get.nexusdeck.app → curl https://get.nexusdeck.app/i.sh | bash
+  Uninstall (release):
+    ${uninstallRelease}
+
+  Steam Deck install:
+    curl -fsSL ${installPages} | bash
+
+  Steam Deck uninstall:
+    curl -fsSL ${uninstallPages} | bash
 `);

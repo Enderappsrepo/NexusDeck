@@ -7,6 +7,7 @@ on:
       - "docs/**"
       - ".github/workflows/pages.yml"
       - "install/install-steamdeck.sh"
+      - "install/uninstall-steamdeck.sh"
       - "scripts/sync-install-docs.mjs"
   workflow_dispatch:
 

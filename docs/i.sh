@@ -316,7 +316,7 @@ main() {
   echo "  API key: https://www.nexusmods.com/users/myaccount?tab=api+access"
   echo
   echo -e "${BOLD}To uninstall later:${NC}"
-  echo "  curl -fsSL https://github.com/${GITHUB_REPO}/releases/latest/download/u.sh | bash"
+  echo "  curl -fsSL https://enderappsrepo.github.io/NexusDeck/u.sh | bash"
   echo "  (Steam's Uninstall button does not work for non-Steam shortcuts.)"
   echo
 
