@@ -41,8 +41,10 @@ log = "0.4"
 env_logger = "0.11"
 unrar = "0.5"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+quick-xml = "0.37"
 sysinfo = "0.33"
 which = "6"
+libloot = "0.29.5"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "2.0", features = ["v2_16"] }

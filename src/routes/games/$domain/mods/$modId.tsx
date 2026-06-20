@@ -525,6 +525,8 @@ function ModDetailPage() {
           modId={modId}
           modName={detail.name}
           file={installFile}
+          category={detail.category}
+          tags={detail.tags}
           onInstalled={() => setInstallFile(null)}
         />
       )}

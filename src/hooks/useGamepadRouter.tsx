@@ -14,20 +14,41 @@ const GamepadRouterContext = createContext<GamepadRouterContextValue>({
   context: "global",
 });
 
+const defaultSnapshot: GamepadRouterContextValue = {
+  controllerActive: false,
+  hintBarVisible: true,
+  context: "global",
+};
+
+let cachedSnapshot: GamepadRouterContextValue = defaultSnapshot;
+
 function subscribe(cb: () => void) {
   return gamepadRouter.subscribe(cb);
 }
 
-function getSnapshot() {
-  return {
-    controllerActive: gamepadRouter.getControllerActive(),
-    hintBarVisible: gamepadRouter.getHintBarVisible(),
-    context: gamepadRouter.getContext(),
-  };
+function getSnapshot(): GamepadRouterContextValue {
+  const controllerActive = gamepadRouter.getControllerActive();
+  const hintBarVisible = gamepadRouter.getHintBarVisible();
+  const context = gamepadRouter.getContext();
+
+  if (
+    cachedSnapshot.controllerActive === controllerActive &&
+    cachedSnapshot.hintBarVisible === hintBarVisible &&
+    cachedSnapshot.context === context
+  ) {
+    return cachedSnapshot;
+  }
+
+  cachedSnapshot = { controllerActive, hintBarVisible, context };
+  return cachedSnapshot;
+}
+
+function getServerSnapshot(): GamepadRouterContextValue {
+  return defaultSnapshot;
 }
 
 export function GamepadRouterProvider({ children }: { children: ReactNode }) {
-  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   useEffect(() => {
     gamepadRouter.start();

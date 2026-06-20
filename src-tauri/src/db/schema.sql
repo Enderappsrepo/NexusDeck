@@ -18,7 +18,11 @@ CREATE TABLE IF NOT EXISTS installed_mods (
     enabled INTEGER DEFAULT 1,
     sort_order INTEGER NOT NULL DEFAULT 0,
     installed_files_json TEXT NOT NULL DEFAULT '[]',
-    installed_at INTEGER NOT NULL
+    installed_at INTEGER NOT NULL,
+    category TEXT NOT NULL DEFAULT '',
+    tags_json TEXT NOT NULL DEFAULT '[]',
+    plugins_json TEXT NOT NULL DEFAULT '[]',
+    install_options_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS downloads (
@@ -33,7 +37,8 @@ CREATE TABLE IF NOT EXISTS downloads (
     status TEXT NOT NULL DEFAULT 'queued',
     created_at INTEGER NOT NULL,
     mod_name TEXT DEFAULT '',
-    profile_id TEXT DEFAULT ''
+    profile_id TEXT DEFAULT '',
+    update_target_mod_id TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS app_settings (

@@ -37,6 +37,8 @@ pub struct DownloadProgress {
     pub mod_name: String,
     #[serde(default)]
     pub profile_id: String,
+    #[serde(default)]
+    pub update_target_mod_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +68,7 @@ struct QueuedDownload {
     expected_size_kb: u64,
     mod_name: String,
     profile_id: String,
+    update_target_mod_id: String,
     resume_uri: Option<String>,
     resume_bytes: u64,
 }
@@ -80,6 +83,7 @@ pub struct DownloadManager {
     active: Arc<Mutex<HashMap<String, ActiveDownload>>>,
     running_count: Arc<AtomicUsize>,
     processing: Arc<Mutex<bool>>,
+    auto_install_ids: Arc<Mutex<std::collections::HashSet<String>>>,
 }
 
 impl DownloadManager {
@@ -100,7 +104,16 @@ impl DownloadManager {
             active: Arc::new(Mutex::new(HashMap::new())),
             running_count: Arc::new(AtomicUsize::new(0)),
             processing: Arc::new(Mutex::new(false)),
+            auto_install_ids: Arc::new(Mutex::new(std::collections::HashSet::new())),
         }
+    }
+
+    pub fn mark_auto_install(&self, download_id: &str) {
+        self.auto_install_ids.lock().insert(download_id.to_string());
+    }
+
+    pub fn consume_auto_install(&self, download_id: &str) -> bool {
+        self.auto_install_ids.lock().remove(download_id)
     }
 
     pub fn get_download_settings(&self) -> Result<DownloadSettings> {
@@ -125,7 +138,7 @@ impl DownloadManager {
         dest_dir: &Path,
         expected_size_kb: u64,
     ) -> Result<DownloadProgress> {
-        self.enqueue_download(
+        self.enqueue_download_inner(
             app,
             nexus,
             game_domain,
@@ -136,6 +149,39 @@ impl DownloadManager {
             expected_size_kb,
             "",
             "",
+            "",
+            None,
+            0,
+        )
+        .await
+    }
+
+    pub async fn enqueue_update_download(
+        &self,
+        app: AppHandle,
+        nexus: Arc<NexusClient>,
+        game_domain: &str,
+        mod_id: u64,
+        file_id: u64,
+        file_name: &str,
+        dest_dir: &Path,
+        expected_size_kb: u64,
+        mod_name: &str,
+        profile_id: &str,
+        update_target_mod_id: &str,
+    ) -> Result<DownloadProgress> {
+        self.enqueue_download_inner(
+            app,
+            nexus,
+            game_domain,
+            mod_id,
+            file_id,
+            file_name,
+            dest_dir,
+            expected_size_kb,
+            mod_name,
+            profile_id,
+            update_target_mod_id,
             None,
             0,
         )
@@ -154,6 +200,40 @@ impl DownloadManager {
         expected_size_kb: u64,
         mod_name: &str,
         profile_id: &str,
+        resume_uri: Option<String>,
+        resume_bytes: u64,
+    ) -> Result<DownloadProgress> {
+        self.enqueue_download_inner(
+            app,
+            nexus,
+            game_domain,
+            mod_id,
+            file_id,
+            file_name,
+            dest_dir,
+            expected_size_kb,
+            mod_name,
+            profile_id,
+            "",
+            resume_uri,
+            resume_bytes,
+        )
+        .await
+    }
+
+    async fn enqueue_download_inner(
+        &self,
+        app: AppHandle,
+        nexus: Arc<NexusClient>,
+        game_domain: &str,
+        mod_id: u64,
+        file_id: u64,
+        file_name: &str,
+        dest_dir: &Path,
+        expected_size_kb: u64,
+        mod_name: &str,
+        profile_id: &str,
+        update_target_mod_id: &str,
         resume_uri: Option<String>,
         resume_bytes: u64,
     ) -> Result<DownloadProgress> {
@@ -189,6 +269,7 @@ impl DownloadManager {
             created_at: chrono::Utc::now().timestamp(),
             mod_name: mod_name.to_string(),
             profile_id: profile_id.to_string(),
+            update_target_mod_id: update_target_mod_id.to_string(),
         };
         db::insert_download(&record)?;
 
@@ -204,6 +285,7 @@ impl DownloadManager {
             dest_path: dest_path.display().to_string(),
             mod_name: mod_name.to_string(),
             profile_id: profile_id.to_string(),
+            update_target_mod_id: update_target_mod_id.to_string(),
         };
 
         let _ = app.emit("download-progress", &progress);
@@ -220,6 +302,7 @@ impl DownloadManager {
             expected_size_kb,
             mod_name: mod_name.to_string(),
             profile_id: profile_id.to_string(),
+            update_target_mod_id: update_target_mod_id.to_string(),
             resume_uri: Some(uri),
             resume_bytes,
         });
@@ -271,7 +354,7 @@ impl DownloadManager {
             .and_then(|n| n.to_str())
             .unwrap_or("download");
 
-        self.enqueue_download(
+        self.enqueue_download_inner(
             app,
             nexus,
             &record.game_domain,
@@ -282,6 +365,7 @@ impl DownloadManager {
             (record.bytes_total as u64).saturating_div(1024).max(1),
             &record.mod_name,
             &record.profile_id,
+            &record.update_target_mod_id,
             Some(record.url),
             resume_bytes,
         )
@@ -330,6 +414,7 @@ impl DownloadManager {
                 expected_size_kb: (record.bytes_total as u64).saturating_div(1024).max(1),
                 mod_name: record.mod_name.clone(),
                 profile_id: record.profile_id.clone(),
+                update_target_mod_id: record.update_target_mod_id.clone(),
                 resume_uri: Some(record.url.clone()),
                 resume_bytes,
             });
@@ -413,6 +498,7 @@ impl DownloadManager {
                 settings.speed_limit_kbps,
                 &item.mod_name,
                 &item.profile_id,
+                &item.update_target_mod_id,
             )
             .await;
 
@@ -451,6 +537,7 @@ impl DownloadManager {
         speed_limit_kbps: u32,
         mod_name: &str,
         profile_id: &str,
+        update_target_mod_id: &str,
     ) -> Result<()> {
         let temp_path = part_path(dest_path);
         let mut headers = download_headers()?;
@@ -547,6 +634,7 @@ impl DownloadManager {
                     dest_path: dest_path.display().to_string(),
                     mod_name: mod_name.to_string(),
                     profile_id: profile_id.to_string(),
+                    update_target_mod_id: update_target_mod_id.to_string(),
                 };
                 let _ = app.emit("download-progress", &progress);
                 last_emit = Instant::now();
@@ -582,6 +670,7 @@ impl DownloadManager {
             dest_path: final_path.display().to_string(),
             mod_name: mod_name.to_string(),
             profile_id: profile_id.to_string(),
+            update_target_mod_id: update_target_mod_id.to_string(),
         };
         let _ = app.emit("download-complete", &progress);
         Ok(())
@@ -598,6 +687,7 @@ impl DownloadManager {
             active: Arc::clone(&self.active),
             running_count: Arc::clone(&self.running_count),
             processing: Arc::clone(&self.processing),
+            auto_install_ids: Arc::clone(&self.auto_install_ids),
         }
     }
 }

@@ -24,10 +24,52 @@ export interface StrategyOption {
   description: string;
 }
 
+export type InstallOptionSelectionType =
+  | "select_one"
+  | "select_at_most_one"
+  | "select_any"
+  | "select_at_least_one";
+
+export interface InstallOptionChoice {
+  id: string;
+  label: string;
+  description?: string | null;
+  folder_prefixes: string[];
+  image_path?: string | null;
+  default: boolean;
+}
+
+export interface InstallWizardStep {
+  id: string;
+  name: string;
+  description?: string | null;
+  groups: InstallOptionGroup[];
+}
+
+export interface InstallWizard {
+  module_name?: string | null;
+  module_image_path?: string | null;
+  steps: InstallWizardStep[];
+}
+
+export interface InstallOptionGroup {
+  id: string;
+  name: string;
+  selection_type: InstallOptionSelectionType;
+  options: InstallOptionChoice[];
+}
+
+export interface SelectedInstallOption {
+  group_id: string;
+  option_ids: string[];
+}
+
 export interface InstallOptions {
   strategy: string;
   enable_mod: boolean;
   overwrite_files: boolean;
+  selected_options?: SelectedInstallOption[];
+  prepared_extract_dir?: string | null;
 }
 
 export interface InstallPreview {
@@ -39,6 +81,30 @@ export interface InstallPreview {
   skipped_existing: number;
   strategies: StrategyOption[];
   archive_folders: string[];
+  option_groups: InstallOptionGroup[];
+  default_selections: SelectedInstallOption[];
+  install_wizard_required?: boolean;
+  install_wizard?: InstallWizard | null;
+}
+
+export interface InstallPrepareResult {
+  prepared_extract_dir: string;
+  option_groups: InstallOptionGroup[];
+  default_selections: SelectedInstallOption[];
+  entry_count: number;
+  archive_folders: string[];
+  install_wizard?: InstallWizard | null;
+}
+
+export interface InstallProgress {
+  profile_id: string;
+  mod_name: string;
+  phase: "preview" | "install" | string;
+  stage: string;
+  message: string;
+  files_done: number;
+  files_total: number;
+  current_file?: string | null;
 }
 
 export interface StagingFile {
@@ -167,6 +233,33 @@ export interface InstalledMod {
   sort_order?: number;
   installed_files_json: string;
   installed_at: number;
+  category?: string;
+  tags_json?: string;
+  plugins_json?: string;
+  install_options_json?: string;
+}
+
+export interface UninstallResult {
+  removed_files: number;
+  restored_shared_files: number;
+  warnings: string[];
+}
+
+export interface UpdateJob {
+  download_id: string;
+  installed_mod_id: string;
+}
+
+export interface UpdateBatchResult {
+  queued: string[];
+  skipped: string[];
+  errors: string[];
+}
+
+export interface ModUpdateProgress {
+  installed_mod_id: string;
+  phase: string;
+  message: string;
 }
 
 export interface DownloadProgress {
@@ -181,6 +274,7 @@ export interface DownloadProgress {
   dest_path: string;
   mod_name?: string;
   profile_id?: string;
+  update_target_mod_id?: string;
 }
 
 export interface DownloadRecord {
@@ -196,6 +290,7 @@ export interface DownloadRecord {
   created_at: number;
   mod_name: string;
   profile_id: string;
+  update_target_mod_id?: string;
 }
 
 export function downloadRecordToProgress(record: DownloadRecord): DownloadProgress {
@@ -213,6 +308,7 @@ export function downloadRecordToProgress(record: DownloadRecord): DownloadProgre
     dest_path: record.dest_path,
     mod_name: record.mod_name,
     profile_id: record.profile_id,
+    update_target_mod_id: record.update_target_mod_id,
   };
 }
 

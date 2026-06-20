@@ -92,6 +92,7 @@ class GamepadRouterImpl {
   }
 
   setHintBarVisible(visible: boolean): void {
+    if (this.hintBarVisible === visible) return;
     this.hintBarVisible = visible;
     this.notify();
   }
@@ -106,6 +107,7 @@ class GamepadRouterImpl {
   }
 
   setContext(ctx: InputContext): void {
+    if (this.context === ctx) return;
     this.context = ctx;
     this.notify();
   }

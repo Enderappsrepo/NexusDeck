@@ -1,10 +1,12 @@
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, GitCompare, Package, Search } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
+import { ArrowDownAZ, Download, GitCompare, Loader2, Package, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { AppDialog } from "@/components/ui/dialog";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ListRowSkeleton } from "@/components/ui/LoadingSkeleton";
@@ -20,7 +22,14 @@ import { useGamesStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { triggerHaptic } from "@/lib/haptics";
 import { EXPORT_FORMATS } from "@/lib/nexus/export-formats";
-import type { InstalledMod, ModUpdateInfo } from "@/lib/nexus/types";
+import type { InstalledMod, ModUpdateInfo, ModUpdateProgress } from "@/lib/nexus/types";
+
+function reloadLibrary(profileId: string) {
+  return Promise.all([
+    api.listInstalledMods(profileId),
+    api.checkProfileUpdates(profileId).catch(() => [] as ModUpdateInfo[]),
+  ]);
+}
 
 export const Route = createFileRoute("/games/$domain/library")({
   component: LibraryPage,
@@ -45,17 +54,30 @@ function LibraryPage() {
   const [exportContent, setExportContent] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [focusedModId, setFocusedModId] = useState<string | null>(null);
+  const [uninstallTarget, setUninstallTarget] = useState<InstalledMod | null>(null);
+  const [uninstalling, setUninstalling] = useState(false);
+  const [sorting, setSorting] = useState(false);
+  const [updatingAll, setUpdatingAll] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<Record<string, ModUpdateProgress>>({});
+
+  const refreshLibrary = useCallback(async () => {
+    if (!profile) return;
+    const [installed, updateList] = await reloadLibrary(profile.id);
+    setMods(installed);
+    setUpdates(updateList);
+  }, [profile]);
 
   useEffect(() => {
     if (!profile) return;
     setLoading(true);
-    Promise.all([
-      api.listInstalledMods(profile.id),
-      api.checkProfileUpdates(profile.id).catch(() => [] as ModUpdateInfo[]),
-    ])
-      .then(([installed, updateList]) => {
+    reloadLibrary(profile.id)
+      .then(async ([installed, updateList]) => {
         setMods(installed);
         setUpdates(updateList);
+        if (installed.some((m) => !m.category)) {
+          const refreshed = await api.refreshModMetadata(profile.id).catch(() => installed);
+          setMods(refreshed);
+        }
       })
       .finally(() => setLoading(false));
   }, [profile]);
@@ -117,6 +139,25 @@ function LibraryPage() {
     return () => window.removeEventListener("nexusdeck-library-reorder", onReorder);
   }, [reorderMod]);
 
+  useEffect(() => {
+    const unsubs: Array<() => void> = [];
+    listen<ModUpdateProgress>("mod-update-progress", (e) => {
+      setUpdateProgress((prev) => ({
+        ...prev,
+        [e.payload.installed_mod_id]: e.payload,
+      }));
+    }).then((u) => unsubs.push(u));
+    listen<InstalledMod>("mod-update-complete", (e) => {
+      setUpdateProgress((prev) => {
+        const next = { ...prev };
+        delete next[e.payload.id];
+        return next;
+      });
+      void refreshLibrary();
+    }).then((u) => unsubs.push(u));
+    return () => unsubs.forEach((u) => u());
+  }, [refreshLibrary]);
+
   useGamepadContextAction(GP.X, () => {
     const mod = mods.find((m) => m.id === focusedModId);
     if (mod && !compareMode) void toggleMod(mod);
@@ -164,6 +205,13 @@ function LibraryPage() {
               setCompareA(focusedMod.id);
             },
           },
+          {
+            id: "uninstall",
+            label: "Uninstall mod",
+            icon: Trash2,
+            variant: "danger",
+            onAction: () => setUninstallTarget(focusedMod),
+          },
         ]
       : [],
     focusedMod?.name
@@ -197,14 +245,75 @@ function LibraryPage() {
   const updateMod = async (update: ModUpdateInfo) => {
     if (!profile) return;
     setError(null);
+    setUpdateProgress((prev) => ({
+      ...prev,
+      [update.installed_mod_id]: {
+        installed_mod_id: update.installed_mod_id,
+        phase: "preparing",
+        message: "Starting update…",
+      },
+    }));
     try {
-      await api.updateModSafe(profile.id, update.installed_mod_id);
-      const next = await api.checkProfileUpdates(profile.id);
-      setUpdates(next);
+      await api.startModUpdate(profile.id, update.installed_mod_id);
+      void triggerHaptic("install");
+    } catch (e) {
+      setError(e);
+      setUpdateProgress((prev) => {
+        const next = { ...prev };
+        delete next[update.installed_mod_id];
+        return next;
+      });
+      void triggerHaptic("error");
+    }
+  };
+
+  const updateAllMods = async () => {
+    if (!profile) return;
+    setUpdatingAll(true);
+    setError(null);
+    try {
+      const result = await api.updateAllMods(profile.id);
+      if (result.errors.length > 0) {
+        setError(new Error(result.errors.join("\n")));
+      }
       void triggerHaptic("install");
     } catch (e) {
       setError(e);
       void triggerHaptic("error");
+    } finally {
+      setUpdatingAll(false);
+    }
+  };
+
+  const autoSortLoadOrder = async () => {
+    if (!profile) return;
+    setSorting(true);
+    setError(null);
+    try {
+      const next = await api.autoSortLoadOrder(profile.id);
+      setMods(next);
+      void triggerHaptic("reorder");
+    } catch (e) {
+      setError(e);
+    } finally {
+      setSorting(false);
+    }
+  };
+
+  const confirmUninstall = async () => {
+    if (!uninstallTarget || !profile) return;
+    setUninstalling(true);
+    setError(null);
+    try {
+      await api.uninstallMod(uninstallTarget.id);
+      setUninstallTarget(null);
+      await refreshLibrary();
+      void triggerHaptic("success");
+    } catch (e) {
+      setError(e);
+      void triggerHaptic("error");
+    } finally {
+      setUninstalling(false);
     }
   };
 
@@ -215,6 +324,33 @@ function LibraryPage() {
   return (
     <div className="page-section mx-auto max-w-4xl">
       {contextMenu}
+      <AppDialog
+        open={!!uninstallTarget}
+        onOpenChange={(open) => !open && setUninstallTarget(null)}
+        title="Uninstall mod?"
+      >
+        {uninstallTarget && (
+          <div className="space-y-4">
+            <p>
+              Remove <strong>{uninstallTarget.name}</strong> from your library and delete its
+              deployed files. Shared files may be restored from other mods.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setUninstallTarget(null)} data-focusable="true">
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                loading={uninstalling}
+                onClick={() => void confirmUninstall()}
+                data-focusable="true"
+              >
+                Uninstall
+              </Button>
+            </div>
+          </div>
+        )}
+      </AppDialog>
       <div className="mb-4">
         <LaunchButton profileId={profile.id} gameDomain={domain} compact className="w-full sm:w-auto" />
       </div>
@@ -226,6 +362,16 @@ function LibraryPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            disabled={sorting || mods.length === 0}
+            loading={sorting}
+            onClick={() => void autoSortLoadOrder()}
+            data-focusable="true"
+          >
+            <ArrowDownAZ className="h-4 w-4" />
+            Auto-sort load order
+          </Button>
           <Button
             variant={compareMode ? "default" : "outline"}
             onClick={() => {
@@ -271,6 +417,30 @@ function LibraryPage() {
         <ApiErrorBanner context="generic" error={error} onRetry={() => setError(null)} />
       )}
 
+      {updates.length > 0 && (
+        <Card className="border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold">
+                {updates.length} update{updates.length === 1 ? "" : "s"} available
+              </p>
+              <p className="text-sm text-[var(--color-muted)]">
+                Updates download and install automatically with your saved options.
+              </p>
+            </div>
+            <Button
+              loading={updatingAll}
+              disabled={updatingAll}
+              onClick={() => void updateAllMods()}
+              data-focusable="true"
+            >
+              <Download className="h-4 w-4" />
+              Update all
+            </Button>
+          </div>
+        </Card>
+      )}
+
       <Card className="p-4">
         <p className="mb-3 text-sm font-semibold text-[var(--color-muted)]">Export mod list</p>
         <div className="flex flex-wrap gap-2">
@@ -304,7 +474,7 @@ function LibraryPage() {
       )}
 
       <p className="text-sm text-[var(--color-muted)]">
-        X toggles enable/disable. Y opens actions. Disabling removes files from Data; backups stay in staging.
+        X toggles enable/disable. Y opens actions. Uninstall removes the mod entirely.
       </p>
 
       {loading && <ListRowSkeleton count={3} />}
@@ -327,6 +497,7 @@ function LibraryPage() {
           {filteredMods.map((mod, index) => {
             const files: string[] = JSON.parse(mod.installed_files_json || "[]");
             const update = updateForMod(mod);
+            const progress = updateProgress[mod.id];
             const selected = compareA === mod.id || compareB === mod.id;
             return (
               <Card
@@ -369,8 +540,17 @@ function LibraryPage() {
                       <Badge variant={mod.enabled ? "success" : "muted"}>
                         {mod.enabled ? "Enabled" : "Disabled"}
                       </Badge>
+                      {mod.category && (
+                        <Badge variant="muted">{mod.category}</Badge>
+                      )}
                       {update && (
                         <Badge variant="update">Update: v{update.latest_version}</Badge>
+                      )}
+                      {progress && (
+                        <Badge variant="muted" className="gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          {progress.message}
+                        </Badge>
                       )}
                     </div>
                     <p className="mt-1 text-sm text-[var(--color-muted)]">
@@ -378,14 +558,14 @@ function LibraryPage() {
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    {update && !compareMode && (
+                    {update && !compareMode && !progress && (
                       <Button
                         variant="secondary"
                         size="sm"
                         data-focusable="true"
                         onClick={(e) => {
                           e.stopPropagation();
-                          updateMod(update);
+                          void updateMod(update);
                         }}
                       >
                         <Download className="h-4 w-4" />

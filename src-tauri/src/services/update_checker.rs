@@ -1,11 +1,13 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 use crate::db;
 use crate::error::{NexusDeckError, Result};
 use crate::services::download_manager::DownloadManager;
+use crate::services::mod_uninstall::remove_mod_files_for_update;
 use crate::services::nexus_client::NexusClient;
-use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModUpdateInfo {
@@ -16,6 +18,26 @@ pub struct ModUpdateInfo {
     pub latest_version: String,
     pub latest_file_id: u64,
     pub changelog_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateJob {
+    pub download_id: String,
+    pub installed_mod_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateBatchResult {
+    pub queued: Vec<String>,
+    pub skipped: Vec<String>,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModUpdateProgress {
+    pub installed_mod_id: String,
+    pub phase: String,
+    pub message: String,
 }
 
 pub async fn check_profile_updates(
@@ -61,19 +83,33 @@ pub async fn check_profile_updates(
     Ok(updates)
 }
 
-pub async fn update_mod_safe(
+pub async fn start_mod_update(
     app: AppHandle,
     nexus: Arc<NexusClient>,
     dm: Arc<DownloadManager>,
     profile_id: &str,
     installed_mod_id: &str,
-) -> Result<()> {
+) -> Result<UpdateJob> {
+    emit_update_progress(
+        &app,
+        installed_mod_id,
+        "preparing",
+        "Preparing mod update…",
+    );
+
     let profile = db::get_profile(profile_id)?
         .ok_or_else(|| NexusDeckError::NotFound("Profile not found".into()))?;
-    let installed = db::get_installed_mod(installed_mod_id)?
+    let mut installed = db::get_installed_mod(installed_mod_id)?
         .ok_or_else(|| NexusDeckError::NotFound("Installed mod not found".into()))?;
 
-    db::set_mod_enabled(installed_mod_id, false)?;
+    let was_enabled = installed.enabled;
+    if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&installed.install_options_json) {
+        if let Some(obj) = val.as_object_mut() {
+            obj.insert("enable_mod".into(), serde_json::json!(was_enabled));
+            installed.install_options_json = val.to_string();
+            db::save_installed_mod(&installed)?;
+        }
+    }
 
     let files = nexus
         .get_mod_files(&profile.game_domain, installed.nexus_mod_id as u64)
@@ -84,19 +120,95 @@ pub async fn update_mod_safe(
         .or_else(|| files.first())
         .ok_or_else(|| NexusDeckError::NotFound("No downloadable file found".into()))?;
 
-    let staging = std::path::PathBuf::from(&profile.staging_path);
-    dm.start_download(
-        app,
-        nexus,
-        &profile.game_domain,
-        installed.nexus_mod_id as u64,
-        primary.file_id,
-        &primary.file_name,
-        &staging,
-        primary.size_kb,
-    )
-    .await?;
+    remove_mod_files_for_update(&profile, &installed)?;
+    db::set_mod_enabled(installed_mod_id, false)?;
 
-    Ok(())
+    let staging = std::path::PathBuf::from(&profile.staging_path);
+    let progress = dm
+        .enqueue_update_download(
+            app.clone(),
+            nexus,
+            &profile.game_domain,
+            installed.nexus_mod_id as u64,
+            primary.file_id,
+            &primary.file_name,
+            &staging,
+            primary.size_kb,
+            &installed.name,
+            profile_id,
+            installed_mod_id,
+        )
+        .await?;
+
+    emit_update_progress(
+        &app,
+        installed_mod_id,
+        "downloading",
+        "Downloading update…",
+    );
+
+    Ok(UpdateJob {
+        download_id: progress.id,
+        installed_mod_id: installed_mod_id.to_string(),
+    })
 }
 
+pub async fn update_all_mods(
+    app: AppHandle,
+    nexus: Arc<NexusClient>,
+    dm: Arc<DownloadManager>,
+    profile_id: &str,
+) -> Result<UpdateBatchResult> {
+    let updates = check_profile_updates(&nexus, profile_id).await?;
+    let mut queued = Vec::new();
+    let mut skipped = Vec::new();
+    let mut errors = Vec::new();
+
+    for update in updates {
+        match start_mod_update(
+            app.clone(),
+            Arc::clone(&nexus),
+            Arc::clone(&dm),
+            profile_id,
+            &update.installed_mod_id,
+        )
+        .await
+        {
+            Ok(job) => {
+                queued.push(job.installed_mod_id);
+                dm.mark_auto_install(&job.download_id);
+            }
+            Err(e) => errors.push(format!("{}: {e}", update.name)),
+        }
+    }
+
+    Ok(UpdateBatchResult {
+        queued,
+        skipped,
+        errors,
+    })
+}
+
+pub fn emit_update_progress(app: &AppHandle, installed_mod_id: &str, phase: &str, message: &str) {
+    let _ = app.emit(
+        "mod-update-progress",
+        ModUpdateProgress {
+            installed_mod_id: installed_mod_id.to_string(),
+            phase: phase.to_string(),
+            message: message.to_string(),
+        },
+    );
+}
+
+/// Legacy alias kept for compatibility.
+pub async fn update_mod_safe(
+    app: AppHandle,
+    nexus: Arc<NexusClient>,
+    dm: Arc<DownloadManager>,
+    profile_id: &str,
+    installed_mod_id: &str,
+) -> Result<()> {
+    let job = start_mod_update(app, nexus, Arc::clone(&dm), profile_id, installed_mod_id).await?;
+    dm.mark_auto_install(&job.download_id);
+    Ok(())
+}

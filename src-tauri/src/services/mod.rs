@@ -26,5 +26,9 @@ pub mod steam_launch;
 pub mod script_extender;
 pub mod steam_shortcut;
 pub mod game_settings;
+pub mod install_options;
+pub mod mod_metadata;
+pub mod mod_uninstall;
+pub mod load_order;
 
 pub use archive_options::MergeOptions;

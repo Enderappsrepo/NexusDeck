@@ -1,6 +1,9 @@
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
 
 use crate::db::{self, InstalledMod};
 use crate::error::Result;
@@ -9,13 +12,20 @@ use crate::services::archive::list_archive_entries;
 use crate::services::deploy::{
     archive_top_level_folders, compute_deploy_paths, filter_deploy_paths,
 };
+use crate::services::load_order::plugins_json_from_manifest;
 use crate::services::mod_state::{apply_mod_enabled_state, backup_installed_files};
+use crate::services::plugins_txt;
+use crate::services::update_checker;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstallOptions {
     pub strategy: String,
     pub enable_mod: bool,
     pub overwrite_files: bool,
+    #[serde(default)]
+    pub selected_options: Vec<crate::services::install_options::SelectedInstallOption>,
+    #[serde(default)]
+    pub prepared_extract_dir: Option<String>,
 }
 
 impl Default for InstallOptions {
@@ -24,7 +34,18 @@ impl Default for InstallOptions {
             strategy: "auto".to_string(),
             enable_mod: true,
             overwrite_files: false,
+            selected_options: Vec::new(),
+            prepared_extract_dir: None,
         }
+    }
+}
+
+impl InstallOptions {
+    /// Strip ephemeral paths before persisting to the database.
+    pub fn for_storage(&self) -> Self {
+        let mut stored = self.clone();
+        stored.prepared_extract_dir = None;
+        stored
     }
 }
 
@@ -38,6 +59,20 @@ pub struct InstallPreview {
     pub skipped_existing: usize,
     pub strategies: Vec<StrategyOption>,
     pub archive_folders: Vec<String>,
+    pub option_groups: Vec<crate::services::install_options::InstallOptionGroup>,
+    pub default_selections: Vec<crate::services::install_options::SelectedInstallOption>,
+    pub install_wizard_required: bool,
+    pub install_wizard: Option<crate::services::install_options::InstallWizard>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstallPrepareResult {
+    pub prepared_extract_dir: String,
+    pub option_groups: Vec<crate::services::install_options::InstallOptionGroup>,
+    pub default_selections: Vec<crate::services::install_options::SelectedInstallOption>,
+    pub entry_count: usize,
+    pub archive_folders: Vec<String>,
+    pub install_wizard: Option<crate::services::install_options::InstallWizard>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +80,215 @@ pub struct StrategyOption {
     pub id: String,
     pub label: String,
     pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct InstallProgress {
+    pub profile_id: String,
+    pub mod_name: String,
+    pub phase: String,
+    pub stage: String,
+    pub message: String,
+    pub files_done: u32,
+    pub files_total: u32,
+    pub current_file: Option<String>,
+}
+
+fn basic_plan_for_profile(profile: &db::Profile, strategy: &str) -> Result<games::DeployPlan> {
+    games::build_plan_for_strategy(
+        &profile.game_domain,
+        PathBuf::from(&profile.game_path).as_path(),
+        &[],
+        strategy,
+    )
+}
+
+fn emit_install_progress(app: &AppHandle, progress: InstallProgress) {
+    let _ = app.emit("install:progress", &progress);
+}
+
+fn install_progress(
+    app: &AppHandle,
+    profile_id: &str,
+    mod_name: &str,
+    stage: &str,
+    message: &str,
+) -> InstallProgress {
+    let progress = InstallProgress {
+        profile_id: profile_id.to_string(),
+        mod_name: mod_name.to_string(),
+        phase: "install".into(),
+        stage: stage.to_string(),
+        message: message.to_string(),
+        files_done: 0,
+        files_total: 0,
+        current_file: None,
+    };
+    emit_install_progress(app, progress.clone());
+    progress
+}
+
+fn preview_progress(
+    app: &AppHandle,
+    profile_id: &str,
+    mod_name: &str,
+    stage: &str,
+    message: &str,
+    files_total: u32,
+) {
+    emit_install_progress(
+        app,
+        InstallProgress {
+            profile_id: profile_id.to_string(),
+            mod_name: mod_name.to_string(),
+            phase: "preview".into(),
+            stage: stage.to_string(),
+            message: message.to_string(),
+            files_done: 0,
+            files_total,
+            current_file: None,
+        },
+    );
+}
+
+fn install_progress_detailed(
+    app: &AppHandle,
+    profile_id: &str,
+    mod_name: &str,
+    stage: &str,
+    message: &str,
+    files_done: u32,
+    files_total: u32,
+    current_file: Option<String>,
+) {
+    emit_install_progress(
+        app,
+        InstallProgress {
+            profile_id: profile_id.to_string(),
+            mod_name: mod_name.to_string(),
+            phase: "install".into(),
+            stage: stage.to_string(),
+            message: message.to_string(),
+            files_done,
+            files_total,
+            current_file,
+        },
+    );
+}
+
+fn extract_progress_message(
+    percent: u8,
+    files_done: u32,
+    files_total: u32,
+    using_native_7z: bool,
+) -> String {
+    if percent >= 99 {
+        return "Finishing extraction…".to_string();
+    }
+    if percent >= 90 {
+        return if files_total > 0 {
+            format!(
+                "Almost done — extracting ({percent}% · {files_done} / {files_total} files)"
+            )
+        } else {
+            format!("Almost done — extracting archive ({percent}%)")
+        };
+    }
+    if percent >= 1 {
+        return if files_total > 0 {
+            format!("Extracting archive… {percent}% ({files_done} / {files_total} files)")
+        } else {
+            format!("Extracting archive… {percent}%")
+        };
+    }
+    if files_total > 0 && percent == 0 && files_done == 0 {
+        if using_native_7z {
+            return format!("Starting extraction… ({files_total} files in archive)");
+        }
+        return format!(
+            "Extracting with built-in decompressor ({files_total} files) — install 7-Zip for faster extraction"
+        );
+    }
+    if files_total > 0 && percent == 0 && files_done > 0 {
+        return format!(
+            "Decompressing archive… {files_done} / {files_total} files processed"
+        );
+    }
+    if files_total > 0 {
+        format!("Starting extraction… ({files_total} files in archive)")
+    } else {
+        "Starting extraction…".to_string()
+    }
+}
+
+fn extract_progress_reporter(
+    app: AppHandle,
+    profile_id: String,
+    mod_name: String,
+    using_native_7z: bool,
+) -> crate::services::archive_options::ExtractProgressFn {
+    let last_emit = Arc::new(Mutex::new(Instant::now()));
+    Arc::new(move |event| {
+        let mut last = last_emit.lock().unwrap();
+        let should_emit = event.percent >= 100
+            || last.elapsed() >= Duration::from_millis(150);
+        if !should_emit {
+            return;
+        }
+        *last = Instant::now();
+        let message = extract_progress_message(
+            event.percent,
+            event.files_done,
+            event.files_total,
+            using_native_7z,
+        );
+        emit_install_progress(
+            &app,
+            InstallProgress {
+                profile_id: profile_id.clone(),
+                mod_name: mod_name.clone(),
+                phase: "install".into(),
+                stage: "extracting".into(),
+                message,
+                files_done: event.files_done,
+                files_total: event.files_total,
+                current_file: event.current_file,
+            },
+        );
+    })
+}
+
+fn merge_progress_reporter(
+    app: AppHandle,
+    profile_id: String,
+    mod_name: String,
+) -> crate::services::archive_options::MergeProgressFn {
+    let last_emit = Arc::new(Mutex::new(Instant::now()));
+    Arc::new(move |event| {
+        let mut last = last_emit.lock().unwrap();
+        let should_emit = event.files_done >= event.files_total
+            || last.elapsed() >= Duration::from_millis(200);
+        if !should_emit {
+            return;
+        }
+        *last = Instant::now();
+        emit_install_progress(
+            &app,
+            InstallProgress {
+                profile_id: profile_id.clone(),
+                mod_name: mod_name.clone(),
+                phase: "install".into(),
+                stage: "deploying".into(),
+                message: format!(
+                    "Copying files to game folder ({}/{})…",
+                    event.files_done, event.files_total
+                ),
+                files_done: event.files_done as u32,
+                files_total: event.files_total as u32,
+                current_file: Some(event.current_file.clone()),
+            },
+        );
+    })
 }
 
 fn available_strategies() -> Vec<StrategyOption> {
@@ -98,18 +342,171 @@ fn preview_conflicts(
     ))
 }
 
+fn fomod_wizard_plan(profile: &db::Profile) -> Result<games::DeployPlan> {
+    let mut plan = basic_plan_for_profile(profile, "auto")?;
+    plan.requires_confirmation = false;
+    plan.description =
+        "This mod uses FOMOD. Extract the archive to choose install components before deploying."
+            .to_string();
+    Ok(plan)
+}
+
 #[tauri::command]
 pub async fn preview_mod_install(
+    app: AppHandle,
     profile_id: String,
     archive_path: String,
     mod_name: String,
     strategy: String,
+    selected_options: Option<Vec<crate::services::install_options::SelectedInstallOption>>,
+    prepared_extract_dir: Option<String>,
 ) -> Result<InstallPreview> {
     let profile = db::get_profile(&profile_id)?
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
 
     let archive = PathBuf::from(&archive_path);
-    let entries = list_archive_entries(&archive)?;
+    let extract_dir = prepared_extract_dir.as_ref().map(PathBuf::from);
+
+    preview_progress(
+        &app,
+        &profile_id,
+        &mod_name,
+        "reading_archive",
+        if extract_dir.is_some() {
+            "Reading extracted files…"
+        } else {
+            "Reading archive contents…"
+        },
+        0,
+    );
+
+    let all_entries = if let Some(ref dir) = extract_dir {
+        let dir = dir.clone();
+        tokio::task::spawn_blocking(move || crate::services::archive::list_extracted_entries(&dir))
+            .await
+            .map_err(|e| {
+                crate::error::NexusDeckError::Other(format!("Extract analysis failed: {e}"))
+            })??
+    } else {
+        let archive_for_list = archive.clone();
+        tokio::task::spawn_blocking(move || list_archive_entries(&archive_for_list))
+            .await
+            .map_err(|e| crate::error::NexusDeckError::Other(format!("Archive analysis failed: {e}")))??
+    };
+
+    let entry_count = all_entries.len() as u32;
+    preview_progress(
+        &app,
+        &profile_id,
+        &mod_name,
+        "reading_archive",
+        &format!("Found {entry_count} file(s)"),
+        entry_count,
+    );
+
+    let install_wizard_required = extract_dir.is_none()
+        && crate::services::install_options::archive_has_fomod_config(&all_entries);
+
+    if install_wizard_required {
+        let archive_folders = archive_top_level_folders(&all_entries);
+        preview_progress(
+            &app,
+            &profile_id,
+            &mod_name,
+            "complete",
+            "FOMOD installer — extract to configure options",
+            entry_count,
+        );
+        return Ok(InstallPreview {
+            file_count: all_entries.len(),
+            skipped_existing: 0,
+            deploy_files: Vec::new(),
+            entries: all_entries.into_iter().take(100).collect(),
+            plan: fomod_wizard_plan(&profile)?,
+            conflicts: Vec::new(),
+            strategies: available_strategies(),
+            archive_folders,
+            option_groups: Vec::new(),
+            default_selections: Vec::new(),
+            install_wizard_required: true,
+            install_wizard: None,
+        });
+    }
+
+    preview_progress(
+        &app,
+        &profile_id,
+        &mod_name,
+        "install_options",
+        "Checking for install options…",
+        entry_count,
+    );
+
+    let (option_groups, install_wizard) = if let Some(ref dir) = extract_dir {
+        let dir = dir.clone();
+        let archive_for_wizard = archive.clone();
+        let entries_for_options = all_entries.clone();
+        let wizard = tokio::task::spawn_blocking(move || {
+            crate::services::install_options::detect_install_wizard_from_dir(
+                &archive_for_wizard,
+                &dir,
+                &entries_for_options,
+            )
+        })
+        .await
+        .map_err(|e| {
+            crate::error::NexusDeckError::Other(format!("Install option analysis failed: {e}"))
+        })?;
+        let groups = wizard.flattened_groups();
+        let wizard = if wizard.steps.is_empty() { None } else { Some(wizard) };
+        (groups, wizard)
+    } else {
+        let archive_for_options = archive.clone();
+        let entries_for_options = all_entries.clone();
+        let groups = tokio::task::spawn_blocking(move || {
+            crate::services::install_options::detect_install_option_groups(
+                &archive_for_options,
+                &entries_for_options,
+            )
+        })
+        .await
+        .map_err(|e| {
+            crate::error::NexusDeckError::Other(format!("Install option analysis failed: {e}"))
+        })?;
+        (groups, None)
+    };
+
+    let options_message = if option_groups.is_empty() {
+        "No optional install components found".to_string()
+    } else {
+        format!("Found {} install option group(s)", option_groups.len())
+    };
+    preview_progress(
+        &app,
+        &profile_id,
+        &mod_name,
+        "install_options",
+        &options_message,
+        entry_count,
+    );
+
+    let default_selections =
+        crate::services::install_options::default_selections(&option_groups);
+    let selections = selected_options.unwrap_or(default_selections.clone());
+    let entries = crate::services::install_options::apply_install_selections(
+        &all_entries,
+        &option_groups,
+        &selections,
+    );
+
+    preview_progress(
+        &app,
+        &profile_id,
+        &mod_name,
+        "deploy_plan",
+        "Planning deployment…",
+        entry_count,
+    );
 
     let game_path = PathBuf::from(&profile.game_path);
     let plan = games::build_plan_for_strategy(
@@ -121,8 +518,40 @@ pub async fn preview_mod_install(
 
     let deploy_files = compute_deploy_paths(&plan, &entries, game_path.as_path());
     let (planned, skipped_existing) = filter_deploy_paths(&deploy_files, false);
+
+    preview_progress(
+        &app,
+        &profile_id,
+        &mod_name,
+        "deploy_plan",
+        &format!("{} file(s) will be deployed", planned.len()),
+        planned.len() as u32,
+    );
+
+    preview_progress(
+        &app,
+        &profile_id,
+        &mod_name,
+        "conflicts",
+        "Checking for conflicts…",
+        planned.len() as u32,
+    );
     let conflicts = preview_conflicts(&profile.id, &planned, &mod_name)?;
     let archive_folders = archive_top_level_folders(&entries);
+
+    let complete_message = if conflicts.is_empty() {
+        "Ready to install".to_string()
+    } else {
+        format!("{} potential conflict(s) found", conflicts.len())
+    };
+    preview_progress(
+        &app,
+        &profile_id,
+        &mod_name,
+        "complete",
+        &complete_message,
+        planned.len() as u32,
+    );
 
     Ok(InstallPreview {
         file_count: planned.len(),
@@ -133,29 +562,236 @@ pub async fn preview_mod_install(
         conflicts,
         strategies: available_strategies(),
         archive_folders,
+        option_groups,
+        default_selections,
+        install_wizard_required: false,
+        install_wizard,
+    })
+}
+
+#[tauri::command]
+pub async fn prepare_mod_install(
+    app: AppHandle,
+    profile_id: String,
+    archive_path: String,
+    mod_name: String,
+) -> Result<InstallPrepareResult> {
+    use uuid::Uuid;
+
+    use crate::services::archive::{extract_archive_fast_with_progress, list_archive_entries};
+    use crate::services::paths::install_work_dir;
+
+    let _profile = db::get_profile(&profile_id)?
+        .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
+
+    let archive = PathBuf::from(&archive_path);
+    let archive_for_count = archive.clone();
+    let entry_count = tokio::task::spawn_blocking(move || list_archive_entries(&archive_for_count))
+        .await
+        .map_err(|e| crate::error::NexusDeckError::Other(format!("Archive analysis failed: {e}")))??
+        .len() as u32;
+
+    let using_native_7z = crate::services::archive::has_7z_executable();
+    install_progress_detailed(
+        &app,
+        &profile_id,
+        &mod_name,
+        "extracting",
+        &extract_progress_message(0, 0, entry_count, using_native_7z),
+        0,
+        entry_count,
+        None,
+    );
+
+    let temp_extract = install_work_dir()?.join(format!("nexusdeck-prepare-{}", Uuid::new_v4()));
+    let archive_for_extract = archive.clone();
+    let extract_dir = temp_extract.clone();
+    let progress =
+        extract_progress_reporter(app.clone(), profile_id.clone(), mod_name.clone(), using_native_7z);
+    tokio::task::spawn_blocking(move || {
+        extract_archive_fast_with_progress(
+            &archive_for_extract,
+            &extract_dir,
+            entry_count,
+            Some(progress),
+        )
+    })
+    .await
+    .map_err(|e| crate::error::NexusDeckError::Other(format!("Extract failed: {e}")))??;
+
+    install_progress_detailed(
+        &app,
+        &profile_id,
+        &mod_name,
+        "extracting",
+        "Reading install options…",
+        entry_count,
+        entry_count,
+        None,
+    );
+
+    let extract_dir_for_list = temp_extract.clone();
+    let entries = tokio::task::spawn_blocking(move || {
+        crate::services::archive::list_extracted_entries(&extract_dir_for_list)
+    })
+    .await
+    .map_err(|e| crate::error::NexusDeckError::Other(format!("Extract analysis failed: {e}")))??;
+
+    let archive_for_wizard = archive.clone();
+    let extract_dir_for_options = temp_extract.clone();
+    let entries_for_options = entries.clone();
+    let install_wizard = tokio::task::spawn_blocking(move || {
+        crate::services::install_options::detect_install_wizard_from_dir(
+            &archive_for_wizard,
+            &extract_dir_for_options,
+            &entries_for_options,
+        )
+    })
+    .await
+    .map_err(|e| {
+        crate::error::NexusDeckError::Other(format!("Install option analysis failed: {e}"))
+    })?;
+    let option_groups = install_wizard.flattened_groups();
+    let install_wizard = if install_wizard.steps.is_empty() {
+        None
+    } else {
+        Some(install_wizard)
+    };
+
+    let default_selections =
+        crate::services::install_options::default_selections(&option_groups);
+    let archive_folders = archive_top_level_folders(&entries);
+
+    emit_install_progress(
+        &app,
+        InstallProgress {
+            profile_id: profile_id.clone(),
+            mod_name: mod_name.clone(),
+            phase: "install".into(),
+            stage: "complete".into(),
+            message: format!(
+                "Extracted {} file(s) — configure install options",
+                entries.len()
+            ),
+            files_done: entries.len() as u32,
+            files_total: entries.len() as u32,
+            current_file: None,
+        },
+    );
+
+    Ok(InstallPrepareResult {
+        prepared_extract_dir: temp_extract.display().to_string(),
+        option_groups,
+        default_selections,
+        entry_count: entries.len(),
+        archive_folders,
+        install_wizard,
     })
 }
 
 #[tauri::command]
 pub async fn install_mod_from_archive(
+    app: AppHandle,
     profile_id: String,
     mod_name: String,
     nexus_mod_id: i64,
     nexus_file_id: i64,
     archive_path: String,
     options: InstallOptions,
+    category: Option<String>,
+    tags: Option<Vec<String>>,
+    file_version: Option<String>,
+    replace_mod_id: Option<String>,
 ) -> Result<serde_json::Value> {
     use uuid::Uuid;
 
-    use crate::services::archive::extract_archive;
+    use crate::services::archive::{extract_archive_fast_with_progress, list_extracted_entries};
     use crate::services::paths::install_work_dir;
     use crate::services::MergeOptions;
+
+    install_progress(
+        &app,
+        &profile_id,
+        &mod_name,
+        "preparing",
+        "Preparing install…",
+    );
 
     let profile = db::get_profile(&profile_id)?
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
 
     let archive = PathBuf::from(&archive_path);
-    let entries = list_archive_entries(&archive)?;
+    let using_prepared = options.prepared_extract_dir.is_some() && replace_mod_id.is_none();
+    let temp_extract = if let Some(ref prepared) = options.prepared_extract_dir {
+        if using_prepared {
+            PathBuf::from(prepared)
+        } else {
+            install_work_dir()?.join(format!("nexusdeck-install-{}", Uuid::new_v4()))
+        }
+    } else {
+        install_work_dir()?.join(format!("nexusdeck-install-{}", Uuid::new_v4()))
+    };
+
+    let all_entries = if using_prepared {
+        let extract_dir = temp_extract.clone();
+        tokio::task::spawn_blocking(move || list_extracted_entries(&extract_dir))
+            .await
+            .map_err(|e| crate::error::NexusDeckError::Other(format!("Extract analysis failed: {e}")))??
+    } else {
+        let archive_for_list = archive.clone();
+        tokio::task::spawn_blocking(move || list_archive_entries(&archive_for_list))
+            .await
+            .map_err(|e| crate::error::NexusDeckError::Other(format!("Archive analysis failed: {e}")))??
+    };
+
+    let option_groups = if using_prepared {
+        let extract_dir = temp_extract.clone();
+        let archive_for_options = archive.clone();
+        let entries_for_options = all_entries.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::services::install_options::detect_install_option_groups_from_dir(
+                &extract_dir,
+                &entries_for_options,
+                Some(&archive_for_options),
+            )
+        })
+        .await
+        .map_err(|e| {
+            crate::error::NexusDeckError::Other(format!("Install option analysis failed: {e}"))
+        })?
+    } else {
+        let archive_for_options = archive.clone();
+        let entries_for_options = all_entries.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::services::install_options::detect_install_option_groups(
+                &archive_for_options,
+                &entries_for_options,
+            )
+        })
+        .await
+        .map_err(|e| {
+            crate::error::NexusDeckError::Other(format!("Install option analysis failed: {e}"))
+        })?
+    };
+
+    let selections = if options.selected_options.is_empty() {
+        crate::services::install_options::default_selections(&option_groups)
+    } else {
+        options.selected_options.clone()
+    };
+    let entries = crate::services::install_options::apply_install_selections(
+        &all_entries,
+        &option_groups,
+        &selections,
+    );
+
+    if !option_groups.is_empty() {
+        crate::services::install_options::validate_fomod_selection_deploy(
+            &option_groups,
+            &selections,
+            &entries,
+        )?;
+    }
 
     let plan = games::build_plan_for_strategy(
         &profile.game_domain,
@@ -164,12 +800,57 @@ pub async fn install_mod_from_archive(
         &options.strategy,
     )?;
 
-    let temp_extract = install_work_dir()?.join(format!("nexusdeck-install-{}", Uuid::new_v4()));
-    extract_archive(&archive, &temp_extract)?;
+    if !using_prepared {
+        let entry_count = all_entries.len() as u32;
+        let using_native_7z = crate::services::archive::has_7z_executable();
+        install_progress_detailed(
+            &app,
+            &profile_id,
+            &mod_name,
+            "extracting",
+            &extract_progress_message(0, 0, entry_count, using_native_7z),
+            0,
+            entry_count,
+            None,
+        );
+        let archive_for_extract = archive.clone();
+        let extract_dir = temp_extract.clone();
+        let progress = extract_progress_reporter(
+            app.clone(),
+            profile_id.clone(),
+            mod_name.clone(),
+            using_native_7z,
+        );
+        tokio::task::spawn_blocking(move || {
+            extract_archive_fast_with_progress(
+                &archive_for_extract,
+                &extract_dir,
+                entry_count,
+                Some(progress),
+            )
+        })
+        .await
+        .map_err(|e| crate::error::NexusDeckError::Other(format!("Extract failed: {e}")))??;
+    }
+
+    crate::services::install_options::prune_extract_dir(&temp_extract, &all_entries, &entries)?;
+
+    install_progress(
+        &app,
+        &profile_id,
+        &mod_name,
+        "deploying",
+        "Copying files to game folder…",
+    );
 
     let merge_options = MergeOptions {
         overwrite: options.overwrite_files,
         dry_run: false,
+        on_progress: Some(merge_progress_reporter(
+            app.clone(),
+            profile_id.clone(),
+            mod_name.clone(),
+        )),
     };
 
     let (manifest, plan, conflicts) = games::deploy_mod(
@@ -189,21 +870,76 @@ pub async fn install_mod_from_archive(
         ));
     }
 
-    let mod_id = Uuid::new_v4().to_string();
+    install_progress(
+        &app,
+        &profile_id,
+        &mod_name,
+        "backing_up",
+        "Backing up replaced files…",
+    );
+
+    let mod_id = replace_mod_id
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
     backup_installed_files(&profile, &mod_id, &manifest.files)?;
 
-    let sort_order = db::next_sort_order(&profile.id)?;
+    install_progress(
+        &app,
+        &profile_id,
+        &mod_name,
+        "finalizing",
+        "Updating mod library…",
+    );
+
+    let sort_order = if let Some(ref existing_id) = replace_mod_id {
+        db::get_installed_mod(existing_id)?
+            .map(|m| m.sort_order)
+            .unwrap_or_else(|| db::next_sort_order(&profile.id).unwrap_or(0))
+    } else {
+        db::next_sort_order(&profile.id)?
+    };
+
+    let installed_at = if let Some(ref existing_id) = replace_mod_id {
+        db::get_installed_mod(existing_id)?
+            .map(|m| m.installed_at)
+            .unwrap_or_else(|| chrono::Utc::now().timestamp())
+    } else {
+        chrono::Utc::now().timestamp()
+    };
+
+    let (saved_category, saved_tags_json) = if let Some(ref existing_id) = replace_mod_id {
+        db::get_installed_mod(existing_id)?
+            .map(|m| (m.category, m.tags_json))
+            .unwrap_or_default()
+    } else {
+        (String::new(), "[]".to_string())
+    };
+
+    let category = category
+        .filter(|c| !c.is_empty())
+        .unwrap_or(saved_category);
+    let tags_json = tags
+        .map(|t| serde_json::to_string(&t).unwrap_or_else(|_| "[]".to_string()))
+        .filter(|t| t != "[]")
+        .unwrap_or(saved_tags_json);
+
+    let install_options_json = serde_json::to_string(&options.for_storage())?;
+
     let mut mod_record = InstalledMod {
         id: mod_id,
         profile_id: profile.id.clone(),
         nexus_mod_id,
         nexus_file_id: Some(nexus_file_id),
-        name: mod_name,
-        version: None,
+        name: mod_name.clone(),
+        version: file_version,
         enabled: true,
         sort_order,
         installed_files_json: serde_json::to_string(&manifest.files)?,
-        installed_at: chrono::Utc::now().timestamp(),
+        installed_at,
+        category,
+        tags_json,
+        plugins_json: plugins_json_from_manifest(&manifest.files),
+        install_options_json,
     };
 
     if !options.enable_mod {
@@ -220,6 +956,20 @@ pub async fn install_mod_from_archive(
 
     let _ = std::fs::remove_dir_all(&temp_extract);
 
+    emit_install_progress(
+        &app,
+        InstallProgress {
+            profile_id: profile_id.clone(),
+            mod_name: mod_name.clone(),
+            phase: "install".into(),
+            stage: "complete".into(),
+            message: format!("Installed {} file(s)", manifest.files.len()),
+            files_done: manifest.files.len() as u32,
+            files_total: manifest.files.len() as u32,
+            current_file: None,
+        },
+    );
+
     Ok(serde_json::json!({
         "mod": mod_record,
         "plan": plan,
@@ -227,6 +977,88 @@ pub async fn install_mod_from_archive(
         "files_installed": manifest.files.len(),
         "archive_invalidation": archive_invalidation,
     }))
+}
+
+pub async fn finish_mod_update(
+    app: &AppHandle,
+    nexus: &crate::services::nexus_client::NexusClient,
+    download_id: &str,
+) -> Result<InstalledMod> {
+    let download = db::get_download(download_id)?
+        .ok_or_else(|| crate::error::NexusDeckError::NotFound("Download not found".into()))?;
+    if download.update_target_mod_id.is_empty() {
+        return Err(crate::error::NexusDeckError::Other(
+            "Download is not linked to a mod update".into(),
+        ));
+    }
+
+    let installed = db::get_installed_mod(&download.update_target_mod_id)?
+        .ok_or_else(|| crate::error::NexusDeckError::NotFound("Installed mod not found".into()))?;
+
+    update_checker::emit_update_progress(
+        app,
+        &installed.id,
+        "installing",
+        "Installing update…",
+    );
+
+    let mut options: InstallOptions = serde_json::from_str(&installed.install_options_json)
+        .unwrap_or_default();
+    options.prepared_extract_dir = None;
+
+    let profile = db::get_profile(&download.profile_id)?
+        .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
+
+    let file_version = nexus
+        .get_mod_files(&profile.game_domain, installed.nexus_mod_id as u64)
+        .await
+        .ok()
+        .and_then(|files| {
+            files
+                .iter()
+                .find(|f| f.file_id == download.file_id as u64)
+                .map(|f| f.version.clone())
+        });
+
+    let result = install_mod_from_archive(
+        app.clone(),
+        download.profile_id.clone(),
+        installed.name.clone(),
+        installed.nexus_mod_id,
+        download.file_id,
+        download.dest_path.clone(),
+        options,
+        None,
+        None,
+        file_version,
+        Some(installed.id.clone()),
+    )
+    .await?;
+
+    let mod_record: InstalledMod = serde_json::from_value(result["mod"].clone())?;
+
+    let _ = plugins_txt::sync_plugins_txt(&profile);
+
+    update_checker::emit_update_progress(
+        app,
+        &mod_record.id,
+        "complete",
+        "Update installed",
+    );
+    let _ = app.emit("mod-update-complete", &mod_record);
+
+    Ok(mod_record)
+}
+
+#[tauri::command]
+pub fn read_fomod_asset(
+    extract_dir: String,
+    relative_path: String,
+) -> Result<Option<crate::services::install_options::FomodAssetPayload>> {
+    crate::services::install_options::read_fomod_asset(
+        PathBuf::from(extract_dir).as_path(),
+        &relative_path,
+    )
 }
 
 #[tauri::command]

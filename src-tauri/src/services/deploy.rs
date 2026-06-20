@@ -5,7 +5,7 @@ use walkdir::WalkDir;
 use crate::error::Result;
 use crate::games::DeployPlan;
 use crate::services::archive::ArchiveEntry;
-use crate::services::archive_options::MergeOptions;
+use crate::services::archive_options::{MergeOptions, MergeProgressEvent};
 
 pub fn infer_content_prefix(entries: &[ArchiveEntry]) -> Option<String> {
     let files: Vec<_> = entries.iter().filter(|e| !e.is_dir).collect();
@@ -188,38 +188,46 @@ pub fn merge_game_data_directory(
     options: MergeOptions,
 ) -> Result<Vec<String>> {
     let mut deployed = Vec::new();
+    let file_entries: Vec<_> = WalkDir::new(src)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter(|entry| {
+            let rel = entry
+                .path()
+                .strip_prefix(src)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            is_fallout4_data_file(&rel)
+        })
+        .collect();
+    let total = file_entries.len();
 
-    for entry in WalkDir::new(src).into_iter().filter_map(|e| e.ok()) {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-
-        let rel = entry
-            .path()
-            .strip_prefix(src)
-            .unwrap()
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        if !is_fallout4_data_file(&rel) {
-            continue;
-        }
-
-        let target = dest.join(entry.path().strip_prefix(src).unwrap());
+    for (index, entry) in file_entries.iter().enumerate() {
+        let rel = entry.path().strip_prefix(src).unwrap();
+        let target = dest.join(rel);
         if target.exists() && !options.overwrite {
             continue;
         }
 
         if options.dry_run {
             deployed.push(target.display().to_string());
-            continue;
+        } else {
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::copy(entry.path(), &target)?;
+            deployed.push(target.display().to_string());
         }
 
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent)?;
+        if let Some(ref on_progress) = options.on_progress {
+            on_progress(MergeProgressEvent {
+                files_done: index + 1,
+                files_total: total,
+                current_file: rel.display().to_string(),
+            });
         }
-        std::fs::copy(entry.path(), &target)?;
-        deployed.push(target.display().to_string());
     }
 
     Ok(deployed)

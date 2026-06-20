@@ -36,6 +36,9 @@ function SettingsPage() {
   const [diagnostics, setDiagnostics] = useState<string | null>(null);
   const [maxConcurrent, setMaxConcurrent] = useState(downloadSettings.max_concurrent);
   const [speedLimit, setSpeedLimit] = useState(downloadSettings.speed_limit_kbps);
+  const [autoSortAfterInstall, setAutoSortAfterInstall] = useState(
+    () => localStorage.getItem("nexusdeck_auto_sort_after_install") === "true"
+  );
 
   useEffect(() => {
     loadProfiles();
@@ -134,6 +137,30 @@ function SettingsPage() {
           <Button onClick={saveDownloadSettings} disabled={settingsLoading}>
             Save download settings
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Mod library</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label>Auto-sort load order after install</Label>
+              <p className="text-sm text-[var(--color-muted)]">
+                Apply LOOT and category rules whenever a mod finishes installing.
+              </p>
+            </div>
+            <Switch
+              checked={autoSortAfterInstall}
+              onCheckedChange={(checked) => {
+                localStorage.setItem("nexusdeck_auto_sort_after_install", String(checked));
+                setAutoSortAfterInstall(checked);
+              }}
+              data-focusable="true"
+            />
+          </div>
         </CardContent>
       </Card>
 

@@ -107,6 +107,7 @@ fn install_from_archive_meta(
         MergeOptions {
             overwrite: true,
             dry_run: false,
+            on_progress: None,
         },
     )?;
 

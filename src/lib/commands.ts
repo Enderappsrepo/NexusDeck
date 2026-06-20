@@ -13,8 +13,13 @@ import type {
   GameSummary,
   InstallOptions,
   InstallPreview,
+  InstallPrepareResult,
   InstallResult,
   InstalledMod,
+  ModUpdateInfo,
+  UninstallResult,
+  UpdateBatchResult,
+  UpdateJob,
   LaunchConfig,
   LaunchOptions,
   LaunchResult,
@@ -35,7 +40,6 @@ import type {
   ModSearchFilters,
   ModSearchResult,
   ModSummary,
-  ModUpdateInfo,
   NexusBrowserUrls,
   NexusUser,
   PlatformInfo,
@@ -43,6 +47,7 @@ import type {
   PreviewNode,
   Profile,
   ScriptExtenderStatus,
+  SelectedInstallOption,
   SupportedGameInfo,
   StagingFile,
   StrategyOption,
@@ -255,8 +260,26 @@ export const api = {
   checkProfileUpdates: (profileId: string) =>
     invoke<ModUpdateInfo[]>("check_profile_updates", { profileId }),
 
+  startModUpdate: (profileId: string, installedModId: string) =>
+    invoke<UpdateJob>("start_mod_update", { profileId, installedModId }),
+
   updateModSafe: (profileId: string, installedModId: string) =>
     invoke<void>("update_mod_safe", { profileId, installedModId }),
+
+  updateAllMods: (profileId: string) =>
+    invoke<UpdateBatchResult>("update_all_mods", { profileId }),
+
+  completeModUpdate: (downloadId: string) =>
+    invoke<InstalledMod>("complete_mod_update", { downloadId }),
+
+  uninstallMod: (modId: string) =>
+    invoke<UninstallResult>("uninstall_mod", { modId }),
+
+  autoSortLoadOrder: (profileId: string) =>
+    invoke<InstalledMod[]>("auto_sort_load_order", { profileId }),
+
+  refreshModMetadata: (profileId: string) =>
+    invoke<InstalledMod[]>("refresh_mod_metadata", { profileId }),
 
   getUpdatedModsFeed: (gameDomain: string, period: string) =>
     invoke<UpdatedModEntry[]>("get_updated_mods_feed", { gameDomain, period }),
@@ -288,6 +311,10 @@ export const api = {
     nexusFileId: number;
     archivePath: string;
     options: InstallOptions;
+    category?: string | null;
+    tags?: string[];
+    fileVersion?: string | null;
+    replaceModId?: string | null;
   }) =>
     invoke<InstallResult>("install_mod_from_archive", {
       profileId: params.profileId,
@@ -296,6 +323,10 @@ export const api = {
       nexusFileId: params.nexusFileId,
       archivePath: params.archivePath,
       options: params.options,
+      category: params.category ?? null,
+      tags: params.tags ?? null,
+      fileVersion: params.fileVersion ?? null,
+      replaceModId: params.replaceModId ?? null,
     }),
 
   previewModInstall: (params: {
@@ -303,12 +334,33 @@ export const api = {
     archivePath: string;
     modName: string;
     strategy: string;
+    selectedOptions?: SelectedInstallOption[];
+    preparedExtractDir?: string | null;
   }) =>
     invoke<InstallPreview>("preview_mod_install", {
       profileId: params.profileId,
       archivePath: params.archivePath,
       modName: params.modName,
       strategy: params.strategy,
+      selectedOptions: params.selectedOptions ?? null,
+      preparedExtractDir: params.preparedExtractDir ?? null,
+    }),
+
+  prepareModInstall: (params: {
+    profileId: string;
+    archivePath: string;
+    modName: string;
+  }) =>
+    invoke<InstallPrepareResult>("prepare_mod_install", {
+      profileId: params.profileId,
+      archivePath: params.archivePath,
+      modName: params.modName,
+    }),
+
+  readFomodAsset: (params: { extractDir: string; relativePath: string }) =>
+    invoke<{ bytes: number[]; mime_type: string } | null>("read_fomod_asset", {
+      extractDir: params.extractDir,
+      relativePath: params.relativePath,
     }),
 
   getInstallStrategies: () => invoke<StrategyOption[]>("get_install_strategies"),

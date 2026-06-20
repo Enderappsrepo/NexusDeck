@@ -146,6 +146,13 @@ function RootLayout() {
     );
     listen<DownloadProgress>("download-complete", (e) => {
       setProgress(e.payload);
+      const download = e.payload;
+      if (download.update_target_mod_id) {
+        void api.completeModUpdate(download.id).catch((err) => {
+          setError(download.id, err instanceof Error ? err.message : String(err));
+        });
+        return;
+      }
       const autoInstall = useDownloadsStore.getState().consumeAutoInstall(e.payload.id);
       if (autoInstall) {
         void handleInstallNowFromDownload(e.payload);

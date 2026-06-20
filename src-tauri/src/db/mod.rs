@@ -28,6 +28,26 @@ pub struct InstalledMod {
     pub sort_order: i32,
     pub installed_files_json: String,
     pub installed_at: i64,
+    #[serde(default)]
+    pub category: String,
+    #[serde(default = "default_tags_json")]
+    pub tags_json: String,
+    #[serde(default = "default_plugins_json")]
+    pub plugins_json: String,
+    #[serde(default = "default_install_options_json")]
+    pub install_options_json: String,
+}
+
+fn default_tags_json() -> String {
+    "[]".to_string()
+}
+
+fn default_plugins_json() -> String {
+    "[]".to_string()
+}
+
+fn default_install_options_json() -> String {
+    "{}".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +66,8 @@ pub struct DownloadRecord {
     pub mod_name: String,
     #[serde(default)]
     pub profile_id: String,
+    #[serde(default)]
+    pub update_target_mod_id: String,
 }
 
 fn connection() -> Result<Connection> {
@@ -77,6 +99,19 @@ fn migrate_installed_mods_table(conn: &Connection) -> Result<()> {
             [],
         )?;
     }
+    for (col, default) in [
+        ("category", "''"),
+        ("tags_json", "'[]'"),
+        ("plugins_json", "'[]'"),
+        ("install_options_json", "'{}'"),
+    ] {
+        if !columns.iter().any(|c| c == col) {
+            conn.execute(
+                &format!("ALTER TABLE installed_mods ADD COLUMN {col} TEXT NOT NULL DEFAULT {default}"),
+                [],
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -97,6 +132,12 @@ fn migrate_downloads_table(conn: &Connection) -> Result<()> {
     if !columns.iter().any(|c| c == "profile_id") {
         conn.execute(
             "ALTER TABLE downloads ADD COLUMN profile_id TEXT DEFAULT ''",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|c| c == "update_target_mod_id") {
+        conn.execute(
+            "ALTER TABLE downloads ADD COLUMN update_target_mod_id TEXT DEFAULT ''",
             [],
         )?;
     }
@@ -193,8 +234,8 @@ pub fn get_profile_by_domain(domain: &str) -> Result<Option<Profile>> {
 pub fn save_installed_mod(mod_record: &InstalledMod) -> Result<()> {
     let conn = connection()?;
     conn.execute(
-        "INSERT OR REPLACE INTO installed_mods (id, profile_id, nexus_mod_id, nexus_file_id, name, version, enabled, sort_order, installed_files_json, installed_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT OR REPLACE INTO installed_mods (id, profile_id, nexus_mod_id, nexus_file_id, name, version, enabled, sort_order, installed_files_json, installed_at, category, tags_json, plugins_json, install_options_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             mod_record.id,
             mod_record.profile_id,
@@ -206,32 +247,44 @@ pub fn save_installed_mod(mod_record: &InstalledMod) -> Result<()> {
             mod_record.sort_order,
             mod_record.installed_files_json,
             mod_record.installed_at,
+            mod_record.category,
+            mod_record.tags_json,
+            mod_record.plugins_json,
+            mod_record.install_options_json,
         ],
     )?;
     Ok(())
 }
 
+fn row_to_installed_mod(row: &rusqlite::Row<'_>) -> rusqlite::Result<InstalledMod> {
+    Ok(InstalledMod {
+        id: row.get(0)?,
+        profile_id: row.get(1)?,
+        nexus_mod_id: row.get(2)?,
+        nexus_file_id: row.get(3)?,
+        name: row.get(4)?,
+        version: row.get(5)?,
+        enabled: row.get::<_, i32>(6)? != 0,
+        sort_order: row.get(7)?,
+        installed_files_json: row.get(8)?,
+        installed_at: row.get(9)?,
+        category: row.get(10).unwrap_or_default(),
+        tags_json: row.get(11).unwrap_or_else(|_| "[]".to_string()),
+        plugins_json: row.get(12).unwrap_or_else(|_| "[]".to_string()),
+        install_options_json: row.get(13).unwrap_or_else(|_| "{}".to_string()),
+    })
+}
+
+const INSTALLED_MOD_SELECT: &str = "SELECT id, profile_id, nexus_mod_id, nexus_file_id, name, version, enabled, sort_order, installed_files_json, installed_at, category, tags_json, plugins_json, install_options_json";
+
 pub fn list_installed_mods(profile_id: &str) -> Result<Vec<InstalledMod>> {
     let conn = connection()?;
-    let mut stmt = conn.prepare(
-        "SELECT id, profile_id, nexus_mod_id, nexus_file_id, name, version, enabled, sort_order, installed_files_json, installed_at
-         FROM installed_mods WHERE profile_id = ?1 ORDER BY sort_order ASC, installed_at DESC",
-    )?;
+    let sql = format!(
+        "{INSTALLED_MOD_SELECT} FROM installed_mods WHERE profile_id = ?1 ORDER BY sort_order ASC, installed_at DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let mods = stmt
-        .query_map(params![profile_id], |row| {
-            Ok(InstalledMod {
-                id: row.get(0)?,
-                profile_id: row.get(1)?,
-                nexus_mod_id: row.get(2)?,
-                nexus_file_id: row.get(3)?,
-                name: row.get(4)?,
-                version: row.get(5)?,
-                enabled: row.get::<_, i32>(6)? != 0,
-                sort_order: row.get(7)?,
-                installed_files_json: row.get(8)?,
-                installed_at: row.get(9)?,
-            })
-        })?
+        .query_map(params![profile_id], row_to_installed_mod)?
         .filter_map(|r| r.ok())
         .collect();
     Ok(mods)
@@ -239,27 +292,43 @@ pub fn list_installed_mods(profile_id: &str) -> Result<Vec<InstalledMod>> {
 
 pub fn get_installed_mod(id: &str) -> Result<Option<InstalledMod>> {
     let conn = connection()?;
-    let mut stmt = conn.prepare(
-        "SELECT id, profile_id, nexus_mod_id, nexus_file_id, name, version, enabled, sort_order, installed_files_json, installed_at
-         FROM installed_mods WHERE id = ?1",
-    )?;
+    let sql = format!("{INSTALLED_MOD_SELECT} FROM installed_mods WHERE id = ?1");
+    let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
-        Ok(Some(InstalledMod {
-            id: row.get(0)?,
-            profile_id: row.get(1)?,
-            nexus_mod_id: row.get(2)?,
-            nexus_file_id: row.get(3)?,
-            name: row.get(4)?,
-            version: row.get(5)?,
-            enabled: row.get::<_, i32>(6)? != 0,
-            sort_order: row.get(7)?,
-            installed_files_json: row.get(8)?,
-            installed_at: row.get(9)?,
-        }))
+        Ok(Some(row_to_installed_mod(&row)?))
     } else {
         Ok(None)
     }
+}
+
+pub fn delete_installed_mod(id: &str) -> Result<()> {
+    let conn = connection()?;
+    conn.execute("DELETE FROM installed_mods WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+pub fn set_mod_sort_orders(profile_id: &str, ordered_ids: &[String]) -> Result<Vec<InstalledMod>> {
+    let conn = connection()?;
+    for (order, mod_id) in ordered_ids.iter().enumerate() {
+        conn.execute(
+            "UPDATE installed_mods SET sort_order = ?1 WHERE id = ?2 AND profile_id = ?3",
+            params![order as i32, mod_id, profile_id],
+        )?;
+    }
+    list_installed_mods(profile_id)
+}
+
+pub fn renumber_sort_orders(profile_id: &str) -> Result<()> {
+    let mods = list_installed_mods(profile_id)?;
+    let conn = connection()?;
+    for (order, m) in mods.iter().enumerate() {
+        conn.execute(
+            "UPDATE installed_mods SET sort_order = ?1 WHERE id = ?2",
+            params![order as i32, m.id],
+        )?;
+    }
+    Ok(())
 }
 
 pub fn set_mod_enabled(id: &str, enabled: bool) -> Result<()> {
@@ -322,8 +391,8 @@ pub fn reorder_mod(profile_id: &str, mod_id: &str, direction: &str) -> Result<Ve
 pub fn insert_download(record: &DownloadRecord) -> Result<()> {
     let conn = connection()?;
     conn.execute(
-        "INSERT INTO downloads (id, game_domain, mod_id, file_id, url, dest_path, bytes_done, bytes_total, status, created_at, mod_name, profile_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        "INSERT INTO downloads (id, game_domain, mod_id, file_id, url, dest_path, bytes_done, bytes_total, status, created_at, mod_name, profile_id, update_target_mod_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
             record.id,
             record.game_domain,
@@ -337,6 +406,7 @@ pub fn insert_download(record: &DownloadRecord) -> Result<()> {
             record.created_at,
             record.mod_name,
             record.profile_id,
+            record.update_target_mod_id,
         ],
     )?;
     Ok(())
@@ -370,14 +440,17 @@ fn row_to_download_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadR
         created_at: row.get(9)?,
         mod_name: row.get(10).unwrap_or_default(),
         profile_id: row.get(11).unwrap_or_default(),
+        update_target_mod_id: row.get(12).unwrap_or_default(),
     })
 }
 
+const DOWNLOAD_SELECT: &str =
+    "SELECT id, game_domain, mod_id, file_id, url, dest_path, bytes_done, bytes_total, status, created_at, mod_name, profile_id, update_target_mod_id";
+
 pub fn get_download(id: &str) -> Result<Option<DownloadRecord>> {
     let conn = connection()?;
-    let mut stmt = conn.prepare(
-        "SELECT id, game_domain, mod_id, file_id, url, dest_path, bytes_done, bytes_total, status, created_at, mod_name, profile_id FROM downloads WHERE id = ?1",
-    )?;
+    let sql = format!("{DOWNLOAD_SELECT} FROM downloads WHERE id = ?1");
+    let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
         Ok(Some(row_to_download_record(&row)?))
@@ -388,9 +461,8 @@ pub fn get_download(id: &str) -> Result<Option<DownloadRecord>> {
 
 pub fn list_downloads() -> Result<Vec<DownloadRecord>> {
     let conn = connection()?;
-    let mut stmt = conn.prepare(
-        "SELECT id, game_domain, mod_id, file_id, url, dest_path, bytes_done, bytes_total, status, created_at, mod_name, profile_id FROM downloads ORDER BY created_at DESC",
-    )?;
+    let sql = format!("{DOWNLOAD_SELECT} FROM downloads ORDER BY created_at DESC");
+    let mut stmt = conn.prepare(&sql)?;
     let downloads = stmt
         .query_map([], row_to_download_record)?
         .filter_map(|r| r.ok())
@@ -400,10 +472,10 @@ pub fn list_downloads() -> Result<Vec<DownloadRecord>> {
 
 pub fn list_incomplete_downloads() -> Result<Vec<DownloadRecord>> {
     let conn = connection()?;
-    let mut stmt = conn.prepare(
-        "SELECT id, game_domain, mod_id, file_id, url, dest_path, bytes_done, bytes_total, status, created_at, mod_name, profile_id
-         FROM downloads WHERE status IN ('queued', 'downloading', 'paused') ORDER BY created_at ASC",
-    )?;
+    let sql = format!(
+        "{DOWNLOAD_SELECT} FROM downloads WHERE status IN ('queued', 'downloading', 'paused') ORDER BY created_at ASC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let downloads = stmt
         .query_map([], row_to_download_record)?
         .filter_map(|r| r.ok())

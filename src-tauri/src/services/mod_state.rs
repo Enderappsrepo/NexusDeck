@@ -20,7 +20,7 @@ fn backup_relative_path(profile: &Profile, game_file: &Path) -> PathBuf {
         .unwrap_or_default()
 }
 
-fn backup_path_for(profile: &Profile, mod_id: &str, game_file: &Path) -> PathBuf {
+pub fn backup_path_for(profile: &Profile, mod_id: &str, game_file: &Path) -> PathBuf {
     mod_backup_root(profile, mod_id).join(backup_relative_path(profile, game_file))
 }
 
