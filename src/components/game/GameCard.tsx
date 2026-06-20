@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Gamepad2 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { cn, gameGradient } from "@/lib/utils";
+import { GameArt } from "@/components/game/GameArt";
 import type { GameSummary } from "@/lib/nexus/types";
 
 interface GameCardProps {
@@ -15,13 +15,8 @@ export function GameCard({ game, supported }: GameCardProps) {
 
   const cardBody = (
     <>
-      <div
-        className={cn(
-          "relative aspect-[16/10] bg-gradient-to-br",
-          gameGradient(domain ?? "fallout4")
-        )}
-      >
-        <div className="absolute inset-0 bg-gradient-to-t from-[var(--color-card)] via-transparent to-transparent" />
+      <div className="relative aspect-[16/10] overflow-hidden">
+        <GameArt domain={domain ?? "fallout4"} variant="tile" />
         <div className="absolute bottom-3 left-4">
           <Gamepad2 className="h-6 w-6 text-white/60" />
         </div>

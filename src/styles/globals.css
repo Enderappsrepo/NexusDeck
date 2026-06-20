@@ -25,6 +25,11 @@
   --color-warning: #fbbf24;
   --color-danger: #f87171;
 
+  /* Health semantics — load order / conflicts / status tiles */
+  --color-health-good: #4ade80;
+  --color-health-warn: #fbbf24;
+  --color-health-bad: #f87171;
+
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 18px;
@@ -78,6 +83,44 @@ body {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
   box-shadow: var(--shadow-focus);
+  scroll-margin: 8px;
+}
+
+/* Deck controller mode — thicker, high-contrast focus rings */
+[data-controller="true"] {
+  --font-size-base: 19px;
+}
+
+[data-controller="true"] [data-focusable="true"]:focus-visible,
+[data-controller="true"] .focusable:focus-visible {
+  outline: 4px solid var(--color-focus);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgba(255, 107, 43, 0.35), var(--shadow-md);
+  transform: scale(1.02);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+  scroll-margin: 12px;
+}
+
+[data-controller="true"] .game-nav-chip {
+  min-height: 48px;
+  padding: 0.5rem 1rem;
+}
+
+[data-controller="true"] header .hidden.sm\:block {
+  display: none !important;
+}
+
+[data-controller="true"] main {
+  padding-bottom: 3.5rem;
+}
+
+@media (min-width: 1280px) {
+  [data-controller="true"] nav.flex.shrink-0 {
+    width: 5rem !important;
+  }
+  [data-controller="true"] nav .hidden.md\:inline {
+    display: none !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -351,6 +394,58 @@ body {
   border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
   color: var(--color-foreground);
   background: var(--color-card);
+}
+
+/* Theme-styled native range slider. Targets the two Tauri webviews
+   (Chromium/WebView2 + WebKitGTK), both -webkit-. The orange fill is driven by
+   the `--nd-fill` custom property set inline per value. */
+.nd-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+.nd-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--color-primary) var(--nd-fill, 0%),
+    var(--color-surface-3) var(--nd-fill, 0%)
+  );
+}
+.nd-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -7px;
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid var(--color-card);
+  box-shadow: var(--shadow-glow);
+}
+.nd-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: var(--shadow-focus);
+}
+.nd-range::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-surface-3);
+}
+.nd-range::-moz-range-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-primary);
+}
+.nd-range::-moz-range-thumb {
+  height: 20px;
+  width: 20px;
+  border: 2px solid var(--color-card);
+  border-radius: 50%;
+  background: var(--color-primary);
 }
 
 .game-banner {

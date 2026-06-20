@@ -1,17 +1,16 @@
+use crate::db::{self, Profile};
+use crate::error::Result;
+use crate::games::GameRegistry;
+use crate::services::mod_state::installed_file_paths;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-use crate::db::{self, Profile};
-use crate::error::{NexusDeckError, Result};
-use crate::games::GameRegistry;
-use crate::services::mod_state::installed_file_paths;
 
 pub fn sync_plugins_txt(profile: &Profile) -> Result<String> {
     let plugin = GameRegistry::get(&profile.game_domain)?;
     let plugins_path = plugin
         .plugins_txt_path(profile)
-        .ok_or_else(|| NexusDeckError::Other("plugins.txt path not available for this game".into()))?;
+        .ok_or_else(|| crate::error::NexusDeckError::Other("plugins.txt path not available for this game".into()))?;
 
     let plugins = collect_enabled_plugins(profile)?;
     write_plugins_txt(&plugins_path, &plugins)?;
@@ -21,12 +20,16 @@ pub fn sync_plugins_txt(profile: &Profile) -> Result<String> {
 fn collect_enabled_plugins(profile: &Profile) -> Result<Vec<String>> {
     let data_dir = Path::new(&profile.game_path).join("Data");
     let mut disabled_plugins = HashSet::new();
+    let mut ordered_plugins: Vec<String> = Vec::new();
+    let mut seen = HashSet::new();
 
-    for mod_record in db::list_installed_mods(&profile.id)? {
+    let mods = db::list_installed_mods(&profile.id)?;
+
+    for mod_record in &mods {
         if mod_record.enabled {
             continue;
         }
-        for file in installed_file_paths(&mod_record)? {
+        for file in installed_file_paths(mod_record)? {
             let path = Path::new(&file);
             if is_plugin_file(path) {
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
@@ -36,15 +39,32 @@ fn collect_enabled_plugins(profile: &Profile) -> Result<Vec<String>> {
         }
     }
 
-    let mut plugins = Vec::new();
-    if data_dir.is_dir() {
+    for mod_record in mods.iter().filter(|m| m.enabled) {
+        for file in installed_file_paths(mod_record)? {
+            let path = Path::new(&file);
+            if !is_plugin_file(path) {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default()
+                .to_string();
+            let key = name.to_lowercase();
+            if disabled_plugins.contains(&key) {
+                continue;
+            }
+            if seen.insert(key) {
+                ordered_plugins.push(name);
+            }
+        }
+    }
+
+    if ordered_plugins.is_empty() && data_dir.is_dir() {
         for entry in fs::read_dir(&data_dir)? {
             let entry = entry?;
             let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            if !is_plugin_file(&path) {
+            if !path.is_file() || !is_plugin_file(&path) {
                 continue;
             }
             let name = path
@@ -55,12 +75,12 @@ fn collect_enabled_plugins(profile: &Profile) -> Result<Vec<String>> {
             if disabled_plugins.contains(&name.to_lowercase()) {
                 continue;
             }
-            plugins.push(name);
+            ordered_plugins.push(name);
         }
+        ordered_plugins.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
     }
 
-    plugins.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
-    Ok(plugins)
+    Ok(ordered_plugins)
 }
 
 fn is_plugin_file(path: &Path) -> bool {

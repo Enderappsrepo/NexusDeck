@@ -62,6 +62,9 @@ pub fn create_profile(
     db::save_profile(&profile)?;
     db::set_setting("onboarding_complete", "true")?;
     let _ = crate::services::launch_config::ensure_configs_for_profile(&profile.id, &profile.game_domain);
+    // Enable Creation Engine archive invalidation up front so loose-file mods
+    // load once deployed. Best-effort (no-op until the Proton prefix exists).
+    let _ = crate::services::game_settings::ensure_archive_invalidation(&profile);
     Ok(profile)
 }
 

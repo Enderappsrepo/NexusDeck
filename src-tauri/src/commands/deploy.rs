@@ -192,6 +192,7 @@ pub async fn install_mod_from_archive(
     let mod_id = Uuid::new_v4().to_string();
     backup_installed_files(&profile, &mod_id, &manifest.files)?;
 
+    let sort_order = db::next_sort_order(&profile.id)?;
     let mut mod_record = InstalledMod {
         id: mod_id,
         profile_id: profile.id.clone(),
@@ -200,6 +201,7 @@ pub async fn install_mod_from_archive(
         name: mod_name,
         version: None,
         enabled: true,
+        sort_order,
         installed_files_json: serde_json::to_string(&manifest.files)?,
         installed_at: chrono::Utc::now().timestamp(),
     };
@@ -246,6 +248,11 @@ pub fn set_mod_enabled(mod_id: String, enabled: bool) -> Result<()> {
 
     apply_mod_enabled_state(&profile, &mod_record, enabled)?;
     db::set_mod_enabled(&mod_id, enabled)
+}
+
+#[tauri::command]
+pub fn reorder_mod(profile_id: String, mod_id: String, direction: String) -> Result<Vec<InstalledMod>> {
+    db::reorder_mod(&profile_id, &mod_id, &direction)
 }
 
 #[tauri::command]

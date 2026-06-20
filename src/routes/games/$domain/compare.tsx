@@ -15,6 +15,8 @@ export const Route = createFileRoute("/games/$domain/compare")({
   }),
 });
 
+import { useGamepadTabs } from "@/hooks/useGamepadTabs";
+
 function ComparePage() {
   const { domain } = useParams({ from: "/games/$domain/compare" });
   const { modA, modB } = Route.useSearch();
@@ -36,6 +38,9 @@ function ComparePage() {
     if (modA) setSelectedA(modA);
     if (modB) setSelectedB(modB);
   }, [modA, modB]);
+
+  const modIds = mods.map((m) => m.id);
+  useGamepadTabs(modIds, selectedA || modIds[0] || "", (id) => setSelectedA(id));
 
   useEffect(() => {
     if (profile && selectedA && selectedB && selectedA !== selectedB) {

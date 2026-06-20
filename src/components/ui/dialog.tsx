@@ -41,7 +41,7 @@ export function AppDialog({
             <Dialog.Close asChild>
               <button
                 type="button"
-                className="focusable rounded-lg p-2 hover:bg-[var(--color-secondary)]"
+                className="focusable min-h-[44px] min-w-[44px] rounded-lg p-2 hover:bg-[var(--color-secondary)]"
                 data-focusable="true"
                 aria-label="Close"
               >

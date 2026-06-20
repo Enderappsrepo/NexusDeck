@@ -1,15 +1,24 @@
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Download, GitCompare, Package } from "lucide-react";
+import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Download, GitCompare, Package, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ListRowSkeleton } from "@/components/ui/LoadingSkeleton";
 import { LaunchButton } from "@/components/launch/LaunchButton";
+import {
+  CONTEXT_MENU_ICONS,
+  useControllerContextMenu,
+} from "@/components/controller/ControllerContextMenu";
+import { useFocusGroup } from "@/hooks/useFocusGroup";
+import { GP } from "@/lib/gamepad/buttons";
+import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
 import { useGamesStore } from "@/stores";
 import { api } from "@/lib/commands";
+import { triggerHaptic } from "@/lib/haptics";
 import { EXPORT_FORMATS } from "@/lib/nexus/export-formats";
 import type { InstalledMod, ModUpdateInfo } from "@/lib/nexus/types";
 
@@ -19,8 +28,11 @@ export const Route = createFileRoute("/games/$domain/library")({
 
 function LibraryPage() {
   const { domain } = useParams({ from: "/games/$domain/library" });
+  const navigate = useNavigate();
   const { getProfile } = useGamesStore();
   const profile = getProfile(domain);
+  const listRef = useFocusGroup("library-list");
+
   const [mods, setMods] = useState<InstalledMod[]>([]);
   const [updates, setUpdates] = useState<ModUpdateInfo[]>([]);
   const [error, setError] = useState<unknown>(null);
@@ -31,6 +43,8 @@ function LibraryPage() {
   const [compareB, setCompareB] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportContent, setExportContent] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [focusedModId, setFocusedModId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -46,10 +60,21 @@ function LibraryPage() {
       .finally(() => setLoading(false));
   }, [profile]);
 
+  const filteredMods = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return mods;
+    return mods.filter(
+      (m) =>
+        m.name.toLowerCase().includes(q) ||
+        String(m.nexus_mod_id).includes(q) ||
+        (m.enabled ? "enabled" : "disabled").includes(q)
+    );
+  }, [mods, searchQuery]);
+
   const updateForMod = (mod: InstalledMod) =>
     updates.find((u) => u.installed_mod_id === mod.id);
 
-  const toggleMod = async (mod: InstalledMod) => {
+  const toggleMod = useCallback(async (mod: InstalledMod) => {
     setTogglingId(mod.id);
     setError(null);
     try {
@@ -57,12 +82,92 @@ function LibraryPage() {
       setMods((prev) =>
         prev.map((m) => (m.id === mod.id ? { ...m, enabled: !m.enabled } : m))
       );
+      void triggerHaptic("success");
     } catch (e) {
       setError(e);
+      void triggerHaptic("error");
     } finally {
       setTogglingId(null);
     }
-  };
+  }, []);
+
+  const reorderMod = useCallback(
+    async (modId: string, direction: "up" | "down") => {
+      if (!profile) return;
+      try {
+        const next = await api.reorderMod(profile.id, modId, direction);
+        setMods(next);
+        void triggerHaptic("reorder");
+      } catch (e) {
+        setError(e);
+      }
+    },
+    [profile]
+  );
+
+  useEffect(() => {
+    const onReorder = (e: Event) => {
+      const { modId, direction } = (e as CustomEvent).detail as {
+        modId: string;
+        direction: "up" | "down";
+      };
+      void reorderMod(modId, direction);
+    };
+    window.addEventListener("nexusdeck-library-reorder", onReorder);
+    return () => window.removeEventListener("nexusdeck-library-reorder", onReorder);
+  }, [reorderMod]);
+
+  useGamepadContextAction(GP.X, () => {
+    const mod = mods.find((m) => m.id === focusedModId);
+    if (mod && !compareMode) void toggleMod(mod);
+  });
+
+  const focusedMod = mods.find((m) => m.id === focusedModId);
+  const { menu: contextMenu } = useControllerContextMenu(
+    focusedMod
+      ? [
+          {
+            id: "view",
+            label: "View on Nexus",
+            icon: CONTEXT_MENU_ICONS.view,
+            onAction: () =>
+              navigate({
+                to: "/games/$domain/mods/$modId",
+                params: { domain, modId: String(focusedMod.nexus_mod_id) },
+              }),
+          },
+          {
+            id: "toggle",
+            label: focusedMod.enabled ? "Disable mod" : "Enable mod",
+            icon: CONTEXT_MENU_ICONS.toggle,
+            onAction: () => void toggleMod(focusedMod),
+          },
+          ...(updateForMod(focusedMod)
+            ? [
+                {
+                  id: "update",
+                  label: "Update mod",
+                  icon: CONTEXT_MENU_ICONS.download,
+                  onAction: () => {
+                    const u = updateForMod(focusedMod);
+                    if (u) void updateMod(u);
+                  },
+                },
+              ]
+            : []),
+          {
+            id: "compare",
+            label: "Compare mode",
+            icon: CONTEXT_MENU_ICONS.compare,
+            onAction: () => {
+              setCompareMode(true);
+              setCompareA(focusedMod.id);
+            },
+          },
+        ]
+      : [],
+    focusedMod?.name
+  );
 
   const handleModClick = (mod: InstalledMod) => {
     if (!compareMode) return;
@@ -96,8 +201,10 @@ function LibraryPage() {
       await api.updateModSafe(profile.id, update.installed_mod_id);
       const next = await api.checkProfileUpdates(profile.id);
       setUpdates(next);
+      void triggerHaptic("install");
     } catch (e) {
       setError(e);
+      void triggerHaptic("error");
     }
   };
 
@@ -107,6 +214,7 @@ function LibraryPage() {
 
   return (
     <div className="page-section mx-auto max-w-4xl">
+      {contextMenu}
       <div className="mb-4">
         <LaunchButton profileId={profile.id} gameDomain={domain} compact className="w-full sm:w-auto" />
       </div>
@@ -114,7 +222,7 @@ function LibraryPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Installed Mods</h1>
           <p className="mt-1 text-sm text-[var(--color-muted)]">
-            {mods.length} installed · {mods.filter((m) => m.enabled).length} enabled
+            {mods.length} installed · {mods.filter((m) => m.enabled).length} enabled · L2/R2 reorder
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -125,6 +233,7 @@ function LibraryPage() {
               setCompareA(null);
               setCompareB(null);
             }}
+            data-focusable="true"
           >
             <GitCompare className="h-4 w-4" />
             {compareMode ? "Cancel compare" : "Compare mode"}
@@ -146,6 +255,18 @@ function LibraryPage() {
         </div>
       </div>
 
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-muted)]" />
+        <Input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Filter installed mods..."
+          className="pl-12"
+          data-focusable="true"
+          data-library-search
+        />
+      </div>
+
       {!!error && (
         <ApiErrorBanner context="generic" error={error} onRetry={() => setError(null)} />
       )}
@@ -161,6 +282,7 @@ function LibraryPage() {
               disabled={exporting}
               loading={exporting}
               onClick={() => exportModlist(fmt.id)}
+              data-focusable="true"
             >
               Export {fmt.label}
             </Button>
@@ -169,7 +291,7 @@ function LibraryPage() {
       </Card>
 
       {exportContent && (
-        <pre className="max-h-48 overflow-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-secondary)] p-4 text-xs">
+        <pre className="max-h-48 overflow-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-secondary)] p-4 text-xs" data-scroll-pane>
           {exportContent}
         </pre>
       )}
@@ -182,8 +304,7 @@ function LibraryPage() {
       )}
 
       <p className="text-sm text-[var(--color-muted)]">
-        Disabling a mod removes its files from your game Data folder. Backups are kept in your
-        staging folder so you can re-enable later.
+        X toggles enable/disable. Y opens actions. Disabling removes files from Data; backups stay in staging.
       </p>
 
       {loading && <ListRowSkeleton count={3} />}
@@ -201,26 +322,50 @@ function LibraryPage() {
         />
       )}
 
-      {!loading && mods.length > 0 && (
-        <div className="space-y-3">
-          {mods.map((mod) => {
+      {!loading && filteredMods.length > 0 && (
+        <div ref={listRef} className="space-y-3" data-scroll-pane data-focus-group="library-list">
+          {filteredMods.map((mod, index) => {
             const files: string[] = JSON.parse(mod.installed_files_json || "[]");
             const update = updateForMod(mod);
             const selected = compareA === mod.id || compareB === mod.id;
             return (
               <Card
                 key={mod.id}
-                interactive={compareMode}
-                role={compareMode ? "button" : undefined}
-                tabIndex={compareMode ? 0 : undefined}
-                onClick={() => handleModClick(mod)}
-                onKeyDown={(e) => e.key === "Enter" && handleModClick(mod)}
-                className={`p-4 ${selected ? "border-[var(--color-primary)] ring-1 ring-[var(--color-primary)]/30" : ""} ${compareMode ? "cursor-pointer" : ""}`}
+                interactive
+                role="button"
+                tabIndex={0}
+                data-focusable="true"
+                data-mod-id={mod.id}
+                data-enabled={String(mod.enabled)}
+                data-mod-index={index}
+                onFocus={() => setFocusedModId(mod.id)}
+                onClick={() => {
+                  if (compareMode) {
+                    handleModClick(mod);
+                  } else {
+                    navigate({
+                      to: "/games/$domain/mods/$modId",
+                      params: { domain, modId: String(mod.nexus_mod_id) },
+                    });
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    if (compareMode) handleModClick(mod);
+                    else
+                      navigate({
+                        to: "/games/$domain/mods/$modId",
+                        params: { domain, modId: String(mod.nexus_mod_id) },
+                      });
+                  }
+                }}
+                className={`min-h-[72px] p-4 ${selected ? "border-[var(--color-primary)] ring-1 ring-[var(--color-primary)]/30" : ""} ${compareMode ? "cursor-pointer" : "cursor-pointer"}`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-lg font-semibold">{mod.name}</span>
+                      <Badge variant="muted">#{index + 1}</Badge>
                       <Badge variant={mod.enabled ? "success" : "muted"}>
                         {mod.enabled ? "Enabled" : "Disabled"}
                       </Badge>
@@ -233,10 +378,11 @@ function LibraryPage() {
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    {update && (
+                    {update && !compareMode && (
                       <Button
                         variant="secondary"
                         size="sm"
+                        data-focusable="true"
                         onClick={(e) => {
                           e.stopPropagation();
                           updateMod(update);
@@ -251,6 +397,7 @@ function LibraryPage() {
                         variant={mod.enabled ? "outline" : "default"}
                         disabled={togglingId === mod.id}
                         loading={togglingId === mod.id}
+                        data-focusable="true"
                         onClick={(e) => {
                           e.stopPropagation();
                           toggleMod(mod);

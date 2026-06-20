@@ -25,6 +25,8 @@ import { Progress } from "@/components/ui/progress";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { ListRowSkeleton } from "@/components/ui/LoadingSkeleton";
 import { useGamepadTabs } from "@/hooks/useGamepadTabs";
+import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
+import { GP } from "@/lib/gamepad/buttons";
 import { useAuthStore, useDownloadsStore, useGamesStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { formatModDescription } from "@/lib/bbcode";
@@ -152,6 +154,35 @@ function ModDetailPage() {
     });
   };
 
+  const galleryLength = useMemo(() => {
+    if (!detail) return 0;
+    if (detail.screenshots.length > 0) return detail.screenshots.length;
+    if (detail.hero_image_url || detail.picture_url) return 1;
+    return 0;
+  }, [detail]);
+
+  useEffect(() => {
+    const onGalleryScroll = (e: Event) => {
+      const { direction } = (e as CustomEvent).detail as { direction: "up" | "down" };
+      if (galleryLength <= 1) return;
+      setSelectedScreenshot((i) => {
+        if (direction === "up") return (i - 1 + galleryLength) % galleryLength;
+        return (i + 1) % galleryLength;
+      });
+    };
+    window.addEventListener("nexusdeck-gallery-scroll", onGalleryScroll);
+    return () => window.removeEventListener("nexusdeck-gallery-scroll", onGalleryScroll);
+  }, [galleryLength]);
+
+  useGamepadContextAction(GP.X, () => {
+    if (activeTab !== "files") setActiveTab("files");
+  });
+
+  useGamepadContextAction(GP.Y, () => {
+    if (detail && !detail.viewer_endorsed) void toggleEndorse();
+    else if (detail && !detail.viewer_tracked) void toggleTrack();
+  });
+
   if (!profile) {
     return <p className="text-[var(--color-muted)]">Set up this game before browsing mods.</p>;
   }
@@ -231,7 +262,12 @@ function ModDetailPage() {
 
       <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] shadow-[var(--shadow-md)]">
         {gallery.length > 0 && (
-          <div className="relative aspect-[21/9] overflow-hidden bg-[var(--color-secondary)]">
+          <div
+            className="relative aspect-[21/9] overflow-hidden bg-[var(--color-secondary)]"
+            data-focus-group="gallery"
+            tabIndex={0}
+            data-focusable="true"
+          >
             <img
               src={gallery[selectedScreenshot]}
               alt={detail.name}
@@ -257,19 +293,23 @@ function ModDetailPage() {
                 >
                   <ChevronRight className="h-6 w-6" />
                 </button>
-                <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-1">
+                <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-2">
                   {gallery.map((_, i) => (
                     <button
                       key={i}
                       type="button"
                       onClick={() => setSelectedScreenshot(i)}
-                      className={`h-2 w-2 rounded-full ${
+                      className={`focusable min-h-[44px] min-w-[44px] rounded-full ${
                         i === selectedScreenshot ? "bg-white" : "bg-white/40"
                       }`}
+                      data-focusable="true"
                       aria-label={`Image ${i + 1}`}
                     />
                   ))}
                 </div>
+                <p className="absolute right-3 top-3 rounded-lg bg-black/50 px-2 py-1 text-xs text-white">
+                  L2/R2: Gallery
+                </p>
               </>
             )}
           </div>

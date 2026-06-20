@@ -15,6 +15,7 @@ mod updates;
 mod endorse;
 mod launch;
 mod game_settings;
+mod haptics;
 
 pub use auth::*;
 pub use nexus::*;
@@ -33,3 +34,4 @@ pub use updates::*;
 pub use endorse::*;
 pub use launch::*;
 pub use game_settings::*;
+pub use haptics::*;

@@ -30,6 +30,9 @@ export function ModSearchBar({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && onSearch()}
+          data-focusable="true"
+          data-mod-search
+          autoComplete="off"
         />
       </div>
       <Button
@@ -38,6 +41,7 @@ export function ModSearchBar({
         loading={loading}
         size="lg"
         className="sm:min-w-[140px]"
+        data-focusable="true"
       >
         Search
       </Button>

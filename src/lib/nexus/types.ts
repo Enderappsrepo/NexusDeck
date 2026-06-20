@@ -164,6 +164,7 @@ export interface InstalledMod {
   name: string;
   version?: string | null;
   enabled: boolean;
+  sort_order?: number;
   installed_files_json: string;
   installed_at: number;
 }
@@ -492,6 +493,13 @@ export interface GameSettingOption {
   label: string;
 }
 
+export interface GameSettingRange {
+  min: number;
+  max: number;
+  step: number;
+  unit?: string | null;
+}
+
 export interface GameSettingDefinition {
   id: string;
   label: string;
@@ -502,6 +510,7 @@ export interface GameSettingDefinition {
   kind: string;
   category: string;
   options?: GameSettingOption[] | null;
+  range?: GameSettingRange | null;
 }
 
 export interface GameSettingsPreset {

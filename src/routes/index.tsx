@@ -13,7 +13,11 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LaunchButton } from "@/components/launch/LaunchButton";
 import { GameCard } from "@/components/game/GameCard";
+import { GameArt } from "@/components/game/GameArt";
 import { useAuthStore, useGamesStore } from "@/stores";
+import { useLaunchStore } from "@/stores/launchStore";
+import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
+import { GP } from "@/lib/gamepad/buttons";
 import { api } from "@/lib/commands";
 import { loadSupportedGames, isSupportedDomain } from "@/lib/games";
 import { cn, gameGradient } from "@/lib/utils";
@@ -46,6 +50,11 @@ function HomePage() {
   }, []);
 
   const primaryProfile = profiles[0];
+  const launchFromStore = useLaunchStore((s) => s.launch);
+
+  useGamepadContextAction(GP.X, () => {
+    if (primaryProfile) launchFromStore(primaryProfile.id).catch(() => {});
+  });
 
   return (
     <div className="page-section mx-auto max-w-5xl">
@@ -158,13 +167,8 @@ function HomePage() {
                 key={p.id}
                 className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-[var(--shadow-sm)]"
               >
-                <div
-                  className={cn(
-                    "relative h-28 bg-gradient-to-br",
-                    gameGradient(p.game_domain)
-                  )}
-                >
-                  <div className="absolute inset-0 bg-gradient-to-t from-[var(--color-card)] via-transparent to-transparent" />
+                <div className="relative h-28 overflow-hidden">
+                  <GameArt domain={p.game_domain} variant="tile" />
                   <div className="absolute bottom-4 left-5">
                     <h3 className="text-xl font-bold">{p.name}</h3>
                     <p className="text-sm text-white/70">{p.game_domain}</p>

@@ -121,10 +121,8 @@ function SetupWizardPage() {
       }
 
       const staging = await api.runWizardStep(domain, "default_staging", {});
-      setStagingPath((current) => {
-        const defaultPath = (staging.data as { staging_path: string }).staging_path;
-        return current.trim() || defaultPath;
-      });
+      const defaultPath = (staging.data as { staging_path: string }).staging_path;
+      setStagingPath(useWizardStore.getState().stagingPath.trim() || defaultPath);
     } catch (e) {
       setMessage(
         e instanceof Error

@@ -24,6 +24,8 @@ pub struct InstalledMod {
     pub name: String,
     pub version: Option<String>,
     pub enabled: bool,
+    #[serde(default)]
+    pub sort_order: i32,
     pub installed_files_json: String,
     pub installed_at: i64,
 }
@@ -54,7 +56,28 @@ fn connection() -> Result<Connection> {
     let conn = Connection::open(path)?;
     conn.execute_batch(include_str!("schema.sql"))?;
     migrate_downloads_table(&conn)?;
+    migrate_installed_mods_table(&conn)?;
     Ok(conn)
+}
+
+fn migrate_installed_mods_table(conn: &Connection) -> Result<()> {
+    let columns: Vec<String> = conn
+        .prepare("PRAGMA table_info(installed_mods)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if !columns.iter().any(|c| c == "sort_order") {
+        conn.execute(
+            "ALTER TABLE installed_mods ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+        conn.execute(
+            "UPDATE installed_mods SET sort_order = installed_at WHERE sort_order = 0",
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 fn migrate_downloads_table(conn: &Connection) -> Result<()> {
@@ -170,8 +193,8 @@ pub fn get_profile_by_domain(domain: &str) -> Result<Option<Profile>> {
 pub fn save_installed_mod(mod_record: &InstalledMod) -> Result<()> {
     let conn = connection()?;
     conn.execute(
-        "INSERT OR REPLACE INTO installed_mods (id, profile_id, nexus_mod_id, nexus_file_id, name, version, enabled, installed_files_json, installed_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT OR REPLACE INTO installed_mods (id, profile_id, nexus_mod_id, nexus_file_id, name, version, enabled, sort_order, installed_files_json, installed_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             mod_record.id,
             mod_record.profile_id,
@@ -180,6 +203,7 @@ pub fn save_installed_mod(mod_record: &InstalledMod) -> Result<()> {
             mod_record.name,
             mod_record.version,
             mod_record.enabled as i32,
+            mod_record.sort_order,
             mod_record.installed_files_json,
             mod_record.installed_at,
         ],
@@ -190,8 +214,8 @@ pub fn save_installed_mod(mod_record: &InstalledMod) -> Result<()> {
 pub fn list_installed_mods(profile_id: &str) -> Result<Vec<InstalledMod>> {
     let conn = connection()?;
     let mut stmt = conn.prepare(
-        "SELECT id, profile_id, nexus_mod_id, nexus_file_id, name, version, enabled, installed_files_json, installed_at
-         FROM installed_mods WHERE profile_id = ?1 ORDER BY installed_at DESC",
+        "SELECT id, profile_id, nexus_mod_id, nexus_file_id, name, version, enabled, sort_order, installed_files_json, installed_at
+         FROM installed_mods WHERE profile_id = ?1 ORDER BY sort_order ASC, installed_at DESC",
     )?;
     let mods = stmt
         .query_map(params![profile_id], |row| {
@@ -203,8 +227,9 @@ pub fn list_installed_mods(profile_id: &str) -> Result<Vec<InstalledMod>> {
                 name: row.get(4)?,
                 version: row.get(5)?,
                 enabled: row.get::<_, i32>(6)? != 0,
-                installed_files_json: row.get(7)?,
-                installed_at: row.get(8)?,
+                sort_order: row.get(7)?,
+                installed_files_json: row.get(8)?,
+                installed_at: row.get(9)?,
             })
         })?
         .filter_map(|r| r.ok())
@@ -215,7 +240,7 @@ pub fn list_installed_mods(profile_id: &str) -> Result<Vec<InstalledMod>> {
 pub fn get_installed_mod(id: &str) -> Result<Option<InstalledMod>> {
     let conn = connection()?;
     let mut stmt = conn.prepare(
-        "SELECT id, profile_id, nexus_mod_id, nexus_file_id, name, version, enabled, installed_files_json, installed_at
+        "SELECT id, profile_id, nexus_mod_id, nexus_file_id, name, version, enabled, sort_order, installed_files_json, installed_at
          FROM installed_mods WHERE id = ?1",
     )?;
     let mut rows = stmt.query(params![id])?;
@@ -228,8 +253,9 @@ pub fn get_installed_mod(id: &str) -> Result<Option<InstalledMod>> {
             name: row.get(4)?,
             version: row.get(5)?,
             enabled: row.get::<_, i32>(6)? != 0,
-            installed_files_json: row.get(7)?,
-            installed_at: row.get(8)?,
+            sort_order: row.get(7)?,
+            installed_files_json: row.get(8)?,
+            installed_at: row.get(9)?,
         }))
     } else {
         Ok(None)
@@ -243,6 +269,54 @@ pub fn set_mod_enabled(id: &str, enabled: bool) -> Result<()> {
         params![enabled as i32, id],
     )?;
     Ok(())
+}
+
+pub fn next_sort_order(profile_id: &str) -> Result<i32> {
+    let conn = connection()?;
+    let max: i32 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(sort_order), 0) FROM installed_mods WHERE profile_id = ?1",
+            params![profile_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    Ok(max + 1)
+}
+
+pub fn reorder_mod(profile_id: &str, mod_id: &str, direction: &str) -> Result<Vec<InstalledMod>> {
+    let mut mods = list_installed_mods(profile_id)?;
+    let idx = mods
+        .iter()
+        .position(|m| m.id == mod_id)
+        .ok_or_else(|| crate::error::NexusDeckError::NotFound("Mod not found".into()))?;
+
+    let swap_idx = if direction == "up" {
+        if idx == 0 {
+            return Ok(mods);
+        }
+        idx - 1
+    } else if direction == "down" {
+        if idx >= mods.len() - 1 {
+            return Ok(mods);
+        }
+        idx + 1
+    } else {
+        return Err(crate::error::NexusDeckError::Other(
+            "direction must be 'up' or 'down'".into(),
+        ));
+    };
+
+    mods.swap(idx, swap_idx);
+
+    let conn = connection()?;
+    for (order, m) in mods.iter().enumerate() {
+        conn.execute(
+            "UPDATE installed_mods SET sort_order = ?1 WHERE id = ?2",
+            params![order as i32, m.id],
+        )?;
+    }
+
+    list_installed_mods(profile_id)
 }
 
 pub fn insert_download(record: &DownloadRecord) -> Result<()> {

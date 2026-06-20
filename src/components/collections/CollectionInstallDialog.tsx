@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Download } from "lucide-react";
+import { Download, Package } from "lucide-react";
 import { AppDialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,10 +26,11 @@ export function CollectionInstallDialog({
   const [installing, setInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setProgress = useDownloadsStore((s) => s.setProgress);
+  const markAutoInstall = useDownloadsStore((s) => s.markAutoInstall);
 
   const requiredMods = collection.mods.filter((m) => !m.optional);
 
-  const queueAll = async () => {
+  const installAll = async () => {
     setInstalling(true);
     setError(null);
     try {
@@ -48,6 +49,7 @@ export function CollectionInstallDialog({
           modName: entry.name,
           profileId: profile.id,
         });
+        markAutoInstall(progress.id);
         setProgress(progress);
       }
       onOpenChange(false);
@@ -61,10 +63,10 @@ export function CollectionInstallDialog({
   return (
     <AppDialog open={open} onOpenChange={onOpenChange} title={`Install ${collection.name}`}>
       <p className="mb-4 text-sm text-[var(--color-muted)]">
-        Queue downloads for {requiredMods.length} required mods from this collection.
+        Download and auto-install {requiredMods.length} required mods from this collection.
       </p>
 
-      <div className="mb-4 max-h-48 space-y-2 overflow-y-auto scrollbar-thin">
+      <div className="mb-4 max-h-48 space-y-2 overflow-y-auto scrollbar-thin" data-scroll-pane>
         {collection.mods.map((mod) => (
           <div
             key={mod.mod_id}
@@ -85,12 +87,12 @@ export function CollectionInstallDialog({
       )}
 
       <div className="flex justify-end gap-3">
-        <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <Button variant="outline" onClick={() => onOpenChange(false)} data-focusable="true">
           Cancel
         </Button>
-        <Button onClick={queueAll} disabled={installing}>
-          <Download className="h-4 w-4" />
-          {installing ? "Queueing..." : "Download all required"}
+        <Button onClick={installAll} disabled={installing} data-focusable="true">
+          <Package className="h-4 w-4" />
+          {installing ? "Starting..." : "Install all required"}
         </Button>
       </div>
     </AppDialog>

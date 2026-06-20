@@ -26,9 +26,9 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info()  { echo -e "${CYAN}→${NC} $*"; }
-ok()    { echo -e "${GREEN}✓${NC} $*"; }
-warn()  { echo -e "${YELLOW}!${NC} $*"; }
+info()  { echo -e "${CYAN}→${NC} $*" >&2; }
+ok()    { echo -e "${GREEN}✓${NC} $*" >&2; }
+warn()  { echo -e "${YELLOW}!${NC} $*" >&2; }
 fail()  { echo -e "${RED}✗${NC} $*" >&2; exit 1; }
 
 prompt_yes_no() {
@@ -86,6 +86,11 @@ for asset in data.get("assets", []):
     if name.endswith(".flatpak") and "nexusdeck" in name.lower():
         print(asset["browser_download_url"])
         break
+else:
+    for asset in data.get("assets", []):
+        if asset.get("name", "").endswith(".flatpak"):
+            print(asset["browser_download_url"])
+            break
 PY
 )" || true
 
@@ -93,22 +98,31 @@ PY
 
   asset_name="$(basename "$asset_url")"
   local tmp_file
-  tmp_file="$(mktemp --suffix=.flatpak)"
+  tmp_file="$(mktemp "${TMPDIR:-/tmp}/nexusdeck-XXXXXX.flatpak")"
   info "Downloading ${asset_name}..."
   curl -fL --progress-bar "$asset_url" -o "$tmp_file"
+  [[ -s "$tmp_file" ]] || fail "Download failed or empty file: ${asset_name}"
   ok "Downloaded ${asset_name}"
-  echo "$tmp_file"
+  printf '%s\n' "$tmp_file"
 }
 
 install_flatpak() {
   local bundle_path="$1"
-  [[ -f "$bundle_path" ]] || fail "Flatpak bundle not found: $bundle_path"
+  bundle_path="${bundle_path//$'\r'/}"
+  bundle_path="${bundle_path//$'\n'/}"
+  [[ -f "$bundle_path" ]] || fail "Flatpak bundle not found: ${bundle_path:-<empty>}"
 
-  info "Installing ${APP_ID}..."
-  flatpak install -y --user "$bundle_path"
+  info "Installing ${APP_ID} from ${bundle_path}..."
+  if flatpak info --user "$APP_ID" >/dev/null 2>&1; then
+    flatpak install -y --user --reinstall "$bundle_path" \
+      || fail "Flatpak reinstall failed. Try: flatpak install -y --user --reinstall ${bundle_path}"
+  else
+    flatpak install -y --user "$bundle_path" \
+      || fail "Flatpak install failed. Try: flatpak install -y --user ${bundle_path}"
+  fi
   ok "Installed ${APP_ID}"
 
-  if [[ "$bundle_path" == /tmp/* ]]; then
+  if [[ "$bundle_path" == "${TMPDIR:-/tmp}/"* || "$bundle_path" == /tmp/* ]]; then
     rm -f "$bundle_path"
   fi
 }
@@ -286,6 +300,8 @@ main() {
   else
     bundle_path="$(download_latest_flatpak)"
   fi
+
+  [[ -n "$bundle_path" ]] || fail "Could not resolve Flatpak bundle path after download."
 
   install_flatpak "$bundle_path"
   register_nxm_handler

@@ -79,6 +79,7 @@ export function ModRowCarousel({
       <div
         ref={scrollerRef}
         className="scrollbar-thin flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1"
+        data-scroll-carousel
       >
         {mods.map((mod) => (
           <div

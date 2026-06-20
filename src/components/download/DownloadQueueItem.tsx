@@ -10,6 +10,7 @@ interface DownloadQueueItemProps {
   onCancel: () => void;
   onRetry: () => void;
   onDismiss: () => void;
+  onInstall?: () => void;
 }
 
 export function DownloadQueueItem({
@@ -18,6 +19,7 @@ export function DownloadQueueItem({
   onCancel,
   onRetry,
   onDismiss,
+  onInstall,
 }: DownloadQueueItemProps) {
   const pct =
     download.bytes_total > 0
@@ -31,7 +33,16 @@ export function DownloadQueueItem({
     download.status === "pending";
 
   return (
-    <div className="rounded-xl bg-[var(--color-secondary)] p-3">
+    <div
+      className="rounded-xl bg-[var(--color-secondary)] p-3"
+      data-focusable="true"
+      data-download-id={download.id}
+      data-download-status={download.status}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && complete && onInstall) onInstall();
+      }}
+    >
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">
@@ -52,7 +63,20 @@ export function DownloadQueueItem({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {complete && (
-            <CheckCircle2 className="h-5 w-5 text-[var(--color-success)]" />
+            <>
+              <CheckCircle2 className="h-5 w-5 text-[var(--color-success)]" />
+              {onInstall && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="focusable min-h-[44px]"
+                  data-focusable="true"
+                  onClick={onInstall}
+                >
+                  Install
+                </Button>
+              )}
+            </>
           )}
           {failed && (
             <>

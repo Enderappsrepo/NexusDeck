@@ -23,9 +23,11 @@ function SettingsPage() {
     downloadSettings,
     batteryMode,
     loading: settingsLoading,
+    gyroScroll,
     loadSettings,
     setDownloadSettings,
     setBatteryMode,
+    setGyroScroll,
   } = useSettingsStore();
   const launchSettings = useLaunchStore((s) => s.settings);
   const loadLaunchSettings = useLaunchStore((s) => s.loadSettings);
@@ -149,6 +151,15 @@ function SettingsPage() {
             </div>
             <Switch checked={batteryMode} onCheckedChange={setBatteryMode} />
           </div>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label>Gyro scroll preset</Label>
+              <p className="text-sm text-[var(--color-muted)]">
+                Use Steam Input to map gyro or right stick to scroll in lists (see docs).
+              </p>
+            </div>
+            <Switch checked={gyroScroll} onCheckedChange={setGyroScroll} data-focusable="true" />
+          </div>
           <div className="rounded-xl bg-[var(--color-secondary)] p-4 text-sm text-[var(--color-muted)]">
             <p className="font-medium text-[var(--color-foreground)]">Gamepad shortcuts</p>
             <ul className="mt-2 space-y-1">
@@ -156,8 +167,19 @@ function SettingsPage() {
               <li>{GAMEPAD_HINTS.confirm}: Confirm / select</li>
               <li>{GAMEPAD_HINTS.back}: Go back</li>
               <li>{GAMEPAD_HINTS.tabs}: Switch tabs (L1 / R1)</li>
-              <li>{GAMEPAD_HINTS.launch}: Quick launch menu (Y on Launch button)</li>
+              <li>{GAMEPAD_HINTS.scroll}: Scroll / reorder (L2 / R2)</li>
+              <li>{GAMEPAD_HINTS.secondary}: Secondary action (X)</li>
+              <li>{GAMEPAD_HINTS.launch}: Quick launch / context (Y)</li>
+              <li>{GAMEPAD_HINTS.menu}: Search / command palette (Menu)</li>
             </ul>
+            <p className="mt-3">
+              <a
+                href="docs/steam-input.md"
+                className="text-[var(--color-primary)] underline"
+              >
+                Steam Input profile guide (docs/steam-input.md)
+              </a>
+            </p>
           </div>
         </CardContent>
       </Card>

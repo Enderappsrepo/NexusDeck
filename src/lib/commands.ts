@@ -393,6 +393,11 @@ export const api = {
   setModEnabled: (modId: string, enabled: boolean) =>
     invoke<void>("set_mod_enabled", { modId, enabled }),
 
+  reorderMod: (profileId: string, modId: string, direction: "up" | "down") =>
+    invoke<InstalledMod[]>("reorder_mod", { profileId, modId, direction }),
+
+  triggerHaptic: (event: string) => invoke<void>("trigger_haptic", { event }),
+
   handleNxmUrl: (url: string) =>
     invoke<unknown>("handle_nxm_url", { url }),
 

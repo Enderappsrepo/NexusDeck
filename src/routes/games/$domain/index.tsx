@@ -1,14 +1,10 @@
 import { createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
-  Clock,
   FolderOpen,
   Layers,
   Search,
   Settings2,
-  SlidersHorizontal,
-  Sparkles,
-  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,12 +15,13 @@ import { DeckAdvisorPanel } from "@/components/advisor/DeckAdvisorPanel";
 import { CommunityHubPanel } from "@/components/community/CommunityHubPanel";
 import { GameModDiscovery } from "@/components/game/GameModDiscovery";
 import { GameSettingsPanel } from "@/components/game/GameSettingsPanel";
+import { GameArt } from "@/components/game/GameArt";
+import { GameStatStrip } from "@/components/game/GameStatStrip";
 import { ModSearchBar } from "@/components/mod/ModSearchBar";
 import { LaunchButton } from "@/components/launch/LaunchButton";
 import { useLaunchStore } from "@/stores/launchStore";
 import { useAuthStore, useGamesStore } from "@/stores";
 import { api } from "@/lib/commands";
-import { cn, gameGradient } from "@/lib/utils";
 import {
   getGameMeta,
   hasScriptExtender,
@@ -32,6 +29,8 @@ import {
 } from "@/lib/games";
 import { resolveGameDomain, usePathname, isValidGameDomain } from "@/lib/routeParams";
 import { useGamepadTabs } from "@/hooks/useGamepadTabs";
+import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
+import { GP } from "@/lib/gamepad/buttons";
 import type { ScriptExtenderStatus, SupportedGameInfo } from "@/lib/nexus/types";
 
 export const Route = createFileRoute("/games/$domain/")({
@@ -70,6 +69,14 @@ function GameDashboard() {
   const showExtender = hasScriptExtender(domain, supportedGames);
 
   useGamepadTabs([...DASHBOARD_TABS], activeTab, (tab) => setActiveTab(tab as DashboardTab));
+
+  useGamepadContextAction(GP.X, () => {
+    navigate({
+      to: "/games/$domain/mods",
+      params: { domain },
+      search: { modId: undefined },
+    });
+  });
 
   useEffect(() => {
     loadSupportedGames().then(setSupportedGames);
@@ -137,7 +144,7 @@ function GameDashboard() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-5">
       <section className="game-banner">
-        <div className={cn("game-banner-art bg-gradient-to-br", gameGradient(domain))} />
+        <GameArt domain={domain} variant="hero" />
         <div className="game-banner-content">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
@@ -148,24 +155,15 @@ function GameDashboard() {
               <p className="mt-1 truncate text-sm text-[var(--color-muted)]" title={profile.game_path}>
                 {profile.game_path}
               </p>
-              {playtime?.last_played_at && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <span className="stat-pill">
-                    <Clock className="h-3.5 w-3.5" />
-                    Last played {new Date(playtime.last_played_at * 1000).toLocaleDateString()}
-                  </span>
-                  {playtime.total_secs > 0 && (
-                    <span className="stat-pill">
-                      {Math.floor(playtime.total_secs / 3600)}h via NexusDeck
-                    </span>
-                  )}
-                </div>
-              )}
             </div>
           </div>
 
           <div className="mt-5">
             <LaunchButton profileId={profile.id} gameDomain={domain} />
+          </div>
+
+          <div className="mt-5">
+            <GameStatStrip profileId={profile.id} playtime={playtime} />
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">

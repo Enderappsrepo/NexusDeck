@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS installed_mods (
     name TEXT NOT NULL,
     version TEXT,
     enabled INTEGER DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
     installed_files_json TEXT NOT NULL DEFAULT '[]',
     installed_at INTEGER NOT NULL
 );

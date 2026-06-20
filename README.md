@@ -203,10 +203,17 @@ The **CI** workflow builds Linux Flatpak and Windows NSIS on every push/PR to `m
 - Preview bundle contents before batch download
 
 ### Controller
-- **D-pad** — navigate focusable elements
+- **D-pad / Left stick** — navigate focusable elements
 - **A** — activate / click
 - **B** — go back
-- **L1/R1** — switch tabs (mod detail, compare view)
+- **X** — secondary action (toggle mod, browse, quick launch)
+- **Y** — context menu / endorse / quick launch
+- **L1/R1** — switch tabs (dashboard, mod detail, discover, sidebar)
+- **L2/R2** — scroll lists / gallery / reorder load order in library
+- **Menu** — search focus or command palette
+- **View** — toggle controller hint bar
+
+See [docs/steam-input.md](docs/steam-input.md) for the full Steam Input profile.
 
 ## Steam Deck Tips
 
@@ -228,7 +235,7 @@ The **CI** workflow builds Linux Flatpak and Windows NSIS on every push/PR to `m
 7. **Updates** — Library shows update badge when mod has new version
 8. **Endorse** — Endorse a mod from detail page
 9. **Export** — Export modlist as LOOT format from library
-10. **Controller-only** — Navigate home → browse → download → install without mouse
+10. **Controller-only** — Run `npx tsx scripts/controller-e2e-checklist.ts` and verify each item without mouse
 
 ## API Compliance
 

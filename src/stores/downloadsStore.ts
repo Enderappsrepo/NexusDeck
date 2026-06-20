@@ -7,11 +7,14 @@ interface DownloadsState {
   active: Record<string, DownloadProgress>;
   errors: Record<string, string>;
   hydrated: boolean;
+  autoInstallIds: Set<string>;
   setProgress: (progress: DownloadProgress) => void;
   setError: (id: string, error: string) => void;
   remove: (id: string) => void;
   clearError: (id: string) => void;
   hydrateFromRecords: (records: DownloadRecord[]) => void;
+  markAutoInstall: (id: string) => void;
+  consumeAutoInstall: (id: string) => boolean;
   cancel: (downloadId: string) => Promise<void>;
   retry: (downloadId: string) => Promise<void>;
   dismiss: (downloadId: string) => Promise<void>;
@@ -23,6 +26,7 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
   active: {},
   errors: {},
   hydrated: false,
+  autoInstallIds: new Set(),
 
   setProgress: (progress) =>
     set((s) => {
@@ -72,6 +76,22 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
       active[record.id] = downloadRecordToProgress(record);
     }
     set({ active, hydrated: true });
+  },
+
+  markAutoInstall: (id) =>
+    set((s) => {
+      const next = new Set(s.autoInstallIds);
+      next.add(id);
+      return { autoInstallIds: next };
+    }),
+
+  consumeAutoInstall: (id) => {
+    const state = get();
+    if (!state.autoInstallIds.has(id)) return false;
+    const next = new Set(state.autoInstallIds);
+    next.delete(id);
+    set({ autoInstallIds: next });
+    return true;
   },
 
   cancel: async (downloadId) => {

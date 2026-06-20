@@ -63,7 +63,7 @@ export function DownloadQueuePanel() {
             )}
           </div>
         </div>
-        <div className="max-h-64 space-y-3 overflow-y-auto p-4 scrollbar-thin">
+        <div className="max-h-64 space-y-3 overflow-y-auto p-4 scrollbar-thin" data-scroll-pane>
           {downloads.map((d) => (
             <DownloadQueueItem
               key={d.id}
@@ -72,6 +72,16 @@ export function DownloadQueuePanel() {
               onCancel={() => cancel(d.id)}
               onRetry={() => retry(d.id)}
               onDismiss={() => dismiss(d.id)}
+              onInstall={
+                d.status === "complete"
+                  ? () =>
+                      window.dispatchEvent(
+                        new CustomEvent("nexusdeck-install-download", {
+                          detail: { downloadId: d.id },
+                        })
+                      )
+                  : undefined
+              }
             />
           ))}
         </div>

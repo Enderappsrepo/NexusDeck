@@ -19,12 +19,25 @@ pub struct GameSettingDefinition {
     pub kind: String,
     pub category: String,
     pub options: Option<Vec<GameSettingOption>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range: Option<GameSettingRange>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameSettingOption {
     pub value: String,
     pub label: String,
+}
+
+/// Bounds for a numeric setting rendered as a slider. Server-owned so the UI
+/// stays a dumb renderer and the valid range lives next to the INI key.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameSettingRange {
+    pub min: f64,
+    pub max: f64,
+    pub step: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,6 +141,38 @@ pub fn apply_game_settings_preset(profile_id: &str, preset_id: &str) -> Result<A
     apply_game_settings(profile_id, values)
 }
 
+/// Creation Engine titles ignore loose-file assets (textures, meshes, loose
+/// scripts) unless archive invalidation is enabled in `<Game>Custom.ini`.
+/// NexusDeck deploys loose files straight into `Data/`, so without this the
+/// mods install successfully but never load in-game. We set it automatically.
+///
+/// Returns `Ok(true)` when the keys were written, `Ok(false)` when not
+/// applicable — a non-Creation-Engine game, or a Proton prefix that does not
+/// exist yet (it is re-applied on the next install once the prefix is created).
+pub fn ensure_archive_invalidation(profile: &Profile) -> Result<bool> {
+    // Only Creation Engine games use the [Archive] invalidation mechanism.
+    let Ok(prefix) = ini_prefix(&profile.game_domain) else {
+        return Ok(false);
+    };
+
+    // On Linux the INI lives inside the Proton prefix. If the game has never
+    // been launched the prefix won't exist yet — skip rather than fabricate a
+    // partial prefix; this runs again on the next install.
+    #[cfg(not(target_os = "windows"))]
+    {
+        match profile.proton_prefix_path.as_deref() {
+            Some(p) if Path::new(p).exists() => {}
+            _ => return Ok(false),
+        }
+    }
+
+    let config_dir = resolve_my_games_dir(profile)?;
+    let path = ini_path(&config_dir, prefix, "custom");
+    write_ini_value(&path, "Archive", "bInvalidateOlderFiles", "1")?;
+    write_ini_value(&path, "Archive", "sResourceDataDirsFinal", "")?;
+    Ok(true)
+}
+
 fn load_profile(profile_id: &str) -> Result<Profile> {
     db::get_profile(profile_id)?
         .ok_or_else(|| NexusDeckError::NotFound("Profile not found".into()))
@@ -214,6 +259,7 @@ fn setting_definitions() -> Vec<GameSettingDefinition> {
                     label: "Windowed".into(),
                 },
             ]),
+            range: None,
         },
         GameSettingDefinition {
             id: "width".into(),
@@ -225,6 +271,7 @@ fn setting_definitions() -> Vec<GameSettingDefinition> {
             kind: "int".into(),
             category: "display".into(),
             options: None,
+            range: None,
         },
         GameSettingDefinition {
             id: "height".into(),
@@ -236,6 +283,7 @@ fn setting_definitions() -> Vec<GameSettingDefinition> {
             kind: "int".into(),
             category: "display".into(),
             options: None,
+            range: None,
         },
         GameSettingDefinition {
             id: "godrays".into(),
@@ -247,6 +295,7 @@ fn setting_definitions() -> Vec<GameSettingDefinition> {
             kind: "bool".into(),
             category: "graphics".into(),
             options: None,
+            range: None,
         },
         GameSettingDefinition {
             id: "depth_of_field".into(),
@@ -258,6 +307,7 @@ fn setting_definitions() -> Vec<GameSettingDefinition> {
             kind: "bool".into(),
             category: "graphics".into(),
             options: None,
+            range: None,
         },
         GameSettingDefinition {
             id: "motion_blur".into(),
@@ -269,6 +319,7 @@ fn setting_definitions() -> Vec<GameSettingDefinition> {
             kind: "bool".into(),
             category: "graphics".into(),
             options: None,
+            range: None,
         },
         GameSettingDefinition {
             id: "shadow_distance".into(),
@@ -280,6 +331,12 @@ fn setting_definitions() -> Vec<GameSettingDefinition> {
             kind: "float".into(),
             category: "performance".into(),
             options: None,
+            range: Some(GameSettingRange {
+                min: 0.0,
+                max: 16000.0,
+                step: 500.0,
+                unit: None,
+            }),
         },
         GameSettingDefinition {
             id: "shadow_map".into(),
@@ -291,6 +348,12 @@ fn setting_definitions() -> Vec<GameSettingDefinition> {
             kind: "int".into(),
             category: "performance".into(),
             options: None,
+            range: Some(GameSettingRange {
+                min: 512.0,
+                max: 4096.0,
+                step: 512.0,
+                unit: Some("px".into()),
+            }),
         },
         GameSettingDefinition {
             id: "anisotropy".into(),
@@ -302,6 +365,12 @@ fn setting_definitions() -> Vec<GameSettingDefinition> {
             kind: "int".into(),
             category: "performance".into(),
             options: None,
+            range: Some(GameSettingRange {
+                min: 0.0,
+                max: 16.0,
+                step: 2.0,
+                unit: Some("x".into()),
+            }),
         },
     ]
 }

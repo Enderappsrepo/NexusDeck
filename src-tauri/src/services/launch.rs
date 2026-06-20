@@ -123,13 +123,14 @@ pub fn launch_game(
         }
         _ => {
             let compat = resolve_compat_path(&profile, app_id);
-            let method = if cfg!(target_os = "windows") {
-                if launch_via_steam_uri(app_id).is_ok() {
-                    "steam_uri".to_string()
-                } else {
-                    launch_via_steam_cli(app_id, &args, compat.as_deref())?;
-                    "steam_cli".to_string()
-                }
+            // Prefer the steam:// URI on every platform. Inside the Flatpak
+            // sandbox it is the only reliable way to reach the host Steam (via
+            // the desktop portal), and it lets Steam set up the Proton prefix
+            // itself. Fall back to the Steam CLI — which can also pass custom
+            // launch args — only if the URI launch fails. (Custom args are best
+            // set via Steam launch options or the direct/custom launch method.)
+            let method = if launch_via_steam_uri(app_id).is_ok() {
+                "steam_uri".to_string()
             } else {
                 launch_via_steam_cli(app_id, &args, compat.as_deref())?;
                 "steam_cli".to_string()

@@ -1,13 +1,18 @@
 import { createRootRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { AppShell } from "@/components/layout/AppShell";
 import { DownloadQueuePanel } from "@/components/download/DownloadQueuePanel";
 import { InstallPromptDialog } from "@/components/install/InstallPromptDialog";
 import { ModInstallDialog } from "@/components/mod/ModInstallDialog";
 import { useAuthStore, useDownloadsStore, useGamesStore } from "@/stores";
+import { ControllerHintBar } from "@/components/controller/ControllerHintBar";
+import { CommandPalette } from "@/components/controller/CommandPalette";
 import { useFocusNavigation } from "@/hooks/useFocusNavigation";
 import { useGamepadBack } from "@/hooks/useGamepadBack";
+import { GamepadRouterProvider } from "@/hooks/useGamepadRouter";
+import { resolveContextFromPath } from "@/lib/gamepad/contexts";
+import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
 import { useLaunchStore } from "@/stores/launchStore";
 import { api } from "@/lib/commands";
 import { ensureGamepadPolyfill } from "@/lib/gamepadPolyfill";
@@ -48,6 +53,7 @@ function RootLayout() {
   const profiles = useGamesStore((s) => s.profiles);
   const loadProfiles = useGamesStore((s) => s.loadProfiles);
   const setProgress = useDownloadsStore((s) => s.setProgress);
+  const active = useDownloadsStore((s) => s.active);
   const setError = useDownloadsStore((s) => s.setError);
   const hydrateFromRecords = useDownloadsStore((s) => s.hydrateFromRecords);
   const subscribeLaunchEvents = useLaunchStore((s) => s.subscribeEvents);
@@ -63,8 +69,31 @@ function RootLayout() {
     archivePath: string;
   } | null>(null);
 
+  const handleInstallNowFromDownload = useCallback(async (download: DownloadProgress) => {
+    const prof = resolveProfile(profiles, download);
+    if (!prof) return;
+    try {
+      const files = await api.getModFiles(download.game_domain, download.mod_id);
+      const file = files.find((f) => f.file_id === download.file_id) ?? files[0];
+      if (!file) return;
+      setPendingInstall({
+        profile: prof,
+        modId: download.mod_id,
+        modName: download.mod_name || file.name,
+        file,
+        archivePath: download.dest_path,
+      });
+    } catch {
+      setInstallPrompt(download);
+    }
+  }, [profiles]);
+
   useFocusNavigation(containerRef);
   useGamepadBack();
+
+  useEffect(() => {
+    gamepadRouter.setContext(resolveContextFromPath(pathname));
+  }, [pathname]);
 
   useEffect(() => {
     void ensureGamepadPolyfill();
@@ -117,7 +146,12 @@ function RootLayout() {
     );
     listen<DownloadProgress>("download-complete", (e) => {
       setProgress(e.payload);
-      setInstallPrompt(e.payload);
+      const autoInstall = useDownloadsStore.getState().consumeAutoInstall(e.payload.id);
+      if (autoInstall) {
+        void handleInstallNowFromDownload(e.payload);
+      } else {
+        setInstallPrompt(e.payload);
+      }
     }).then((u) => unsubs.push(u));
     listen<{ id: string; error: string }>("download-error", (e) => {
       setError(e.payload.id, e.payload.error);
@@ -132,7 +166,19 @@ function RootLayout() {
       });
     }).then((u) => unsubs.push(u));
     return () => unsubs.forEach((u) => u());
-  }, [setProgress, setError, navigate]);
+  }, [setProgress, setError, navigate, handleInstallNowFromDownload]);
+
+  useEffect(() => {
+    const onInstall = (e: Event) => {
+      const { downloadId } = (e as CustomEvent).detail as { downloadId: string };
+      const download = active[downloadId];
+      if (download?.status === "complete") {
+        void handleInstallNowFromDownload(download);
+      }
+    };
+    window.addEventListener("nexusdeck-install-download", onInstall);
+    return () => window.removeEventListener("nexusdeck-install-download", onInstall);
+  }, [active, handleInstallNowFromDownload]);
 
   const promptProfile = installPrompt
     ? resolveProfile(profiles, installPrompt)
@@ -140,34 +186,20 @@ function RootLayout() {
 
   const handleInstallNow = async () => {
     if (!installPrompt || !promptProfile) return;
-    try {
-      const files = await api.getModFiles(
-        installPrompt.game_domain,
-        installPrompt.mod_id
-      );
-      const file =
-        files.find((f) => f.file_id === installPrompt.file_id) ?? files[0];
-      if (!file) return;
-      setPendingInstall({
-        profile: promptProfile,
-        modId: installPrompt.mod_id,
-        modName: installPrompt.mod_name || file.name,
-        file,
-        archivePath: installPrompt.dest_path,
-      });
-      setInstallPrompt(null);
-    } catch {
-      setInstallPrompt(null);
-    }
+    await handleInstallNowFromDownload(installPrompt);
+    setInstallPrompt(null);
   };
 
   return (
-    <div ref={containerRef} className="flex h-full min-h-screen flex-col">
-      <BootReadyMarker />
-      <AppShell hideNav={isOnboarding}>
-        <Outlet />
-      </AppShell>
-      {!isOnboarding && <DownloadQueuePanel />}
+    <GamepadRouterProvider>
+      <div ref={containerRef} className="flex h-full min-h-screen flex-col">
+        <BootReadyMarker />
+        <AppShell hideNav={isOnboarding}>
+          <Outlet />
+        </AppShell>
+        {!isOnboarding && <DownloadQueuePanel />}
+        {!isOnboarding && <ControllerHintBar />}
+        <CommandPalette />
 
       {!isOnboarding && (
         <InstallPromptDialog
@@ -192,6 +224,7 @@ function RootLayout() {
           onInstalled={() => setPendingInstall(null)}
         />
       )}
-    </div>
+      </div>
+    </GamepadRouterProvider>
   );
 }
