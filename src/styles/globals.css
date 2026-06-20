@@ -70,7 +70,6 @@ body {
     radial-gradient(ellipse 90% 60% at 50% -10%, rgba(255, 107, 43, 0.08) 0%, transparent 55%),
     radial-gradient(ellipse 70% 50% at 100% 0%, rgba(124, 140, 255, 0.06) 0%, transparent 50%),
     var(--color-background);
-  background-attachment: fixed;
 }
 
 :focus-visible {

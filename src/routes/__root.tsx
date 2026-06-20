@@ -55,7 +55,9 @@ function RootLayout() {
   const setProgress = useDownloadsStore((s) => s.setProgress);
   const active = useDownloadsStore((s) => s.active);
   const setError = useDownloadsStore((s) => s.setError);
+  const dismiss = useDownloadsStore((s) => s.dismiss);
   const hydrateFromRecords = useDownloadsStore((s) => s.hydrateFromRecords);
+  const updatingDownloadsRef = useRef(new Set<string>());
   const subscribeLaunchEvents = useLaunchStore((s) => s.subscribeEvents);
   const loadLaunchSettings = useLaunchStore((s) => s.loadSettings);
   const launchFromStore = useLaunchStore((s) => s.launch);
@@ -67,9 +69,30 @@ function RootLayout() {
     modName: string;
     file: ModFileInfo;
     archivePath: string;
+    replaceModId?: string;
   } | null>(null);
 
+  const completeUpdateDownload = useCallback(
+    async (download: DownloadProgress) => {
+      if (updatingDownloadsRef.current.has(download.id)) return;
+      updatingDownloadsRef.current.add(download.id);
+      try {
+        await api.completeModUpdate(download.id);
+        await dismiss(download.id);
+      } catch (err) {
+        setError(download.id, err instanceof Error ? err.message : String(err));
+      } finally {
+        updatingDownloadsRef.current.delete(download.id);
+      }
+    },
+    [dismiss, setError]
+  );
+
   const handleInstallNowFromDownload = useCallback(async (download: DownloadProgress) => {
+    if (download.update_target_mod_id) {
+      await completeUpdateDownload(download);
+      return;
+    }
     const prof = resolveProfile(profiles, download);
     if (!prof) return;
     try {
@@ -82,11 +105,12 @@ function RootLayout() {
         modName: download.mod_name || file.name,
         file,
         archivePath: download.dest_path,
+        replaceModId: download.update_target_mod_id,
       });
     } catch {
       setInstallPrompt(download);
     }
-  }, [profiles]);
+  }, [profiles, completeUpdateDownload]);
 
   useFocusNavigation(containerRef);
   useGamepadBack();
@@ -148,9 +172,7 @@ function RootLayout() {
       setProgress(e.payload);
       const download = e.payload;
       if (download.update_target_mod_id) {
-        void api.completeModUpdate(download.id).catch((err) => {
-          setError(download.id, err instanceof Error ? err.message : String(err));
-        });
+        void completeUpdateDownload(download);
         return;
       }
       const autoInstall = useDownloadsStore.getState().consumeAutoInstall(e.payload.id);
@@ -173,7 +195,7 @@ function RootLayout() {
       });
     }).then((u) => unsubs.push(u));
     return () => unsubs.forEach((u) => u());
-  }, [setProgress, setError, navigate, handleInstallNowFromDownload]);
+  }, [setProgress, setError, navigate, handleInstallNowFromDownload, completeUpdateDownload]);
 
   useEffect(() => {
     const onInstall = (e: Event) => {
@@ -228,6 +250,7 @@ function RootLayout() {
           modName={pendingInstall.modName}
           file={pendingInstall.file}
           archivePathOverride={pendingInstall.archivePath}
+          replaceModId={pendingInstall.replaceModId}
           onInstalled={() => setPendingInstall(null)}
         />
       )}

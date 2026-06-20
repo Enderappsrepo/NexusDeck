@@ -1,4 +1,11 @@
-import { createContext, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
 import type { InputContext } from "@/lib/gamepad/contexts";
 
@@ -80,17 +87,33 @@ export function useGamepadTabs(
   activeTab: string,
   onTabChange: (tabId: string) => void
 ) {
+  // Keep the latest props in a ref so we register the handler exactly once per
+  // mount (a stable stack position) rather than push/pop on every render.
+  const latest = useRef({ tabIds, activeTab, onTabChange });
+  latest.current = { tabIds, activeTab, onTabChange };
+
+  const hasTabs = tabIds.length > 0;
   useEffect(() => {
-    gamepadRouter.setTabHandler({ tabIds, activeTab, onTabChange });
-    return () => gamepadRouter.setTabHandler(null);
-  }, [tabIds, activeTab, onTabChange]);
+    if (!hasTabs) return;
+    return gamepadRouter.pushTabHandler({
+      get tabIds() {
+        return latest.current.tabIds;
+      },
+      get activeTab() {
+        return latest.current.activeTab;
+      },
+      onTabChange: (id) => latest.current.onTabChange(id),
+    });
+  }, [hasTabs]);
 }
 
 export function useGamepadBackHandler(onBack: () => void) {
+  const latest = useRef(onBack);
+  latest.current = onBack;
+
   useEffect(() => {
-    gamepadRouter.setBackHandler(onBack);
-    return () => gamepadRouter.setBackHandler(null);
-  }, [onBack]);
+    return gamepadRouter.pushBackHandler(() => latest.current());
+  }, []);
 }
 
 export function useGamepadContextAction(

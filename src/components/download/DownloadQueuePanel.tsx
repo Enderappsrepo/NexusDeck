@@ -73,7 +73,7 @@ export function DownloadQueuePanel() {
               onRetry={() => retry(d.id)}
               onDismiss={() => dismiss(d.id)}
               onInstall={
-                d.status === "complete"
+                d.status === "complete" && !d.update_target_mod_id
                   ? () =>
                       window.dispatchEvent(
                         new CustomEvent("nexusdeck-install-download", {

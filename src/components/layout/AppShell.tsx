@@ -2,6 +2,7 @@ import { GameRunningBanner } from "@/components/launch/GameRunningBanner";
 import { Toaster } from "@/components/ui/toast";
 import { GAMEPAD_HINTS } from "@/hooks/useFocusNavigation";
 import { useGamepadRouterState } from "@/hooks/useGamepadRouter";
+import { useControllerFocus } from "@/hooks/useControllerFocus";
 import { useLaunchStore } from "@/stores/launchStore";
 import { BackButton } from "@/components/layout/BackButton";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -17,6 +18,7 @@ export function AppShell({
   const toasts = useLaunchStore((s) => s.toasts);
   const dismissToast = useLaunchStore((s) => s.dismissToast);
   const { controllerActive } = useGamepadRouterState();
+  useControllerFocus();
 
   return (
     <div className="flex h-full min-h-screen flex-col">

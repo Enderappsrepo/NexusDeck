@@ -251,6 +251,16 @@ impl GamePlugin for CreationEnginePlugin {
                     "Standard {game_name} mod layout detected. Files will be copied into your game's Data folder."
                 ),
             }
+        } else if has_loose_fallout4_data_folders(&rel_paths) {
+            DeployPlan {
+                strategy: "merge_loose_to_data".to_string(),
+                source_subpath: None,
+                target: data_target.clone(),
+                requires_confirmation: false,
+                description:
+                    "Asset files detected (meshes, textures, etc.). They will be installed into your Data folder."
+                        .to_string(),
+            }
         } else if rel_paths.iter().any(|p| {
             let lower = p.to_lowercase();
             lower.ends_with(".esp") || lower.ends_with(".esm") || lower.ends_with(".esl")
@@ -262,16 +272,6 @@ impl GamePlugin for CreationEnginePlugin {
                 requires_confirmation: false,
                 description:
                     "Plugin files detected (.esp/.esm). They will be installed into your Data folder."
-                        .to_string(),
-            }
-        } else if has_loose_fallout4_data_folders(&rel_paths) {
-            DeployPlan {
-                strategy: "merge_loose_to_data".to_string(),
-                source_subpath: None,
-                target: data_target,
-                requires_confirmation: false,
-                description:
-                    "Asset files detected (meshes, textures, etc.). They will be installed into your Data folder."
                         .to_string(),
             }
         } else {

@@ -43,6 +43,7 @@ interface ModInstallDialogProps {
   modName: string;
   file: ModFileInfo;
   archivePathOverride?: string;
+  replaceModId?: string;
   category?: string;
   tags?: string[];
   onInstalled?: () => void;
@@ -79,6 +80,7 @@ export function ModInstallDialog({
   modName,
   file,
   archivePathOverride,
+  replaceModId,
   category,
   tags,
   onInstalled,
@@ -115,6 +117,12 @@ export function ModInstallDialog({
     }, 1000);
     return () => window.clearInterval(timer);
   }, [extracting]);
+
+  useEffect(() => {
+    if (preview && preview.file_count === 0 && preview.skipped_existing > 0) {
+      setOverwriteFiles(true);
+    }
+  }, [preview]);
 
   const wizardRequired = !!preview?.install_wizard_required;
   const wizardGroupPages = useMemo(
@@ -348,6 +356,7 @@ export function ModInstallDialog({
         category: category ?? null,
         tags: tags ?? [],
         fileVersion: file.version ?? null,
+        replaceModId: replaceModId ?? null,
       });
       if (localStorage.getItem("nexusdeck_auto_sort_after_install") === "true") {
         await api.autoSortLoadOrder(profile.id).catch(() => {});

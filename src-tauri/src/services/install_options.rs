@@ -21,6 +21,33 @@ pub enum InstallOptionSelectionType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FomodFileRef {
+    pub source: String,
+    #[serde(default)]
+    pub destination: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FomodFlag {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FomodCondition {
+    #[serde(default)]
+    pub operator: String,
+    #[serde(default)]
+    pub flags: Vec<FomodFlag>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FomodConditionalPattern {
+    pub condition: FomodCondition,
+    pub files: Vec<FomodFileRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstallOptionChoice {
     pub id: String,
     pub label: String,
@@ -30,6 +57,8 @@ pub struct InstallOptionChoice {
     pub image_path: Option<String>,
     #[serde(default)]
     pub default: bool,
+    #[serde(default)]
+    pub condition_flags: Vec<FomodFlag>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +74,10 @@ pub struct InstallWizard {
     pub module_name: Option<String>,
     pub module_image_path: Option<String>,
     pub steps: Vec<InstallWizardStep>,
+    #[serde(default)]
+    pub required_files: Vec<FomodFileRef>,
+    #[serde(default)]
+    pub conditional_patterns: Vec<FomodConditionalPattern>,
 }
 
 impl InstallWizard {
@@ -110,7 +143,7 @@ pub fn detect_install_wizard_from_dir(
     entries: &[ArchiveEntry],
 ) -> InstallWizard {
     if let Some(mut wizard) = detect_fomod_wizard_from_dir(archive_path, extract_dir) {
-        if !wizard.steps.is_empty() {
+        if wizard_has_install_rules(&wizard) {
             for step in wizard.steps.iter_mut() {
                 align_install_option_groups(&mut step.groups, entries);
             }
@@ -130,11 +163,33 @@ pub fn detect_install_wizard_from_dir(
             description: None,
             groups,
         }],
+        ..Default::default()
     }
 }
 
 pub fn archive_has_fomod_config(entries: &[ArchiveEntry]) -> bool {
     find_fomod_config(entries).is_some()
+        || entries.iter().any(|e| is_fomod_metadata_path(&e.path))
+}
+
+pub fn is_fomod_metadata_path(path: &str) -> bool {
+    path.replace('\\', "/")
+        .split('/')
+        .any(|segment| segment.eq_ignore_ascii_case("fomod"))
+}
+
+pub fn filter_fomod_metadata_entries(entries: &[ArchiveEntry]) -> Vec<ArchiveEntry> {
+    entries
+        .iter()
+        .filter(|entry| !is_fomod_metadata_path(&entry.path))
+        .cloned()
+        .collect()
+}
+
+pub fn wizard_has_install_rules(wizard: &InstallWizard) -> bool {
+    !wizard.steps.is_empty()
+        || !wizard.required_files.is_empty()
+        || !wizard.conditional_patterns.is_empty()
 }
 
 const FOMOD_DEFER_FILE_THRESHOLD: usize = 500;
@@ -160,12 +215,20 @@ pub fn detect_fomod_wizard(
     archive_path: &Path,
     entries: &[ArchiveEntry],
 ) -> Option<InstallWizard> {
-    if let Ok(Some(cached)) = load_cached_fomod_groups(archive_path) {
-        return Some(cached);
+    let mut wizard = if let Ok(Some(cached)) = load_cached_fomod_groups(archive_path) {
+        cached
+    } else {
+        let wizard = detect_fomod_wizard_raw(archive_path, entries)?;
+        if wizard_has_install_rules(&wizard) {
+            let _ = save_cached_fomod_groups(archive_path, &wizard);
+        }
+        wizard
+    };
+    if !wizard_has_install_rules(&wizard) {
+        return None;
     }
-    let wizard = detect_fomod_wizard_raw(archive_path, entries)?;
-    if !wizard.steps.is_empty() {
-        let _ = save_cached_fomod_groups(archive_path, &wizard);
+    for step in wizard.steps.iter_mut() {
+        align_install_option_groups(&mut step.groups, entries);
     }
     Some(wizard)
 }
@@ -178,7 +241,7 @@ pub fn detect_fomod_wizard_from_dir(
         return Some(cached);
     }
     let wizard = detect_fomod_wizard_from_dir_raw(extract_dir)?;
-    if !wizard.steps.is_empty() {
+    if wizard_has_install_rules(&wizard) {
         let _ = save_cached_fomod_groups(archive_path, &wizard);
     }
     Some(wizard)
@@ -236,6 +299,7 @@ fn load_cached_fomod_groups(archive_path: &Path) -> Result<Option<InstallWizard>
             description: None,
             groups,
         }],
+        ..Default::default()
     }))
 }
 
@@ -279,13 +343,14 @@ pub fn validate_fomod_selection_deploy(
     groups: &[InstallOptionGroup],
     selections: &[SelectedInstallOption],
     kept_entries: &[ArchiveEntry],
+    wizard: Option<&InstallWizard>,
 ) -> Result<()> {
     if groups.is_empty() {
         return Ok(());
     }
 
     let prefix = infer_content_prefix(kept_entries);
-    let included = included_rel_paths(groups, selections);
+    let included = collect_included_prefixes(groups, selections, kept_entries, wizard);
     if included.is_empty() {
         return Ok(());
     }
@@ -305,11 +370,14 @@ pub fn validate_fomod_selection_deploy(
             if !selected_ids.contains(&option.id) {
                 continue;
             }
-            let has_files = kept_entries.iter().any(|entry| {
-                let rel = normalize_entry_path(&entry.path, prefix.as_deref());
-                option.folder_prefixes.iter().any(|folder| {
-                    let norm = normalize_prefix(folder).trim_end_matches('/').to_string();
-                    rel == norm || rel.starts_with(&format!("{norm}/"))
+            let prefixes = option_deploy_prefixes(option, wizard);
+            if prefixes.is_empty() {
+                continue;
+            }
+            let has_files = prefixes.iter().any(|folder| {
+                kept_entries.iter().any(|entry| {
+                    let rel = normalize_entry_path(&entry.path, prefix.as_deref());
+                    entry_matches_folder_prefix(&rel, folder)
                 })
             });
             if !has_files {
@@ -359,7 +427,16 @@ fn resolve_single_folder_prefix(
         return normalized;
     }
 
+    for prefix in ["Data/", "data/"] {
+        let with_data = format!("{prefix}{normalized}");
+        if folder_prefix_matches_entries(&with_data, entries, content_prefix) {
+            return with_data;
+        }
+    }
+
+    let normalized_key = fomod_path_key(&normalized);
     let mut best: Option<String> = None;
+
     for entry in entries {
         let rel = normalize_entry_path(&entry.path, content_prefix);
         if rel == normalized || rel.starts_with(&format!("{normalized}/")) {
@@ -368,18 +445,46 @@ fn resolve_single_folder_prefix(
         if let Some(idx) = rel.find(&normalized) {
             if idx == 0 || rel.as_bytes().get(idx.saturating_sub(1)) == Some(&b'/') {
                 let candidate = rel[..idx + normalized.len()].to_string();
-                if best
-                    .as_ref()
-                    .map(|b| candidate.len() < b.len())
-                    .unwrap_or(true)
-                {
-                    best = Some(candidate);
-                }
+                prefer_shorter_path(&mut best, candidate);
+            }
+        }
+
+        let mut prefix_len = 0usize;
+        for (idx, segment) in rel.split('/').enumerate() {
+            if idx > 0 {
+                prefix_len += 1;
+            }
+            prefix_len += segment.len();
+            if fomod_path_key(segment) == normalized_key {
+                prefer_shorter_path(&mut best, rel[..prefix_len].to_string());
             }
         }
     }
 
     best.unwrap_or(normalized)
+}
+
+fn prefer_shorter_path(best: &mut Option<String>, candidate: String) {
+    if best
+        .as_ref()
+        .map(|existing| candidate.len() < existing.len())
+        .unwrap_or(true)
+    {
+        *best = Some(candidate);
+    }
+}
+
+fn fomod_path_key(path: &str) -> String {
+    path.replace('\\', "/")
+        .trim_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .trim_start_matches(|c: char| c.is_ascii_digit() || c == '.' || c == ' ')
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
 }
 
 fn folder_prefix_matches_entries(
@@ -397,14 +502,22 @@ pub fn apply_install_selections(
     entries: &[ArchiveEntry],
     groups: &[InstallOptionGroup],
     selections: &[SelectedInstallOption],
+    wizard: Option<&InstallWizard>,
 ) -> Vec<ArchiveEntry> {
-    if groups.is_empty() {
-        return entries.to_vec();
+    let entries = filter_fomod_metadata_entries(entries);
+    let has_fomod_rules = wizard.is_some_and(wizard_has_install_rules);
+
+    if groups.is_empty() && !has_fomod_rules {
+        return entries;
     }
 
-    let prefix = infer_content_prefix(entries);
-    let included = included_rel_paths(groups, selections);
-    let optional_prefixes = optional_folder_prefixes(groups);
+    if groups.is_empty() {
+        return apply_fomod_rules_only(&entries, wizard.unwrap());
+    }
+
+    let prefix = infer_content_prefix(&entries);
+    let included = collect_included_prefixes(groups, selections, &entries, wizard);
+    let optional_prefixes = all_optional_prefixes(groups, &entries, wizard);
 
     entries
         .iter()
@@ -413,10 +526,234 @@ pub fn apply_install_selections(
             if !path_matches_any_prefix(&rel, &optional_prefixes) {
                 return true;
             }
-            included.iter().any(|p| rel.starts_with(p))
+            included.iter().any(|p| entry_matches_included_prefix(&rel, p))
         })
         .cloned()
         .collect()
+}
+
+fn apply_fomod_rules_only(entries: &[ArchiveEntry], wizard: &InstallWizard) -> Vec<ArchiveEntry> {
+    let prefix = infer_content_prefix(entries);
+    let included = collect_included_prefixes(&[], &[], entries, Some(wizard));
+    let optional_prefixes = all_optional_prefixes(&[], entries, Some(wizard));
+
+    if optional_prefixes.is_empty() {
+        if included.is_empty() {
+            return entries.to_vec();
+        }
+        return entries
+            .iter()
+            .filter(|entry| {
+                let rel = normalize_entry_path(&entry.path, prefix.as_deref());
+                included
+                    .iter()
+                    .any(|p| entry_matches_included_prefix(&rel, p))
+            })
+            .cloned()
+            .collect();
+    }
+
+    entries
+        .iter()
+        .filter(|entry| {
+            let rel = normalize_entry_path(&entry.path, prefix.as_deref());
+            if !path_matches_any_prefix(&rel, &optional_prefixes) {
+                return true;
+            }
+            included
+                .iter()
+                .any(|p| entry_matches_included_prefix(&rel, p))
+        })
+        .cloned()
+        .collect()
+}
+
+fn fomod_install_path(file: &FomodFileRef) -> String {
+    let source = file.source.replace('\\', "/").trim_matches('/').to_string();
+    match &file.destination {
+        Some(dest) if !dest.trim().is_empty() => {
+            format!(
+                "{}/{}",
+                dest.replace('\\', "/").trim_matches('/'),
+                source
+            )
+        }
+        _ => source,
+    }
+}
+
+fn active_fomod_flags(
+    groups: &[InstallOptionGroup],
+    selections: &[SelectedInstallOption],
+) -> HashMap<String, String> {
+    let selection_map: HashMap<&str, &[String]> = selections
+        .iter()
+        .map(|s| (s.group_id.as_str(), s.option_ids.as_slice()))
+        .collect();
+
+    let mut flags = HashMap::new();
+    for group in groups {
+        let selected_ids = selection_map
+            .get(group.id.as_str())
+            .copied()
+            .unwrap_or(&[]);
+        for option in &group.options {
+            if selected_ids.contains(&option.id) {
+                for flag in &option.condition_flags {
+                    flags.insert(flag.name.clone(), flag.value.clone());
+                }
+            }
+        }
+    }
+    flags
+}
+
+fn condition_matches(condition: &FomodCondition, flags: &HashMap<String, String>) -> bool {
+    if condition.flags.is_empty() {
+        return false;
+    }
+    let is_or = condition.operator.eq_ignore_ascii_case("or");
+    if is_or {
+        condition.flags.iter().any(|flag| {
+            flags
+                .get(&flag.name)
+                .map(|value| value == &flag.value)
+                .unwrap_or(false)
+        })
+    } else {
+        condition.flags.iter().all(|flag| {
+            flags
+                .get(&flag.name)
+                .map(|value| value == &flag.value)
+                .unwrap_or(false)
+        })
+    }
+}
+
+fn align_fomod_paths(paths: &[String], entries: &[ArchiveEntry]) -> Vec<String> {
+    let prefix = infer_content_prefix(entries);
+    paths
+        .iter()
+        .map(|path| resolve_single_folder_prefix(path, entries, prefix.as_deref()))
+        .collect()
+}
+
+fn collect_included_prefixes(
+    groups: &[InstallOptionGroup],
+    selections: &[SelectedInstallOption],
+    entries: &[ArchiveEntry],
+    wizard: Option<&InstallWizard>,
+) -> HashSet<String> {
+    let mut raw_paths: Vec<String> = Vec::new();
+
+    if let Some(wizard) = wizard {
+        for file in &wizard.required_files {
+            raw_paths.push(fomod_install_path(file));
+        }
+
+        let flags = active_fomod_flags(groups, selections);
+        for pattern in &wizard.conditional_patterns {
+            if condition_matches(&pattern.condition, &flags) {
+                for file in &pattern.files {
+                    raw_paths.push(fomod_install_path(file));
+                }
+            }
+        }
+    }
+
+    for group in groups {
+        let selection_map: HashMap<&str, &[String]> = selections
+            .iter()
+            .map(|s| (s.group_id.as_str(), s.option_ids.as_slice()))
+            .collect();
+        let selected_ids = selection_map
+            .get(group.id.as_str())
+            .copied()
+            .unwrap_or(&[]);
+        for option in &group.options {
+            if selected_ids.contains(&option.id) {
+                raw_paths.extend(option.folder_prefixes.clone());
+            }
+        }
+    }
+
+    let aligned = align_fomod_paths(&raw_paths, entries);
+    aligned
+        .into_iter()
+        .map(|path| normalize_prefix(&path))
+        .collect()
+}
+
+fn all_optional_prefixes(
+    groups: &[InstallOptionGroup],
+    entries: &[ArchiveEntry],
+    wizard: Option<&InstallWizard>,
+) -> Vec<String> {
+    let mut raw_paths: Vec<String> = optional_folder_prefixes(groups)
+        .into_iter()
+        .map(|p| p.trim_end_matches('/').to_string())
+        .collect();
+
+    if let Some(wizard) = wizard {
+        for pattern in &wizard.conditional_patterns {
+            for file in &pattern.files {
+                raw_paths.push(fomod_install_path(file));
+            }
+        }
+    }
+
+    align_fomod_paths(&raw_paths, entries)
+        .into_iter()
+        .map(|path| normalize_prefix(&path))
+        .collect()
+}
+
+fn option_deploy_prefixes(option: &InstallOptionChoice, wizard: Option<&InstallWizard>) -> Vec<String> {
+    let mut paths = option.folder_prefixes.clone();
+    if let Some(wizard) = wizard {
+        for flag in &option.condition_flags {
+            for pattern in &wizard.conditional_patterns {
+                if pattern.condition.flags.iter().any(|f| f.name == flag.name) {
+                    for file in &pattern.files {
+                        paths.push(fomod_install_path(file));
+                    }
+                }
+            }
+        }
+    }
+    paths
+}
+
+fn entry_matches_folder_prefix(rel: &str, folder: &str) -> bool {
+    paths_match_folder(rel, folder)
+}
+
+fn entry_matches_included_prefix(rel: &str, prefix: &str) -> bool {
+    paths_match_folder(rel, prefix)
+}
+
+fn paths_match_folder(rel: &str, folder: &str) -> bool {
+    let folder = folder.replace('\\', "/").trim_matches('/').to_string();
+    let rel = rel.replace('\\', "/");
+    let mut rel_candidates = vec![rel.clone()];
+    if !rel.to_lowercase().starts_with("data/") {
+        rel_candidates.push(format!("Data/{rel}"));
+    }
+
+    for rel in rel_candidates {
+        if rel == folder || rel.starts_with(&format!("{folder}/")) {
+            return true;
+        }
+        if let Some(stripped) = folder
+            .strip_prefix("Data/")
+            .or_else(|| folder.strip_prefix("data/"))
+        {
+            if rel == stripped || rel.starts_with(&format!("{stripped}/")) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 pub fn prune_extract_dir(
@@ -484,15 +821,57 @@ fn find_fomod_config(entries: &[ArchiveEntry]) -> Option<String> {
     })
 }
 
-fn read_fomod_files_folder(e: &quick_xml::events::BytesStart<'_>, folders: &mut Vec<String>) {
+fn read_fomod_file_ref(e: &quick_xml::events::BytesStart<'_>) -> Option<FomodFileRef> {
+    let mut source = String::new();
+    let mut destination = None;
     for attr in e.attributes().flatten() {
         let key = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
-        if key == "folder" || key == "source" {
-            let folder = attr.unescape_value().unwrap_or_default().to_string();
-            if !folder.is_empty() {
-                folders.push(folder.replace('\\', "/"));
+        let value = attr.unescape_value().unwrap_or_default().to_string();
+        match key.as_str() {
+            "source" | "folder" => {
+                if !value.is_empty() {
+                    source = value.replace('\\', "/");
+                }
             }
+            "destination" => {
+                if !value.is_empty() {
+                    destination = Some(value.replace('\\', "/"));
+                }
+            }
+            _ => {}
         }
+    }
+    if source.is_empty() {
+        None
+    } else {
+        Some(FomodFileRef {
+            source,
+            destination,
+        })
+    }
+}
+
+fn read_fomod_flag(e: &quick_xml::events::BytesStart<'_>) -> Option<FomodFlag> {
+    let mut name = String::new();
+    for attr in e.attributes().flatten() {
+        let key = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
+        if key == "name" {
+            name = attr.unescape_value().unwrap_or_default().to_string();
+        }
+    }
+    if name.is_empty() {
+        None
+    } else {
+        Some(FomodFlag {
+            name,
+            value: String::new(),
+        })
+    }
+}
+
+fn read_fomod_files_folder(e: &quick_xml::events::BytesStart<'_>, folders: &mut Vec<String>) {
+    if let Some(file) = read_fomod_file_ref(e) {
+        folders.push(fomod_install_path(&file));
     }
 }
 
@@ -516,9 +895,10 @@ fn push_fomod_option(
     description: &str,
     image_path: Option<String>,
     folders: &[String],
+    condition_flags: &[FomodFlag],
     default_name: &str,
 ) {
-    if !name.is_empty() && !folders.is_empty() {
+    if !name.is_empty() && (!folders.is_empty() || !condition_flags.is_empty()) {
         let slug = slugify(name);
         let id = if slug.is_empty() {
             format!("fomod-g{group_index}-o{}", options.len())
@@ -536,6 +916,7 @@ fn push_fomod_option(
             folder_prefixes: folders.to_vec(),
             image_path,
             default: default_name.eq_ignore_ascii_case(name),
+            condition_flags: condition_flags.to_vec(),
         });
     }
 }
@@ -669,8 +1050,20 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
     let mut current_option_description = String::new();
     let mut current_option_image: Option<String> = None;
     let mut current_option_folders: Vec<String> = Vec::new();
+    let mut current_option_flags: Vec<FomodFlag> = Vec::new();
     let mut group_options: Vec<InstallOptionChoice> = Vec::new();
     let mut group_index = 0usize;
+
+    let mut in_required_install_files = false;
+    let mut in_conditional_file_installs = false;
+    let mut in_conditional_patterns = false;
+    let mut in_conditional_pattern = false;
+    let mut in_pattern_dependencies = false;
+    let mut in_pattern_files = false;
+    let mut in_condition_flags = false;
+    let mut pending_flag: Option<FomodFlag> = None;
+    let mut current_pattern_condition = FomodCondition::default();
+    let mut current_pattern_files: Vec<FomodFileRef> = Vec::new();
 
     let mut legacy_groups: Vec<InstallOptionGroup> = Vec::new();
     let mut saw_install_steps = false;
@@ -683,6 +1076,57 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                     "modulename" => in_module_name = true,
                     "moduleimage" => {
                         wizard.module_image_path = read_fomod_image_path(&e);
+                    }
+                    "requiredinstallfiles" => in_required_install_files = true,
+                    "conditionalfileinstalls" => in_conditional_file_installs = true,
+                    "patterns" if in_conditional_file_installs => in_conditional_patterns = true,
+                    "pattern" if in_conditional_patterns => {
+                        in_conditional_pattern = true;
+                        current_pattern_condition = FomodCondition::default();
+                        current_pattern_files.clear();
+                    }
+                    "dependencies" if in_conditional_pattern => {
+                        in_pattern_dependencies = true;
+                        for attr in e.attributes().flatten() {
+                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
+                            if key == "operator" {
+                                current_pattern_condition.operator =
+                                    attr.unescape_value().unwrap_or_default().to_string();
+                            }
+                        }
+                    }
+                    "files" if in_conditional_pattern => in_pattern_files = true,
+                    "conditionflags" if in_option => in_condition_flags = true,
+                    "flagdependency" if in_pattern_dependencies => {
+                        let mut flag_name = String::new();
+                        let mut flag_value = String::new();
+                        for attr in e.attributes().flatten() {
+                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
+                            let val = attr.unescape_value().unwrap_or_default().to_string();
+                            match key.as_str() {
+                                "flag" => flag_name = val,
+                                "value" => flag_value = val,
+                                _ => {}
+                            }
+                        }
+                        if !flag_name.is_empty() {
+                            current_pattern_condition.flags.push(FomodFlag {
+                                name: flag_name,
+                                value: flag_value,
+                            });
+                        }
+                    }
+                    "flag" if in_condition_flags => {
+                        pending_flag = read_fomod_flag(&e);
+                    }
+                    "file" | "folder" if in_pattern_files || in_required_install_files => {
+                        if let Some(file) = read_fomod_file_ref(&e) {
+                            if in_pattern_files {
+                                current_pattern_files.push(file);
+                            } else if in_required_install_files {
+                                wizard.required_files.push(file);
+                            }
+                        }
                     }
                     "installstep" => {
                         in_install_step = true;
@@ -724,6 +1168,7 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                         current_option_description.clear();
                         current_option_image = None;
                         current_option_folders.clear();
+                        current_option_flags.clear();
                         for attr in e.attributes().flatten() {
                             let key = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
                             if key == "name" {
@@ -752,6 +1197,25 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                     "moduleimage" => {
                         wizard.module_image_path = read_fomod_image_path(&e);
                     }
+                    "flagdependency" if in_pattern_dependencies => {
+                        let mut flag_name = String::new();
+                        let mut flag_value = String::new();
+                        for attr in e.attributes().flatten() {
+                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
+                            let val = attr.unescape_value().unwrap_or_default().to_string();
+                            match key.as_str() {
+                                "flag" => flag_name = val,
+                                "value" => flag_value = val,
+                                _ => {}
+                            }
+                        }
+                        if !flag_name.is_empty() {
+                            current_pattern_condition.flags.push(FomodFlag {
+                                name: flag_name,
+                                value: flag_value,
+                            });
+                        }
+                    }
                     "image" if in_option => {
                         current_option_image = read_fomod_image_path(&e);
                     }
@@ -762,7 +1226,22 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                     "folder" if in_files && in_option => {
                         read_fomod_files_folder(&e, &mut current_option_folders);
                     }
+                    "file" | "folder" if in_pattern_files || in_required_install_files => {
+                        if let Some(file) = read_fomod_file_ref(&e) {
+                            if in_pattern_files {
+                                current_pattern_files.push(file);
+                            } else if in_required_install_files {
+                                wizard.required_files.push(file);
+                            }
+                        }
+                    }
                     _ => {}
+                }
+            }
+            Ok(Event::Text(t)) if pending_flag.is_some() => {
+                let text = t.unescape().unwrap_or_default().trim().to_string();
+                if let Some(ref mut flag) = pending_flag {
+                    flag.value = text;
                 }
             }
             Ok(Event::Text(t)) if in_description => {
@@ -785,6 +1264,28 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                     "modulename" => in_module_name = false,
                     "description" if in_description => in_description = false,
                     "files" if in_files => in_files = false,
+                    "files" if in_pattern_files => in_pattern_files = false,
+                    "dependencies" if in_pattern_dependencies => in_pattern_dependencies = false,
+                    "pattern" if in_conditional_pattern => {
+                        in_conditional_pattern = false;
+                        wizard.conditional_patterns.push(FomodConditionalPattern {
+                            condition: current_pattern_condition.clone(),
+                            files: current_pattern_files.clone(),
+                        });
+                    }
+                    "patterns" if in_conditional_patterns => in_conditional_patterns = false,
+                    "conditionalfileinstalls" if in_conditional_file_installs => {
+                        in_conditional_file_installs = false
+                    }
+                    "requiredinstallfiles" if in_required_install_files => {
+                        in_required_install_files = false
+                    }
+                    "conditionflags" if in_condition_flags => in_condition_flags = false,
+                    "flag" if in_condition_flags => {
+                        if let Some(flag) = pending_flag.take() {
+                            current_option_flags.push(flag);
+                        }
+                    }
                     "option" | "plugin" if in_option => {
                         in_option = false;
                         push_fomod_option(
@@ -794,6 +1295,7 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                             &current_option_description,
                             current_option_image.clone(),
                             &current_option_folders,
+                            &current_option_flags,
                             &current_group_default,
                         );
                     }
@@ -860,15 +1362,11 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
         });
     }
 
-    if wizard.steps.is_empty() && !saw_install_steps {
+    if !wizard_has_install_rules(&wizard) {
         return None;
     }
 
-    if wizard.steps.is_empty() {
-        None
-    } else {
-        Some(wizard)
-    }
+    Some(wizard)
 }
 
 fn parse_fomod_module_config(xml: &str) -> Option<Vec<InstallOptionGroup>> {
@@ -978,6 +1476,7 @@ fn folder_choice(folder: &str, default: bool) -> InstallOptionChoice {
         folder_prefixes: vec![format!("{folder}/")],
         image_path: None,
         default,
+        condition_flags: Vec::new(),
     }
 }
 
@@ -1050,10 +1549,7 @@ fn normalize_prefix(prefix: &str) -> String {
 }
 
 fn path_matches_any_prefix(path: &str, prefixes: &[String]) -> bool {
-    prefixes.iter().any(|pfx| {
-        let norm = pfx.trim_end_matches('/');
-        path == norm || path.starts_with(&format!("{norm}/"))
-    })
+    prefixes.iter().any(|pfx| paths_match_folder(path, pfx))
 }
 
 fn slugify(value: &str) -> String {
@@ -1144,17 +1640,94 @@ mod tests {
     }
 
     #[test]
-    fn detects_real_optional_directories() {
-        let entries = vec![
-            entry("CBBE Body/meshes/a.nif"),
-            entry("UNP Body/meshes/b.nif"),
-            entry("Compatibility Patches/foo.esp"),
-            entry("Core/mod.esp"),
-        ];
+    fn applies_conditional_fomod_installs_with_flags() {
+        let xml = r#"
+        <config>
+          <requiredInstallFiles>
+            <folder source="00 Required" destination="Data"/>
+          </requiredInstallFiles>
+          <installSteps>
+            <installStep name="Outfits">
+              <optionalFileGroups>
+                <group name="Outfits" type="SelectAny">
+                  <plugins>
+                    <plugin name="Vanilla Outfits">
+                      <conditionFlags>
+                        <flag name="VanillaOutfits">On</flag>
+                      </conditionFlags>
+                    </plugin>
+                    <plugin name="Automatron Outfits">
+                      <conditionFlags>
+                        <flag name="AutomatronOutfits">On</flag>
+                      </conditionFlags>
+                    </plugin>
+                  </plugins>
+                </group>
+              </optionalFileGroups>
+            </installStep>
+          </installSteps>
+          <conditionalFileInstalls>
+            <patterns>
+              <pattern>
+                <dependencies operator="And">
+                  <flagDependency flag="VanillaOutfits" value="On"/>
+                </dependencies>
+                <files>
+                  <folder source="01 Vanilla Outfits" destination="Data"/>
+                </files>
+              </pattern>
+              <pattern>
+                <dependencies operator="And">
+                  <flagDependency flag="AutomatronOutfits" value="On"/>
+                </dependencies>
+                <files>
+                  <folder source="02 Automatron Outfits" destination="Data"/>
+                </files>
+              </pattern>
+            </patterns>
+          </conditionalFileInstalls>
+        </config>"#;
 
-        let groups = detect_heuristic_groups(&entries);
-        assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0].name, "Body type");
-        assert_eq!(groups[1].name, "Compatibility patches");
+        let wizard = parse_fomod_wizard(xml).unwrap();
+        assert_eq!(wizard.required_files.len(), 1);
+        assert_eq!(wizard.conditional_patterns.len(), 2);
+
+        let entries = vec![
+            entry("Data/00 Required/CBBE.esp"),
+            entry("Data/01 Vanilla Outfits/meshes/armor.nif"),
+            entry("Data/02 Automatron Outfits/meshes/other.nif"),
+        ];
+        let groups = wizard.flattened_groups();
+        let selections = vec![SelectedInstallOption {
+            group_id: groups[0].id.clone(),
+            option_ids: vec![groups[0].options[0].id.clone()],
+        }];
+
+        let kept = apply_install_selections(&entries, &groups, &selections, Some(&wizard));
+        assert!(kept.iter().any(|e| e.path.contains("00 Required")));
+        assert!(kept.iter().any(|e| e.path.contains("01 Vanilla Outfits")));
+        assert!(!kept.iter().any(|e| e.path.contains("02 Automatron Outfits")));
+    }
+
+    #[test]
+    fn excludes_fomod_metadata_and_applies_required_files_only() {
+        let xml = r#"
+        <config>
+          <requiredInstallFiles>
+            <file source="Data/Interface/DialogueInterface.swf" destination=""/>
+          </requiredInstallFiles>
+        </config>"#;
+        let wizard = parse_fomod_wizard(xml).unwrap();
+        let entries = vec![
+            entry("Changelog.txt"),
+            entry("Fomod/Images/preview.png"),
+            entry("Fomod/ModuleConfig.xml"),
+            entry("Data/Interface/DialogueInterface.swf"),
+            entry("Data/Textures/extra.dds"),
+        ];
+        let kept = apply_install_selections(&entries, &[], &[], Some(&wizard));
+        assert!(!kept.iter().any(|e| e.path.contains("Fomod/")));
+        assert!(kept.iter().any(|e| e.path.contains("DialogueInterface.swf")));
+        assert!(!kept.iter().any(|e| e.path.contains("extra.dds")));
     }
 }

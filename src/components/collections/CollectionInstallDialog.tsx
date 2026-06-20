@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Download, Package } from "lucide-react";
+import { Package } from "lucide-react";
 import { AppDialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

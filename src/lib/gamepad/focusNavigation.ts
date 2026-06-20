@@ -52,6 +52,22 @@ export function moveFocus(
   items[idx]?.focus();
 }
 
+/** Reset directional-nav state so the next move starts from the top of the page. */
+export function resetFocusIndex(): void {
+  focusIndex = 0;
+}
+
+/** Focus the first interactive element within `container` (defaults to <main>). */
+export function focusFirst(container?: HTMLElement | null): boolean {
+  const root = container ?? document.querySelector<HTMLElement>("main");
+  if (!root) return false;
+  const items = getFocusableElements(root);
+  if (items.length === 0) return false;
+  focusIndex = 0;
+  items[0].focus();
+  return true;
+}
+
 export function activateFocused(): void {
   const el = document.activeElement as HTMLElement;
   if (!el) return;

@@ -11,6 +11,7 @@ use crate::games;
 use crate::services::archive::list_archive_entries;
 use crate::services::deploy::{
     archive_top_level_folders, compute_deploy_paths, filter_deploy_paths,
+    resolve_install_overwrite,
 };
 use crate::services::load_order::plugins_json_from_manifest;
 use crate::services::mod_state::{apply_mod_enabled_state, backup_installed_files};
@@ -458,22 +459,36 @@ pub async fn preview_mod_install(
             crate::error::NexusDeckError::Other(format!("Install option analysis failed: {e}"))
         })?;
         let groups = wizard.flattened_groups();
-        let wizard = if wizard.steps.is_empty() { None } else { Some(wizard) };
+        let wizard =
+            if crate::services::install_options::wizard_has_install_rules(&wizard) {
+                Some(wizard)
+            } else {
+                None
+            };
         (groups, wizard)
     } else {
         let archive_for_options = archive.clone();
         let entries_for_options = all_entries.clone();
-        let groups = tokio::task::spawn_blocking(move || {
-            crate::services::install_options::detect_install_option_groups(
+        let (groups, wizard) = tokio::task::spawn_blocking(move || {
+            let wizard = crate::services::install_options::detect_fomod_wizard(
                 &archive_for_options,
                 &entries_for_options,
-            )
+            );
+            let groups = if let Some(ref w) = wizard {
+                w.flattened_groups()
+            } else {
+                crate::services::install_options::detect_install_option_groups(
+                    &archive_for_options,
+                    &entries_for_options,
+                )
+            };
+            (groups, wizard)
         })
         .await
         .map_err(|e| {
             crate::error::NexusDeckError::Other(format!("Install option analysis failed: {e}"))
         })?;
-        (groups, None)
+        (groups, wizard)
     };
 
     let options_message = if option_groups.is_empty() {
@@ -497,6 +512,7 @@ pub async fn preview_mod_install(
         &all_entries,
         &option_groups,
         &selections,
+        install_wizard.as_ref(),
     );
 
     preview_progress(
@@ -652,11 +668,12 @@ pub async fn prepare_mod_install(
         crate::error::NexusDeckError::Other(format!("Install option analysis failed: {e}"))
     })?;
     let option_groups = install_wizard.flattened_groups();
-    let install_wizard = if install_wizard.steps.is_empty() {
-        None
-    } else {
-        Some(install_wizard)
-    };
+    let install_wizard =
+        if crate::services::install_options::wizard_has_install_rules(&install_wizard) {
+            Some(install_wizard)
+        } else {
+            None
+        };
 
     let default_selections =
         crate::services::install_options::default_selections(&option_groups);
@@ -720,6 +737,29 @@ pub async fn install_mod_from_archive(
     let profile = db::get_profile(&profile_id)?
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
 
+    let explicit_replace = replace_mod_id.clone();
+    let matching_mods: Vec<_> = db::list_installed_mods(&profile_id)?
+        .into_iter()
+        .filter(|m| m.nexus_mod_id == nexus_mod_id)
+        .collect();
+    let replace_mod_id = explicit_replace.clone().or_else(|| {
+        matching_mods.first().map(|m| m.id.clone())
+    });
+
+    if let Some(ref target_id) = replace_mod_id {
+        for dup in matching_mods.iter().filter(|m| m.id != *target_id) {
+            let _ = db::delete_installed_mod(&dup.id);
+        }
+    }
+
+    if replace_mod_id.is_some() && explicit_replace.is_none() {
+        if let Some(ref existing_id) = replace_mod_id {
+            if let Some(existing) = db::get_installed_mod(existing_id)? {
+                crate::services::mod_uninstall::remove_mod_files_for_update(&profile, &existing)?;
+            }
+        }
+    }
+
     let archive = PathBuf::from(&archive_path);
     let using_prepared = options.prepared_extract_dir.is_some() && replace_mod_id.is_none();
     let temp_extract = if let Some(ref prepared) = options.prepared_extract_dir {
@@ -744,16 +784,18 @@ pub async fn install_mod_from_archive(
             .map_err(|e| crate::error::NexusDeckError::Other(format!("Archive analysis failed: {e}")))??
     };
 
-    let option_groups = if using_prepared {
+    let (option_groups, fomod_wizard) = if using_prepared {
         let extract_dir = temp_extract.clone();
         let archive_for_options = archive.clone();
         let entries_for_options = all_entries.clone();
         tokio::task::spawn_blocking(move || {
-            crate::services::install_options::detect_install_option_groups_from_dir(
+            let wizard = crate::services::install_options::detect_install_wizard_from_dir(
+                &archive_for_options,
                 &extract_dir,
                 &entries_for_options,
-                Some(&archive_for_options),
-            )
+            );
+            let groups = wizard.flattened_groups();
+            (groups, Some(wizard))
         })
         .await
         .map_err(|e| {
@@ -763,10 +805,19 @@ pub async fn install_mod_from_archive(
         let archive_for_options = archive.clone();
         let entries_for_options = all_entries.clone();
         tokio::task::spawn_blocking(move || {
-            crate::services::install_options::detect_install_option_groups(
+            let wizard = crate::services::install_options::detect_fomod_wizard(
                 &archive_for_options,
                 &entries_for_options,
-            )
+            );
+            let groups = if let Some(ref w) = wizard {
+                w.flattened_groups()
+            } else {
+                crate::services::install_options::detect_install_option_groups(
+                    &archive_for_options,
+                    &entries_for_options,
+                )
+            };
+            (groups, wizard)
         })
         .await
         .map_err(|e| {
@@ -783,6 +834,7 @@ pub async fn install_mod_from_archive(
         &all_entries,
         &option_groups,
         &selections,
+        fomod_wizard.as_ref(),
     );
 
     if !option_groups.is_empty() {
@@ -790,6 +842,7 @@ pub async fn install_mod_from_archive(
             &option_groups,
             &selections,
             &entries,
+            fomod_wizard.as_ref(),
         )?;
     }
 
@@ -843,8 +896,17 @@ pub async fn install_mod_from_archive(
         "Copying files to game folder…",
     );
 
+    let game_path = PathBuf::from(&profile.game_path);
+    let overwrite = resolve_install_overwrite(
+        options.overwrite_files,
+        replace_mod_id.is_some(),
+        &plan,
+        &entries,
+        game_path.as_path(),
+    );
+
     let merge_options = MergeOptions {
-        overwrite: options.overwrite_files,
+        overwrite,
         dry_run: false,
         on_progress: Some(merge_progress_reporter(
             app.clone(),
@@ -865,9 +927,17 @@ pub async fn install_mod_from_archive(
 
     if manifest.files.is_empty() {
         let _ = std::fs::remove_dir_all(&temp_extract);
-        return Err(crate::error::NexusDeckError::Other(
-            "No files were installed. Enable \"Overwrite existing files\" if the mod is already present in your Data folder.".into(),
-        ));
+        let deploy_paths = compute_deploy_paths(&plan, &entries, game_path.as_path());
+        let message = if deploy_paths.is_empty() {
+            if !option_groups.is_empty() || fomod_wizard.is_some() {
+                "FOMOD selections did not match any files to install. Review your install options and try again.".into()
+            } else {
+                "No files were found to install from this archive.".into()
+            }
+        } else {
+            "No files were installed. The archive could not be deployed with the current strategy.".into()
+        };
+        return Err(crate::error::NexusDeckError::Other(message));
     }
 
     install_progress(

@@ -72,7 +72,7 @@ export function GameModDiscovery({
   const activeDiscoverTab = view === "browse" ? sort : view;
 
   useGamepadTabs(
-    [...discoverTabIds],
+    showRows ? [...discoverTabIds] : [],
     activeDiscoverTab,
     (tab) => {
       if (view === "browse") {

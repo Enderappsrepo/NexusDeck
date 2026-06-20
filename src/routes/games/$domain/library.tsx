@@ -474,7 +474,7 @@ function LibraryPage() {
       )}
 
       <p className="text-sm text-[var(--color-muted)]">
-        X toggles enable/disable. Y opens actions. Uninstall removes the mod entirely.
+        Use Enable/Disable or Uninstall on each mod. On controller, X toggles and Y opens more actions.
       </p>
 
       {loading && <ListRowSkeleton count={3} />}
@@ -573,18 +573,33 @@ function LibraryPage() {
                       </Button>
                     )}
                     {!compareMode && (
-                      <Button
-                        variant={mod.enabled ? "outline" : "default"}
-                        disabled={togglingId === mod.id}
-                        loading={togglingId === mod.id}
-                        data-focusable="true"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleMod(mod);
-                        }}
-                      >
-                        {mod.enabled ? "Disable" : "Enable"}
-                      </Button>
+                      <>
+                        <Button
+                          variant={mod.enabled ? "outline" : "default"}
+                          disabled={togglingId === mod.id}
+                          loading={togglingId === mod.id}
+                          data-focusable="true"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleMod(mod);
+                          }}
+                        >
+                          {mod.enabled ? "Disable" : "Enable"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-[var(--color-danger)]/40 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10"
+                          data-focusable="true"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setUninstallTarget(mod);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Uninstall
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>

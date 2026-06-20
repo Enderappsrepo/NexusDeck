@@ -79,8 +79,11 @@ pub fn has_loose_fallout4_data_folders(paths: &[String]) -> bool {
     ];
 
     paths.iter().any(|p| {
-        let lower = p.to_lowercase();
-        FOLDERS.iter().any(|folder| lower.starts_with(folder))
+        let lower = p.replace('\\', "/").to_lowercase();
+        FOLDERS.iter().any(|folder| {
+            let folder = folder.trim_end_matches('/');
+            lower.starts_with(&format!("{folder}/")) || lower.contains(&format!("/{folder}/"))
+        })
     })
 }
 
@@ -182,6 +185,31 @@ pub fn filter_deploy_paths(paths: &[String], overwrite: bool) -> (Vec<String>, u
     (deployable, skipped)
 }
 
+/// Decide whether to overwrite existing game files during install.
+///
+/// Overwrite is enabled when the user requested it, when replacing an existing
+/// mod install (updates), or when every planned target path already exists and
+/// nothing would be copied otherwise (common when reinstalling LooksMenu etc.).
+pub fn resolve_install_overwrite(
+    overwrite_requested: bool,
+    is_mod_replace: bool,
+    plan: &DeployPlan,
+    entries: &[ArchiveEntry],
+    game_path: &Path,
+) -> bool {
+    if overwrite_requested || is_mod_replace {
+        return true;
+    }
+
+    let paths = compute_deploy_paths(plan, entries, game_path);
+    if paths.is_empty() {
+        return false;
+    }
+
+    let (planned, _) = filter_deploy_paths(&paths, false);
+    planned.is_empty()
+}
+
 pub fn merge_game_data_directory(
     src: &Path,
     dest: &Path,
@@ -231,4 +259,101 @@ pub fn merge_game_data_directory(
     }
 
     Ok(deployed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::games::DeployPlan;
+    use crate::services::archive::ArchiveEntry;
+    use std::fs;
+
+    fn entry(path: &str) -> ArchiveEntry {
+        ArchiveEntry {
+            path: path.to_string(),
+            size: 1,
+            is_dir: false,
+        }
+    }
+
+    fn merge_data_plan() -> DeployPlan {
+        DeployPlan {
+            strategy: "merge_data".to_string(),
+            source_subpath: None,
+            target: "Data".to_string(),
+            description: String::new(),
+            requires_confirmation: false,
+        }
+    }
+
+    #[test]
+    fn resolve_install_overwrite_when_all_targets_exist() {
+        let game = std::env::temp_dir().join(format!(
+            "nexusdeck-overwrite-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&game);
+        let data = game.join("Data");
+        fs::create_dir_all(&data).unwrap();
+        fs::write(data.join("LooksMenu.esp"), b"x").unwrap();
+        fs::write(data.join("LooksMenu.bsa"), b"x").unwrap();
+
+        let plan = merge_data_plan();
+        let entries = vec![entry("Data/LooksMenu.esp"), entry("Data/LooksMenu.bsa")];
+
+        assert!(resolve_install_overwrite(
+            false,
+            false,
+            &plan,
+            &entries,
+            &game,
+        ));
+
+        let _ = fs::remove_dir_all(&game);
+    }
+
+    #[test]
+    fn resolve_install_overwrite_false_when_some_targets_missing() {
+        let game = std::env::temp_dir().join(format!(
+            "nexusdeck-overwrite-partial-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&game);
+        let data = game.join("Data");
+        fs::create_dir_all(&data).unwrap();
+
+        let plan = merge_data_plan();
+
+        assert!(!resolve_install_overwrite(
+            false,
+            false,
+            &plan,
+            &[entry("Data/LooksMenu.bsa")],
+            &game,
+        ));
+
+        let _ = fs::remove_dir_all(&game);
+    }
+
+    #[test]
+    fn resolve_install_overwrite_true_for_mod_replace() {
+        let game = std::env::temp_dir().join(format!(
+            "nexusdeck-overwrite-replace-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&game);
+
+        let plan = merge_data_plan();
+        let entries = vec![entry("Data/LooksMenu.esp")];
+
+        assert!(resolve_install_overwrite(
+            false,
+            true,
+            &plan,
+            &entries,
+            &game,
+        ));
+
+        let _ = fs::remove_dir_all(&game);
+    }
 }

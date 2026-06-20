@@ -146,8 +146,6 @@ function WizardGroupPageView({
   const isSelectOne = group.selection_type === "select_one";
   const isSelectAtMostOne = group.selection_type === "select_at_most_one";
   const isSingleChoice = isSelectOne || isSelectAtMostOne;
-  const isMulti =
-    group.selection_type === "select_any" || group.selection_type === "select_at_least_one";
 
   const handleSelectOne = (optionId: string) => {
     onSelectionsChange(updateGroupSelection(selections, group.id, [optionId]));

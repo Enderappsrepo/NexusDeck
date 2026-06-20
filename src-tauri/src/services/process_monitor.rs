@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use sysinfo::{Pid, System};
-use tauri::{async_runtime::spawn, AppHandle, Emitter};
+use sysinfo::{Pid, ProcessesToUpdate, System};
+use tauri::{AppHandle, Emitter};
 
 use crate::db;
 use crate::error::Result;
@@ -58,12 +59,15 @@ impl ProcessMonitor {
 
     pub fn start_polling(self: &Arc<Self>) {
         let monitor = Arc::clone(self);
-        spawn(async move {
-            loop {
-                tokio::time::sleep(Duration::from_secs(2)).await;
-                monitor.poll_once();
-            }
-        });
+        thread::Builder::new()
+            .name("nexusdeck-process-monitor".into())
+            .spawn(move || {
+                loop {
+                    thread::sleep(Duration::from_secs(2));
+                    monitor.poll_once();
+                }
+            })
+            .ok();
     }
 
     pub fn is_running(&self, profile_id: &str) -> bool {
@@ -145,8 +149,8 @@ impl ProcessMonitor {
             (tracked.process_names.clone(), tracked.known_pids.clone())
         };
 
-        let mut system = System::new_all();
-        system.refresh_all();
+        let mut system = System::new();
+        system.refresh_processes(ProcessesToUpdate::All, true);
 
         let mut killed = false;
         for (pid, process) in system.processes() {
@@ -198,8 +202,8 @@ impl ProcessMonitor {
             return;
         }
 
-        let mut system = System::new_all();
-        system.refresh_all();
+        let mut system = System::new();
+        system.refresh_processes(ProcessesToUpdate::All, true);
         let now = chrono::Utc::now().timestamp();
 
         for profile_id in profile_ids {

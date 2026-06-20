@@ -2,7 +2,6 @@ import { GP } from "./buttons";
 import type { InputContext } from "./contexts";
 import {
   activateFocused,
-  dispatchQuickLaunch,
   isTypingElement,
   moveFocus,
   scrollFocusedPane,
@@ -27,14 +26,23 @@ const STICK_DEADZONE = 0.25;
 const INITIAL_REPEAT_MS = 180;
 const REPEAT_MS = 80;
 const SCROLL_REPEAT_MS = 60;
+// Adaptive polling: stay at rAF while the controller is active or just released,
+// then back off to a low-frequency timer. In Steam Deck Gaming Mode the built-in
+// controls are *always* "connected", so a perpetual rAF loop pins the CPU/GPU and
+// drains battery even when the user isn't touching anything.
+const IDLE_AFTER_MS = 1500;
+const IDLE_POLL_MS = 50;
 
 type Listener = () => void;
+type FocusDir = "next" | "prev" | "up" | "down";
 
 class GamepadRouterImpl {
   private raf = 0;
+  private timer = 0;
+  private lastActivity = 0;
   private running = false;
   private pressed = new Set<number>();
-  private stickSector = -1;
+  private stickDir: FocusDir | null = null;
   private repeatStates = new Map<string, RepeatState>();
   private controllerActive = false;
   private hintBarVisible = true;
@@ -42,8 +50,11 @@ class GamepadRouterImpl {
   private contextStack: InputContext[] = ["global"];
 
   private buttonHandlers = new Set<ButtonHandler>();
-  private tabHandler: TabHandler | null = null;
-  private backHandler: (() => void) | null = null;
+  // Stacks, not single slots: multiple components (sidebar, game hub, discover,
+  // dialogs) register tab/back handlers. The most recently mounted wins, and on
+  // unmount we pop back to the previous one instead of clearing it for everyone.
+  private tabHandlers: TabHandler[] = [];
+  private backHandlers: Array<() => void> = [];
   private contextActionHandlers = new Map<
     number,
     Set<(ctx: InputContext) => void>
@@ -54,6 +65,7 @@ class GamepadRouterImpl {
   start(): void {
     if (this.running) return;
     this.running = true;
+    this.lastActivity = performance.now();
     this.poll();
     window.addEventListener("gamepadconnected", this.onConnect);
     window.addEventListener("gamepaddisconnected", this.onDisconnect);
@@ -62,6 +74,7 @@ class GamepadRouterImpl {
   stop(): void {
     this.running = false;
     cancelAnimationFrame(this.raf);
+    clearTimeout(this.timer);
     window.removeEventListener("gamepadconnected", this.onConnect);
     window.removeEventListener("gamepaddisconnected", this.onDisconnect);
   }
@@ -76,6 +89,8 @@ class GamepadRouterImpl {
   }
 
   private onConnect = (): void => {
+    // A pad just woke up — make sure we're polling at full rate to catch input.
+    this.lastActivity = performance.now();
     this.notify();
   };
 
@@ -139,12 +154,20 @@ class GamepadRouterImpl {
     return () => this.contextActionHandlers.get(button)?.delete(handler);
   }
 
-  setTabHandler(handler: TabHandler | null): void {
-    this.tabHandler = handler;
+  pushTabHandler(handler: TabHandler): () => void {
+    this.tabHandlers.push(handler);
+    return () => {
+      const i = this.tabHandlers.lastIndexOf(handler);
+      if (i !== -1) this.tabHandlers.splice(i, 1);
+    };
   }
 
-  setBackHandler(handler: (() => void) | null): void {
-    this.backHandler = handler;
+  pushBackHandler(handler: () => void): () => void {
+    this.backHandlers.push(handler);
+    return () => {
+      const i = this.backHandlers.lastIndexOf(handler);
+      if (i !== -1) this.backHandlers.splice(i, 1);
+    };
   }
 
   private getPad(): Gamepad | null {
@@ -170,9 +193,24 @@ class GamepadRouterImpl {
       this.processButtons(pad);
       this.processAxes(pad);
       this.processTriggers(pad);
+      if (this.padHasInput(pad)) this.lastActivity = performance.now();
     }
-    this.raf = requestAnimationFrame(this.poll);
+
+    if (performance.now() - this.lastActivity > IDLE_AFTER_MS) {
+      this.timer = window.setTimeout(this.poll, IDLE_POLL_MS);
+    } else {
+      this.raf = requestAnimationFrame(this.poll);
+    }
   };
+
+  private padHasInput(pad: Gamepad): boolean {
+    for (const btn of pad.buttons) {
+      if (btn.pressed || btn.value > 0.5) return true;
+    }
+    const lx = pad.axes[0] ?? 0;
+    const ly = pad.axes[1] ?? 0;
+    return Math.hypot(lx, ly) >= STICK_DEADZONE;
+  }
 
   private processButtons(pad: Gamepad): void {
     pad.buttons.forEach((btn, i) => {
@@ -195,16 +233,15 @@ class GamepadRouterImpl {
       handler(button);
     }
 
-    if (button === GP.B && this.backHandler) {
-      this.backHandler();
+    const backHandler = this.backHandlers[this.backHandlers.length - 1];
+    if (button === GP.B && backHandler) {
+      backHandler();
       return;
     }
 
-    if (
-      (button === GP.L1 || button === GP.R1) &&
-      this.tabHandler
-    ) {
-      const { tabIds, activeTab, onTabChange } = this.tabHandler;
+    const tabHandler = this.tabHandlers[this.tabHandlers.length - 1];
+    if ((button === GP.L1 || button === GP.R1) && tabHandler) {
+      const { tabIds, activeTab, onTabChange } = tabHandler;
       const idx = tabIds.indexOf(activeTab);
       if (idx !== -1) {
         const next =
@@ -276,51 +313,38 @@ class GamepadRouterImpl {
   private processAxes(pad: Gamepad): void {
     const lx = pad.axes[0] ?? 0;
     const ly = pad.axes[1] ?? 0;
-    const magnitude = Math.sqrt(lx * lx + ly * ly);
-    if (magnitude < STICK_DEADZONE) {
-      this.stickSector = -1;
+    if (Math.hypot(lx, ly) < STICK_DEADZONE) {
+      this.stickDir = null;
       this.repeatStates.delete("stick");
       return;
     }
 
     this.markControllerActive();
 
-    const angle = Math.atan2(ly, lx);
-    const sector = Math.round(((angle + Math.PI) / (2 * Math.PI)) * 8) % 8;
+    // Dominant-axis mapping. Gamepad axes are +x = right, +y = down, so this
+    // tracks the physical stick direction. (The old 8-sector math inverted both
+    // axes — pushing up moved focus down, right moved left.)
+    const dir: FocusDir =
+      Math.abs(ly) > Math.abs(lx)
+        ? ly > 0
+          ? "down"
+          : "up"
+        : lx > 0
+          ? "next"
+          : "prev";
 
-    if (sector !== this.stickSector) {
-      this.stickSector = sector;
+    if (dir !== this.stickDir) {
+      this.stickDir = dir;
       this.repeatStates.delete("stick");
-      this.fireStick(sector);
+      this.fireStickDir(dir);
     } else {
-      this.fireRepeat("stick", () => this.fireStick(sector), INITIAL_REPEAT_MS, REPEAT_MS);
+      this.fireRepeat("stick", () => this.fireStickDir(dir), INITIAL_REPEAT_MS, REPEAT_MS);
     }
   }
 
-  private fireStick(sector: number): void {
+  private fireStickDir(dir: FocusDir): void {
     if (isTypingElement(document.activeElement)) return;
-    switch (sector) {
-      case 0:
-        moveFocus("next");
-        break;
-      case 1:
-      case 2:
-        moveFocus("down");
-        break;
-      case 3:
-      case 4:
-        moveFocus("prev");
-        break;
-      case 5:
-      case 6:
-        moveFocus("up");
-        break;
-      case 7:
-        moveFocus("next");
-        break;
-      default:
-        break;
-    }
+    moveFocus(dir);
   }
 
   private fireTriggerScroll(direction: "up" | "down"): void {

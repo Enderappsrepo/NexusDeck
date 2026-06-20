@@ -63,7 +63,7 @@ export function CommandPalette() {
         const result = await api.searchModsFiltered(domain, q.trim(), "endorsements", 0, 12, {
           category: null,
           min_endorsements: null,
-          updated_days: null,
+          updated_since_days: null,
           hide_adult: true,
           tags: [],
         });

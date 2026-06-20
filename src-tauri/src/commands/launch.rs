@@ -46,29 +46,41 @@ pub fn get_recent_launch_configs(profile_id: String, limit: i64) -> Result<Vec<L
 }
 
 #[tauri::command]
-pub fn validate_launch(
+pub async fn validate_launch(
     profile_id: String,
     config_id: Option<String>,
     monitor: State<'_, Arc<ProcessMonitor>>,
 ) -> Result<LaunchValidationResult> {
-    validate_launch_for_profile(&profile_id, config_id.as_deref(), &monitor)
+    let monitor = Arc::clone(&monitor);
+    tokio::task::spawn_blocking(move || {
+        validate_launch_for_profile(&profile_id, config_id.as_deref(), &monitor)
+    })
+    .await
+    .map_err(|e| crate::error::NexusDeckError::Other(format!("Launch validation failed: {e}")))?
 }
 
 #[tauri::command]
-pub fn launch_game(
+pub async fn launch_game(
     app: AppHandle,
     profile_id: String,
     config_id: Option<String>,
     options: Option<LaunchOptions>,
     monitor: State<'_, Arc<ProcessMonitor>>,
 ) -> Result<LaunchResult> {
-    let result = run_launch_game(
-        &app,
-        &profile_id,
-        config_id.as_deref(),
-        options.unwrap_or_default(),
-        &monitor,
-    )?;
+    let monitor = Arc::clone(&monitor);
+    let options = options.unwrap_or_default();
+    let app_for_launch = app.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        run_launch_game(
+            &app_for_launch,
+            &profile_id,
+            config_id.as_deref(),
+            options,
+            &monitor,
+        )
+    })
+    .await
+    .map_err(|e| crate::error::NexusDeckError::Other(format!("Launch task failed: {e}")))??;
 
     let settings = LaunchSettings::load()?;
     if settings.close_app_after_launch {
@@ -87,26 +99,36 @@ pub fn get_game_running_state(
 }
 
 #[tauri::command]
-pub fn stop_game(
+pub async fn stop_game(
     profile_id: String,
     graceful: Option<bool>,
     monitor: State<'_, Arc<ProcessMonitor>>,
 ) -> Result<()> {
-    monitor.stop_game(&profile_id, graceful.unwrap_or(true))
+    let monitor = Arc::clone(&monitor);
+    let graceful = graceful.unwrap_or(true);
+    tokio::task::spawn_blocking(move || monitor.stop_game(&profile_id, graceful))
+        .await
+        .map_err(|e| crate::error::NexusDeckError::Other(format!("Stop game failed: {e}")))?
 }
 
 #[tauri::command]
-pub fn sync_plugins_txt(profile_id: String) -> Result<String> {
+pub async fn sync_plugins_txt(profile_id: String) -> Result<String> {
     let profile = db::get_profile(&profile_id)?
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
-    run_sync_plugins(&profile)
+    tokio::task::spawn_blocking(move || run_sync_plugins(&profile))
+        .await
+        .map_err(|e| crate::error::NexusDeckError::Other(format!("Plugin sync failed: {e}")))?
 }
 
 #[tauri::command]
-pub fn create_safe_launch_backup(profile_id: String) -> Result<Vec<String>> {
+pub async fn create_safe_launch_backup(profile_id: String) -> Result<Vec<String>> {
     let profile = db::get_profile(&profile_id)?
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
-    run_safe_backup(&profile)
+    tokio::task::spawn_blocking(move || run_safe_backup(&profile))
+        .await
+        .map_err(|e| {
+            crate::error::NexusDeckError::Other(format!("Safe launch backup failed: {e}"))
+        })?
 }
 
 #[tauri::command]
@@ -165,11 +187,14 @@ pub fn pick_launch_executable() -> Result<Option<String>> {
 }
 
 #[tauri::command]
-pub fn batch_launch_tools(
+pub async fn batch_launch_tools(
     app: AppHandle,
     profile_id: String,
     tool_ids: Vec<String>,
     monitor: State<'_, Arc<ProcessMonitor>>,
 ) -> Result<Vec<String>> {
-    run_batch_launch(&app, &profile_id, tool_ids, &monitor)
+    let monitor = Arc::clone(&monitor);
+    tokio::task::spawn_blocking(move || run_batch_launch(&app, &profile_id, tool_ids, &monitor))
+        .await
+        .map_err(|e| crate::error::NexusDeckError::Other(format!("Batch launch failed: {e}")))?
 }
