@@ -148,6 +148,7 @@ pub async fn install_mod_from_archive(
     use uuid::Uuid;
 
     use crate::services::archive::extract_archive;
+    use crate::services::paths::install_work_dir;
     use crate::services::MergeOptions;
 
     let profile = db::get_profile(&profile_id)?
@@ -163,7 +164,7 @@ pub async fn install_mod_from_archive(
         &options.strategy,
     )?;
 
-    let temp_extract = std::env::temp_dir().join(format!("nexusdeck-install-{}", Uuid::new_v4()));
+    let temp_extract = install_work_dir()?.join(format!("nexusdeck-install-{}", Uuid::new_v4()));
     extract_archive(&archive, &temp_extract)?;
 
     let merge_options = MergeOptions {
@@ -210,6 +211,11 @@ pub async fn install_mod_from_archive(
 
     db::save_installed_mod(&mod_record)?;
 
+    // Ensure loose-file assets actually load (Creation Engine archive
+    // invalidation). Best-effort: never fail an install over it.
+    let archive_invalidation = crate::services::game_settings::ensure_archive_invalidation(&profile)
+        .unwrap_or(false);
+
     let _ = std::fs::remove_dir_all(&temp_extract);
 
     Ok(serde_json::json!({
@@ -217,6 +223,7 @@ pub async fn install_mod_from_archive(
         "plan": plan,
         "conflicts": conflicts,
         "files_installed": manifest.files.len(),
+        "archive_invalidation": archive_invalidation,
     }))
 }
 

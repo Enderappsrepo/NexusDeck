@@ -15,11 +15,14 @@ finish-args:
   # GPU + gamepad (gilrs / Steam Input)
   - --device=dri
   - --device=all
-  # Home, Steam libraries, SD cards
+  # Home, Steam libraries, and removable storage (SD cards, external drives).
+  # Do NOT use :ro here — mod deploy writes into game Data/ and plugins.txt.
   - --filesystem=home
   - --filesystem=~/.steam
   - --filesystem=~/.local/share/Steam
-  - --filesystem=/run/media:ro
+  - --filesystem=/run/media
+  - --filesystem=/var/mnt
+  - --filesystem=/mnt
   # Keyring + secret portal + notifications
   - --talk-name=org.freedesktop.secrets
   - --talk-name=org.freedesktop.impl.portal.Secret

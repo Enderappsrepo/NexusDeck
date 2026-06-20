@@ -52,3 +52,10 @@ pub fn platform_name() -> &'static str {
 pub fn preview_cache_dir() -> crate::error::Result<PathBuf> {
     Ok(data_dir().join("preview_cache"))
 }
+
+/// Writable scratch space for archive extraction during mod install (Flatpak-safe).
+pub fn install_work_dir() -> crate::error::Result<PathBuf> {
+    let dir = data_dir().join("install_work");
+    ensure_dir(&dir)?;
+    Ok(dir)
+}

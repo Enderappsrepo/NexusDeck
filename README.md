@@ -211,6 +211,7 @@ The **CI** workflow builds Linux Flatpak and Windows NSIS on every push/PR to `m
 ## Steam Deck Tips
 
 - **Flatpak** is required on SteamOS — run `flatpak run com.nexusdeck.app` or use the Steam shortcut from the installer
+- If mod install fails with “read-only file system”, reinstall the Flatpak (v0.3.2+) so SD card libraries are writable
 - Enable **Battery Mode** in Settings to limit download concurrency
 - In Desktop Mode, Steam Input may intercept controllers — launch from Gaming Mode or disable Steam Input for NexusDeck
 - Add NexusDeck as a non-Steam game for Gaming Mode access
