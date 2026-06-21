@@ -4,6 +4,8 @@ use crate::error::{NexusDeckError, Result};
 
 /// GitHub repo hosting releases and docs/updates.json (owner/name).
 const DEFAULT_GITHUB_REPO: &str = "Enderappsrepo/NexusDeck";
+/// Default branch where docs/updates.json lives (repo default is `overhaul`).
+const DEFAULT_UPDATES_BRANCH: &str = "overhaul";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppUpdateInfo {
@@ -93,28 +95,42 @@ pub fn check_app_update() -> Result<AppUpdateInfo> {
 }
 
 fn fetch_updates_manifest(repo: &str) -> Result<UpdatesManifest> {
-    let url = format!("https://raw.githubusercontent.com/{repo}/main/docs/updates.json");
+    let branch = std::env::var("NEXUSDECK_UPDATES_BRANCH")
+        .unwrap_or_else(|_| DEFAULT_UPDATES_BRANCH.to_string());
+
+    let owner = repo.split('/').next().unwrap_or("Enderappsrepo");
+    let name = repo.split('/').nth(1).unwrap_or("NexusDeck");
+
+    let urls = [
+        format!("https://raw.githubusercontent.com/{repo}/{branch}/docs/updates.json"),
+        format!("https://raw.githubusercontent.com/{repo}/main/docs/updates.json"),
+        format!("https://{owner}.github.io/{name}/updates.json"),
+    ];
+
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .user_agent("NexusDeck-Updater")
         .build()
         .map_err(|e| NexusDeckError::Other(e.to_string()))?;
 
-    let response = client
-        .get(&url)
-        .send()
-        .map_err(|e| NexusDeckError::Other(format!("Update check failed: {e}")))?;
-
-    if !response.status().is_success() {
-        return Err(NexusDeckError::Other(format!(
-            "Update manifest HTTP {}",
-            response.status()
-        )));
+    let mut last_err = String::new();
+    for url in &urls {
+        match client.get(url).send() {
+            Ok(response) if response.status().is_success() => {
+                return response
+                    .json()
+                    .map_err(|e| NexusDeckError::Other(format!("Invalid update manifest: {e}")));
+            }
+            Ok(response) => {
+                last_err = format!("Update manifest HTTP {} ({url})", response.status());
+            }
+            Err(e) => {
+                last_err = format!("Update check failed ({url}): {e}");
+            }
+        }
     }
 
-    response
-        .json()
-        .map_err(|e| NexusDeckError::Other(format!("Invalid update manifest: {e}")))
+    Err(NexusDeckError::Other(last_err))
 }
 
 fn fetch_latest_release(repo: &str) -> Result<GithubRelease> {

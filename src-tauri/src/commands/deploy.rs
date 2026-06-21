@@ -1265,3 +1265,12 @@ pub fn check_mod_conflicts(
 pub fn get_install_strategies() -> Result<Vec<StrategyOption>> {
     Ok(available_strategies())
 }
+
+#[tauri::command]
+pub async fn repair_deployment(
+    profile_id: String,
+) -> Result<crate::services::repair::RepairResult> {
+    tokio::task::spawn_blocking(move || crate::services::repair::repair_deployment(&profile_id))
+        .await
+        .map_err(|e| crate::error::NexusDeckError::Other(format!("Repair failed: {e}")))?
+}

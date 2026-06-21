@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Label } from "@/components/ui/label";
 import { useLaunchStore } from "@/stores/launchStore";
 import { useAuthStore, useGamesStore, useSettingsStore } from "@/stores";
@@ -22,12 +23,13 @@ function SettingsPage() {
   const { profiles, loadProfiles } = useGamesStore();
   const {
     downloadSettings,
-    batteryMode,
+    performanceMode,
+    deckDetected,
     loading: settingsLoading,
     gyroScroll,
     loadSettings,
     setDownloadSettings,
-    setBatteryMode,
+    setPerformanceMode,
     setGyroScroll,
   } = useSettingsStore();
   const launchSettings = useLaunchStore((s) => s.settings);
@@ -210,14 +212,26 @@ function SettingsPage() {
           <CardTitle>Steam Deck</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <Label>Battery mode</Label>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="min-w-0">
+              <Label>Performance mode</Label>
               <p className="text-sm text-[var(--color-muted)]">
-                Prefer lighter downloads and disable heavy visual mods on battery.
+                Flattens shadows, removes blur/glass, and makes cards static for smoother
+                scrolling. Auto enables it on Steam Deck
+                {deckDetected ? " (detected on this device)" : ""}.
               </p>
             </div>
-            <Switch checked={batteryMode} onCheckedChange={setBatteryMode} data-focusable="true" />
+            <SegmentedControl
+              size="sm"
+              ariaLabel="Performance mode"
+              value={performanceMode}
+              onChange={setPerformanceMode}
+              options={[
+                { value: "auto", label: "Auto" },
+                { value: "on", label: "On" },
+                { value: "off", label: "Off" },
+              ]}
+            />
           </div>
           <div className="flex items-center justify-between gap-4">
             <div>

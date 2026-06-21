@@ -52,6 +52,7 @@ import type {
   ScriptExtenderStatus,
   SelectedInstallOption,
   SupportedGameInfo,
+  RepairResult,
   StagingFile,
   StrategyOption,
   TrackedMod,
@@ -383,6 +384,9 @@ export const api = {
     invoke<void>("cleanup_prepare_dir", { extractDir }),
 
   getInstallStrategies: () => invoke<StrategyOption[]>("get_install_strategies"),
+
+  repairDeployment: (profileId: string) =>
+    invoke<RepairResult>("repair_deployment", { profileId }),
 
   detectF4se: (gamePath: string) =>
     invoke<ScriptExtenderStatus>("detect_f4se", { gamePath }),

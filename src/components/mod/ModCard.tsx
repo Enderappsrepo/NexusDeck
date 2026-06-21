@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Download, Heart, ImageOff } from "lucide-react";
 import { cn, formatNumber, formatRelativeDate } from "@/lib/utils";
@@ -11,7 +12,7 @@ interface ModCardProps {
   compact?: boolean;
 }
 
-export function ModCard({ mod, domain, className, compact = false }: ModCardProps) {
+export const ModCard = memo(function ModCard({ mod, domain, className, compact = false }: ModCardProps) {
   const navigate = useNavigate();
 
   const openMod = () => {
@@ -26,7 +27,7 @@ export function ModCard({ mod, domain, className, compact = false }: ModCardProp
       type="button"
       onClick={openMod}
       className={cn(
-        "focusable group flex w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] text-left shadow-[var(--shadow-sm)] transition-all hover:-translate-y-0.5 hover:border-[var(--color-primary)]/50 hover:shadow-[var(--shadow-lg)] motion-reduce:hover:translate-y-0",
+        "nd-card focusable group flex w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] text-left shadow-[var(--shadow-sm)] transition-all hover:-translate-y-0.5 hover:border-[var(--color-primary)]/50 hover:shadow-[var(--shadow-lg)] motion-reduce:hover:translate-y-0",
         className
       )}
       data-focusable="true"
@@ -43,8 +44,9 @@ export function ModCard({ mod, domain, className, compact = false }: ModCardProp
             src={mod.picture_url}
             alt={mod.name}
             draggable={false}
-            className="pointer-events-none h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03] motion-reduce:transform-none"
+            className="nd-card-img pointer-events-none h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03] motion-reduce:transform-none"
             loading="lazy"
+            decoding="async"
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-[var(--color-muted)]">
@@ -101,4 +103,4 @@ export function ModCard({ mod, domain, className, compact = false }: ModCardProp
       </div>
     </button>
   );
-}
+});

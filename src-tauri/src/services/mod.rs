@@ -31,6 +31,7 @@ pub mod mod_metadata;
 pub mod mod_uninstall;
 pub mod load_order;
 pub mod tools;
+pub mod repair;
 pub mod proton_deps;
 pub mod prefix_manager;
 pub mod autofix;

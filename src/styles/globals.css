@@ -375,6 +375,19 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
 }
 
+/* Off-screen cards/rows skip layout + paint but stay in the DOM, so controller
+   focus navigation (which queries [data-focusable]) keeps working. The browser
+   remembers each element's real size after its first render. */
+.mod-grid > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 340px;
+}
+
+.nd-list > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+}
+
 .game-nav-chip {
   display: inline-flex;
   align-items: center;
@@ -472,4 +485,58 @@ body {
   .game-banner-content {
     padding: 2rem 2.25rem;
   }
+}
+
+/* ===== Performance Mode ====================================================
+   Activated via <html data-perf="true"> (auto on Steam Deck, or forced from
+   Settings). Strips the GPU-expensive effects that cause scroll jank on the
+   Deck's APU: backdrop blur, glows, big shadows, and hover transforms. */
+[data-perf="true"] body {
+  background: var(--color-background);
+}
+
+[data-perf="true"] {
+  --shadow-glow: none;
+  --shadow-lg: 0 8px 20px -6px rgba(0, 0, 0, 0.55);
+}
+
+/* Backdrop blur is the single most expensive effect here — the sticky mods
+   toolbar otherwise re-rasterizes the blurred backdrop on every scroll frame. */
+[data-perf="true"] .mods-toolbar {
+  backdrop-filter: none;
+  background: var(--color-background);
+}
+
+[data-perf="true"] [class*="backdrop-blur"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Static cards: no hover lift, no image zoom, no shadow swap. */
+[data-perf="true"] .nd-card,
+[data-perf="true"] .nd-card-img {
+  transition: none !important;
+}
+
+[data-perf="true"] .nd-card:hover {
+  transform: none !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+[data-perf="true"] .nd-card:hover .nd-card-img {
+  transform: none !important;
+}
+
+[data-perf="true"] .quick-tile:hover,
+[data-perf="true"] .surface-card-interactive:hover {
+  transform: none !important;
+}
+
+/* SteamOS doesn't report prefers-reduced-motion, so collapse transitions here.
+   Keyframe animations (spinners, skeleton pulse) are intentionally left intact. */
+[data-perf="true"] *,
+[data-perf="true"] *::before,
+[data-perf="true"] *::after {
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }

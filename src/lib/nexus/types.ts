@@ -596,6 +596,12 @@ export interface BodySlideInfo {
   working_dir?: string | null;
 }
 
+export interface RepairResult {
+  mods_processed: number;
+  files_relocated: number;
+  warnings: string[];
+}
+
 export interface SteamShortcutInfo {
   id: string;
   profile_id: string;

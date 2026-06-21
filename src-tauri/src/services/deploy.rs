@@ -275,6 +275,54 @@ pub fn resolve_deploy_target(base: &Path, rel: &Path, cache: &mut CaseCache) -> 
     current
 }
 
+/// Build a canonical-casing map for a set of already-deployed relative paths
+/// (Data-relative, any separators). For every directory level it picks one
+/// casing — the first seen in load order — so case-variant sibling folders
+/// (`Textures/` + `textures/`) can be collapsed into a single tree. Returns each
+/// input path mapped to its canonical form (directory components recased, file
+/// name preserved). Used by the deployment repair to relocate mis-cased files.
+pub fn canonical_deploy_map(rel_paths: &[String]) -> HashMap<String, String> {
+    let mut dir_canon: HashMap<String, String> = HashMap::new();
+    let mut out: HashMap<String, String> = HashMap::new();
+
+    for rel in rel_paths {
+        let norm = rel.replace('\\', "/");
+        let (dir, file) = match norm.rfind('/') {
+            Some(i) => (&norm[..i], &norm[i + 1..]),
+            None => ("", norm.as_str()),
+        };
+
+        let mut canon_dir = String::new();
+        let mut lower_acc = String::new();
+        for comp in dir.split('/').filter(|c| !c.is_empty()) {
+            lower_acc = if lower_acc.is_empty() {
+                comp.to_lowercase()
+            } else {
+                format!("{lower_acc}/{}", comp.to_lowercase())
+            };
+            if let Some(existing) = dir_canon.get(&lower_acc) {
+                canon_dir = existing.clone();
+            } else {
+                canon_dir = if canon_dir.is_empty() {
+                    comp.to_string()
+                } else {
+                    format!("{canon_dir}/{comp}")
+                };
+                dir_canon.insert(lower_acc.clone(), canon_dir.clone());
+            }
+        }
+
+        let canonical = if canon_dir.is_empty() {
+            file.to_string()
+        } else {
+            format!("{canon_dir}/{file}")
+        };
+        out.insert(norm, canonical);
+    }
+
+    out
+}
+
 pub fn merge_game_data_directory(
     src: &Path,
     dest: &Path,
@@ -467,5 +515,21 @@ mod tests {
         assert_eq!(a.parent().unwrap(), b.parent().unwrap());
 
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn canonical_deploy_map_collapses_case_variants() {
+        let paths = vec![
+            "Textures/Armor/a.dds".to_string(),
+            "textures/armor/b.dds".to_string(),
+            "Meshes/x.nif".to_string(),
+            "MESHES/y.nif".to_string(),
+        ];
+        let map = canonical_deploy_map(&paths);
+        // Lowercase variant is recased into the first-seen "Textures/Armor".
+        assert_eq!(map["textures/armor/b.dds"], "Textures/Armor/b.dds");
+        assert_eq!(map["Textures/Armor/a.dds"], "Textures/Armor/a.dds");
+        // First-seen "Meshes" casing wins for the later "MESHES".
+        assert_eq!(map["MESHES/y.nif"], "Meshes/y.nif");
     }
 }

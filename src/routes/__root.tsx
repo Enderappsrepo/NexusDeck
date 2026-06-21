@@ -23,6 +23,7 @@ import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
 import { useLaunchStore } from "@/stores/launchStore";
 import { api } from "@/lib/commands";
 import { ensureGamepadPolyfill } from "@/lib/gamepadPolyfill";
+import { applyPerfAttribute } from "@/lib/platform";
 import type { DownloadProgress, Profile, AppUpdateInfo } from "@/lib/nexus/types";
 
 const DISMISSED_UPDATE_KEY = "nexusdeck_dismissed_update_version";
@@ -68,6 +69,7 @@ function RootLayout() {
   const hydrateFromRecords = useDownloadsStore((s) => s.hydrateFromRecords);
   const downloadSettings = useSettingsStore((s) => s.downloadSettings);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
+  const perfActive = useSettingsStore((s) => s.perfActive);
   const updatingDownloadsRef = useRef(new Set<string>());
   const subscribeLaunchEvents = useLaunchStore((s) => s.subscribeEvents);
   const loadLaunchSettings = useLaunchStore((s) => s.loadSettings);
@@ -82,6 +84,10 @@ function RootLayout() {
   const cancelActive = useInstallQueueStore((s) => s.cancelActive);
 
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
+
+  useEffect(() => {
+    applyPerfAttribute(perfActive);
+  }, [perfActive]);
 
   useEffect(() => {
     void api.checkAppUpdate().then((info) => {

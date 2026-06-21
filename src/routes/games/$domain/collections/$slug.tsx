@@ -8,6 +8,7 @@ import type { CollectionDetail } from "@/lib/nexus/types";
 import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
 import { GP } from "@/lib/gamepad/buttons";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { ListRowSkeleton } from "@/components/ui/LoadingSkeleton";

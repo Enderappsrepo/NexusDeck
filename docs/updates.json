@@ -1,6 +1,6 @@
 {
   "minimum_version": "0.6.0",
-  "latest_version": "0.6.0",
-  "message": "NexusDeck 0.6.0 includes DeckModFix (Skyrim troubleshooting, reset mods, MO2 setup) and in-app update notifications. Please update for the best Steam Deck modding experience.",
+  "latest_version": "0.6.1",
+  "message": "NexusDeck 0.6.1 fixes the in-app updater manifest URL, adds deployment repair, and improves Steam Deck scroll performance. Please update for the best experience.",
   "release_url": "https://github.com/Enderappsrepo/NexusDeck/releases/latest"
 }

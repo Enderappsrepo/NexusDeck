@@ -157,6 +157,7 @@ pub fn run() {
             check_mod_conflicts,
             preview_mod_install,
             prepare_mod_install,
+            repair_deployment,
             read_fomod_asset,
             get_fomod_wizard_state,
             cleanup_prepare_dir,

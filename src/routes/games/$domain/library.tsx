@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ArrowDownAZ, Download, GitCompare, Loader2, Package, Search, Trash2 } from "lucide-react";
+import { ArrowDownAZ, Download, GitCompare, Loader2, Package, Search, Trash2, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -58,6 +58,8 @@ function LibraryPage() {
   const [uninstallTarget, setUninstallTarget] = useState<InstalledMod | null>(null);
   const [uninstalling, setUninstalling] = useState(false);
   const [sorting, setSorting] = useState(false);
+  const [repairing, setRepairing] = useState(false);
+  const [repairNote, setRepairNote] = useState<string | null>(null);
   const [updatingAll, setUpdatingAll] = useState(false);
   const [updateProgress, setUpdateProgress] = useState<Record<string, ModUpdateProgress>>({});
 
@@ -308,6 +310,28 @@ function LibraryPage() {
     }
   };
 
+  const repairDeployment = async () => {
+    if (!profile) return;
+    setRepairing(true);
+    setError(null);
+    setRepairNote(null);
+    try {
+      const res = await api.repairDeployment(profile.id);
+      setRepairNote(
+        res.files_relocated > 0
+          ? `Repaired ${res.files_relocated} file${res.files_relocated !== 1 ? "s" : ""} across ${res.mods_processed} mod${res.mods_processed !== 1 ? "s" : ""}.`
+          : `Deployment already consistent — ${res.mods_processed} mod${res.mods_processed !== 1 ? "s" : ""} checked.`
+      );
+      await refreshLibrary();
+      void triggerHaptic("success");
+    } catch (e) {
+      setError(e);
+      void triggerHaptic("error");
+    } finally {
+      setRepairing(false);
+    }
+  };
+
   const confirmUninstall = async () => {
     if (!uninstallTarget || !profile) return;
     setUninstalling(true);
@@ -368,6 +392,9 @@ function LibraryPage() {
           <p className="mt-1 text-sm text-[var(--color-muted)]">
             {mods.length} installed · {mods.filter((m) => m.enabled).length} enabled · L2/R2 reorder
           </p>
+          {repairNote && (
+            <p className="mt-1 text-sm text-[var(--color-success)]">{repairNote}</p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -379,6 +406,17 @@ function LibraryPage() {
           >
             <ArrowDownAZ className="h-4 w-4" />
             Auto-sort load order
+          </Button>
+          <Button
+            variant="outline"
+            disabled={repairing || mods.length === 0}
+            loading={repairing}
+            onClick={() => void repairDeployment()}
+            data-focusable="true"
+            title="Fix case-variant folders so all textures and mod files load (Steam Deck)"
+          >
+            <Wrench className="h-4 w-4" />
+            Repair deployment
           </Button>
           <Button
             variant={compareMode ? "default" : "outline"}
@@ -501,7 +539,7 @@ function LibraryPage() {
       )}
 
       {!loading && filteredMods.length > 0 && (
-        <div ref={listRef} className="space-y-3" data-scroll-pane data-focus-group="library-list">
+        <div ref={listRef} className="nd-list space-y-3" data-scroll-pane data-focus-group="library-list">
           {filteredMods.map((mod, index) => {
             const files: string[] = JSON.parse(mod.installed_files_json || "[]");
             const update = updateForMod(mod);
