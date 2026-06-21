@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Play, ChevronDown, Loader2 } from "lucide-react";
+import { Play, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLaunchStore } from "@/stores/launchStore";
 import { LaunchConfirmDialog } from "./LaunchConfirmDialog";
@@ -38,7 +38,8 @@ export function LaunchButton({
 
   const running = runningByProfile[profileId]?.running;
   const busy = validating || launching;
-  const launchBlocked = busy || isAnyGameRunning();
+  const launchBlocked = busy || !!running;
+  const anotherGameActive = isAnyGameRunning() && !running && !busy;
 
   useEffect(() => {
     loadConfigs(profileId);
@@ -95,7 +96,7 @@ export function LaunchButton({
         : "Launching…"
     : running
       ? "Game Running"
-      : isAnyGameRunning()
+      : anotherGameActive
         ? "Another Game Active"
         : null;
 
@@ -106,7 +107,7 @@ export function LaunchButton({
           size="lg"
           className={className}
           loading={busy}
-          disabled={launchBlocked}
+          disabled={busy || !!running}
           onClick={() => runLaunch()}
           data-launch-primary="true"
         >
@@ -130,18 +131,15 @@ export function LaunchButton({
           size="lg"
           className="min-h-[64px] min-w-[220px] flex-1 text-xl shadow-[var(--shadow-md)] sm:flex-none"
           loading={busy}
-          disabled={launchBlocked}
+          disabled={busy || !!running}
           onClick={() => runLaunch()}
           data-launch-primary="true"
         >
           {busy ? (
-            <>
-              <Loader2 className="h-6 w-6 animate-spin" />
-              {statusLabel}
-            </>
+            statusLabel
           ) : running ? (
             "Game Running"
-          ) : isAnyGameRunning() ? (
+          ) : anotherGameActive ? (
             "Another Game Active"
           ) : (
             <>
@@ -155,7 +153,7 @@ export function LaunchButton({
           size="lg"
           className="min-h-[64px]"
           onClick={() => setQuickOpen(true)}
-          disabled={launchBlocked}
+          disabled={busy || !!running}
           data-focusable="true"
         >
           Quick Launch

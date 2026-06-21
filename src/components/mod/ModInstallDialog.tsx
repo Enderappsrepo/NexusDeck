@@ -14,10 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
   buildWizardStepItems,
-  filterVisibleWizardGroups,
-  flattenWizardGroups,
+  filterVisibleWizardSteps,
   FomodInstallWizard,
-  wizardGroupIsValid,
+  wizardStepIsValid,
 } from "@/components/mod/FomodInstallWizard";
 import { InstallOptionsPanel } from "@/components/mod/InstallOptionsPanel";
 import { InstallSummaryPanel } from "@/components/mod/InstallSummaryPanel";
@@ -28,6 +27,7 @@ import { loadFomodAssetUrl, releaseFomodAssetUrls } from "@/lib/fomodAssets";
 import { InstallLogPanel } from "@/components/install/InstallLogPanel";
 import { InstallErrorPanel } from "@/components/install/InstallErrorPanel";
 import { useInstallLogger } from "@/hooks/useInstallLogger";
+import { useUiLockStore } from "@/stores/uiLockStore";
 import type {
   InstallOptions,
   InstallPreview,
@@ -67,14 +67,14 @@ function displayInstallPath(fullPath: string, gamePath: string) {
 
 function phaseToStepperIndex(
   phase: InstallPhase,
-  wizardGroupIndex: number,
-  wizardGroupCount: number
+  wizardStepIndex: number,
+  wizardStepCount: number
 ) {
   if (phase === "welcome") return 0;
-  if (phase === "wizard") return 1 + wizardGroupIndex;
-  if (phase === "options") return wizardGroupCount > 0 ? wizardGroupCount + 1 : 1;
+  if (phase === "wizard") return 1 + wizardStepIndex;
+  if (phase === "options") return wizardStepCount > 0 ? wizardStepCount + 1 : 1;
   if (phase === "review" || phase === "installing") {
-    return wizardGroupCount > 0 ? wizardGroupCount + 1 : 2;
+    return wizardStepCount > 0 ? wizardStepCount + 1 : 2;
   }
   return 0;
 }
@@ -98,7 +98,7 @@ export function ModInstallDialog({
   const [installWizard, setInstallWizard] = useState<InstallWizard | null>(null);
   const [preparedExtractDir, setPreparedExtractDir] = useState<string | null>(null);
   const [phase, setPhase] = useState<InstallPhase>("welcome");
-  const [wizardGroupIndex, setWizardGroupIndex] = useState(0);
+  const [wizardStepIndex, setWizardStepIndex] = useState(0);
   const [strategy, setStrategy] = useState("auto");
   const [enableMod, setEnableMod] = useState(true);
   const [overwriteFiles, setOverwriteFiles] = useState(false);
@@ -177,22 +177,22 @@ export function ModInstallDialog({
   }, [preview]);
 
   const wizardRequired = !!preview?.install_wizard_required;
-  const wizardGroupPages = useMemo(
+  const wizardStepPages = useMemo(
     () =>
-      installWizard ? filterVisibleWizardGroups(installWizard, selections) : [],
+      installWizard ? filterVisibleWizardSteps(installWizard, selections) : [],
     [installWizard, selections]
   );
-  const wizardGroupCount = wizardGroupPages.length;
-  const hasWizardSteps = wizardGroupCount > 0;
+  const wizardStepCount = wizardStepPages.length;
+  const hasWizardSteps = wizardStepCount > 0;
   const showStepper =
     wizardRequired ||
     hasWizardSteps ||
     (preview?.option_groups.length ?? 0) > 0;
   const stepperItems = useMemo(
-    () => buildWizardStepItems(installWizard, true),
-    [installWizard]
+    () => buildWizardStepItems(installWizard, selections, true),
+    [installWizard, selections]
   );
-  const stepperIndex = phaseToStepperIndex(phase, wizardGroupIndex, wizardGroupCount);
+  const stepperIndex = phaseToStepperIndex(phase, wizardStepIndex, wizardStepCount);
 
   const loadPreview = async (
     nextStrategy: string,
@@ -247,7 +247,7 @@ export function ModInstallDialog({
     setInstallWizard(null);
     setPreparedExtractDir(null);
     setPhase("welcome");
-    setWizardGroupIndex(0);
+    setWizardStepIndex(0);
     setAnalysisProgress(null);
     setLocatingArchive(false);
     setError(null);
@@ -363,7 +363,7 @@ export function ModInstallDialog({
       if (!previewResult) return;
 
       if (result.install_wizard && result.install_wizard.steps.length > 0) {
-        setWizardGroupIndex(0);
+        setWizardStepIndex(0);
         setPhase("wizard");
       } else if (previewResult.option_groups.length > 0) {
         setPhase("options");
@@ -442,6 +442,7 @@ export function ModInstallDialog({
         await api.autoSortLoadOrder(profile.id).catch(() => {});
       }
       onInstalled?.();
+      window.dispatchEvent(new CustomEvent("nexusdeck-mod-installed", { detail: { modName } }));
       onOpenChange(false);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -463,9 +464,9 @@ export function ModInstallDialog({
   const extractAlmostDone =
     extracting && installProgressPercent !== null && installProgressPercent >= 90;
 
-  const currentWizardGroup = wizardGroupPages[wizardGroupIndex]?.group;
+  const currentWizardStep = wizardStepPages[wizardStepIndex];
   const wizardCanAdvance =
-    !currentWizardGroup || wizardGroupIsValid(currentWizardGroup, selections);
+    !currentWizardStep || wizardStepIsValid(currentWizardStep, selections);
 
   const goNext = async () => {
     if (phase === "welcome") {
@@ -473,8 +474,8 @@ export function ModInstallDialog({
       return;
     }
     if (phase === "wizard") {
-      if (wizardGroupIndex < wizardGroupCount - 1) {
-        setWizardGroupIndex((i) => i + 1);
+      if (wizardStepIndex < wizardStepCount - 1) {
+        setWizardStepIndex((i) => i + 1);
         return;
       }
       await goToReview();
@@ -493,7 +494,7 @@ export function ModInstallDialog({
     if (phase === "review") {
       if (hasWizardSteps) {
         setPhase("wizard");
-        setWizardGroupIndex(wizardGroupCount - 1);
+        setWizardStepIndex(wizardStepCount - 1);
       } else if (preview?.option_groups.length) {
         setPhase("options");
       } else if (wizardRequired) {
@@ -506,8 +507,8 @@ export function ModInstallDialog({
       return;
     }
     if (phase === "wizard") {
-      if (wizardGroupIndex > 0) {
-        setWizardGroupIndex((i) => i - 1);
+      if (wizardStepIndex > 0) {
+        setWizardStepIndex((i) => i - 1);
       } else if (wizardRequired) {
         setPhase("welcome");
       }
@@ -535,7 +536,7 @@ export function ModInstallDialog({
           : phase === "welcome"
             ? "Begin installation"
             : phase === "wizard"
-              ? wizardGroupIndex < wizardGroupCount - 1
+              ? wizardStepIndex < wizardStepCount - 1
                 ? "Next"
                 : "Review & install"
               : phase === "options"
@@ -560,7 +561,7 @@ export function ModInstallDialog({
       onOpenChange={onOpenChange}
       title={`Install: ${displayTitle}`}
       description={`${file.name} · v${file.version}`}
-      className="max-w-4xl"
+      className="max-w-6xl"
       dismissible={!installBusy}
       disableOutsideClose
     >
@@ -586,19 +587,19 @@ export function ModInstallDialog({
         )}
 
         {(phase === "wizard" || phase === "options") && preview ? (
+          phase === "wizard" && installWizard && preparedExtractDir ? (
+            <FomodInstallWizard
+              wizard={installWizard}
+              extractDir={preparedExtractDir}
+              selections={selections}
+              currentStepIndex={wizardStepIndex}
+              optionFileCounts={preview.option_file_counts}
+              onSelectionsChange={handleSelectionsChange}
+              disabled={loading || installing || extracting}
+            />
+          ) : (
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
             <div className="min-w-0 space-y-5">
-              {phase === "wizard" && installWizard && preparedExtractDir && (
-                <FomodInstallWizard
-                  wizard={installWizard}
-                  extractDir={preparedExtractDir}
-                  selections={selections}
-                  currentGroupIndex={wizardGroupIndex}
-                  onSelectionsChange={handleSelectionsChange}
-                  disabled={loading || installing || extracting}
-                />
-              )}
-
               {phase === "options" && preview.option_groups.length > 0 && (
                 <InstallOptionsPanel
                   groups={preview.option_groups}
@@ -615,6 +616,7 @@ export function ModInstallDialog({
               className="lg:sticky lg:top-0 lg:self-start"
             />
           </div>
+          )
         ) : null}
 
         {phase === "welcome" && preview && !extracting && (

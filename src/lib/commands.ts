@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AdvisorFinding,
+  BodySetupStatus,
   BodySlideInfo,
   CollectionDetail,
   CollectionSummary,
@@ -580,6 +581,9 @@ export const api = {
 
   detectBodyslide: (profileId: string) =>
     invoke<BodySlideInfo>("detect_bodyslide", { profileId }),
+
+  getBodySetupStatus: (profileId: string) =>
+    invoke<BodySetupStatus>("get_body_setup_status", { profileId }),
 
   launchBodyslide: (profileId: string) =>
     invoke<string>("launch_bodyslide", { profileId }),

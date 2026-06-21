@@ -81,6 +81,32 @@ pub fn validate_fallout4_install(
         );
     }
 
+    let mesh_count = manifest_files
+        .iter()
+        .filter(|f| f.to_lowercase().ends_with(".nif"))
+        .count();
+    let caliente_outside_data = manifest_files.iter().any(|f| {
+        let lower = f.replace('\\', "/").to_lowercase();
+        lower.contains("calientetools/") && !lower.contains("/data/calientetools/")
+            && !lower.starts_with("data/calientetools/")
+    });
+    if caliente_outside_data {
+        let msg = "CalienteTools files deployed outside Data/ — BodySlide may not be detected. Re-install with merge_loose_to_data strategy.";
+        session.warn("validate", msg);
+        report.warnings.push(msg.to_string());
+    }
+
+    let body_keywords = ["cbbe", "caliente", "bodyslide", "body"];
+    let is_body_mod = manifest_files.iter().any(|f| {
+        let lower = f.to_lowercase();
+        body_keywords.iter().any(|k| lower.contains(k))
+    });
+    if is_body_mod && mesh_count == 0 && plugins.is_empty() {
+        let msg = "Body mod install contains no mesh files — only metadata may have deployed.";
+        session.warn("validate", msg);
+        report.warnings.push(msg.to_string());
+    }
+
     report
 }
 

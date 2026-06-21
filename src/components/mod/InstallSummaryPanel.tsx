@@ -51,6 +51,12 @@ export function InstallSummaryPanel({
         <p className="mt-1 text-sm text-[var(--color-muted)]">{preview.plan.description}</p>
       </div>
 
+      {preview.file_count === 0 && preview.skipped_existing === 0 && (
+        <div className="rounded-lg border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 p-3 text-sm text-[var(--color-warning)]">
+          No files matched your selections. Try different options or check the install log.
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-3">
           <p className="text-xs text-[var(--color-muted)]">Files</p>

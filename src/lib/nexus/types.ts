@@ -121,6 +121,7 @@ export interface InstallPreview {
   default_selections: SelectedInstallOption[];
   install_wizard_required?: boolean;
   install_wizard?: InstallWizard | null;
+  option_file_counts?: Record<string, number>;
 }
 
 export interface InstallPrepareResult {
@@ -578,6 +579,7 @@ export interface LaunchValidationResult {
 
 export interface GameRunningState {
   running: boolean;
+  waiting?: boolean;
   profile_id: string;
   pid?: number | null;
   started_at?: number | null;
@@ -616,6 +618,24 @@ export interface BodySlideInfo {
   installed: boolean;
   exe_path?: string | null;
   working_dir?: string | null;
+  expected_path?: string | null;
+  found_at?: string | null;
+}
+
+export interface BodySetupStep {
+  id: string;
+  label: string;
+  status: string;
+  description?: string | null;
+}
+
+export interface BodySetupStatus {
+  cbbe_installed: boolean;
+  bodyslide_installed: boolean;
+  bodyslide_exe?: string | null;
+  presets_built: boolean;
+  steps: BodySetupStep[];
+  nexus_bodyslide_url?: string | null;
 }
 
 export interface RepairResult {

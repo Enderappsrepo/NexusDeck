@@ -540,6 +540,52 @@ pub fn apply_install_selections(
         .collect()
 }
 
+/// Count deployable files per option when that option is selected (for wizard UI badges).
+pub fn compute_option_file_counts(
+    all_entries: &[ArchiveEntry],
+    groups: &[InstallOptionGroup],
+    base_selections: &[SelectedInstallOption],
+    wizard: Option<&InstallWizard>,
+) -> HashMap<String, u32> {
+    let mut counts = HashMap::new();
+    for group in groups {
+        for option in &group.options {
+            let mut sim: Vec<SelectedInstallOption> = base_selections.to_vec();
+            let group_sel = sim.iter_mut().find(|s| s.group_id == group.id);
+            match group.selection_type {
+                InstallOptionSelectionType::SelectOne
+                | InstallOptionSelectionType::SelectAtMostOne => {
+                    if let Some(sel) = group_sel {
+                        sel.option_ids = vec![option.id.clone()];
+                    } else {
+                        sim.push(SelectedInstallOption {
+                            group_id: group.id.clone(),
+                            option_ids: vec![option.id.clone()],
+                        });
+                    }
+                }
+                InstallOptionSelectionType::SelectAny
+                | InstallOptionSelectionType::SelectAtLeastOne => {
+                    if let Some(sel) = group_sel {
+                        if !sel.option_ids.contains(&option.id) {
+                            sel.option_ids.push(option.id.clone());
+                        }
+                    } else {
+                        sim.push(SelectedInstallOption {
+                            group_id: group.id.clone(),
+                            option_ids: vec![option.id.clone()],
+                        });
+                    }
+                }
+            }
+            let filtered = apply_install_selections(all_entries, groups, &sim, wizard);
+            let file_count = filtered.iter().filter(|e| !e.is_dir).count() as u32;
+            counts.insert(option.id.clone(), file_count);
+        }
+    }
+    counts
+}
+
 fn apply_fomod_rules_only(entries: &[ArchiveEntry], wizard: &InstallWizard) -> Vec<ArchiveEntry> {
     let prefix = infer_content_prefix(entries);
     let included = collect_included_prefixes(&[], &[], entries, Some(wizard));
@@ -1268,6 +1314,11 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                     "folder" if in_files && in_option => {
                         read_fomod_files_folder(&e, &mut current_option_folders);
                     }
+                    "file" if in_files && in_option => {
+                        if let Some(file) = read_fomod_file_ref(&e) {
+                            current_option_folders.push(fomod_install_path(&file));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1305,6 +1356,11 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                     }
                     "folder" if in_files && in_option => {
                         read_fomod_files_folder(&e, &mut current_option_folders);
+                    }
+                    "file" if in_files && in_option => {
+                        if let Some(file) = read_fomod_file_ref(&e) {
+                            current_option_folders.push(fomod_install_path(&file));
+                        }
                     }
                     "file" | "folder" if in_pattern_files || in_required_install_files => {
                         if let Some(file) = read_fomod_file_ref(&e) {
@@ -1834,5 +1890,32 @@ mod tests {
         assert!(!kept.iter().any(|e| e.path.contains("Fomod/")));
         assert!(kept.iter().any(|e| e.path.contains("DialogueInterface.swf")));
         assert!(!kept.iter().any(|e| e.path.contains("extra.dds")));
+    }
+
+    #[test]
+    fn parses_file_ref_inside_option_files_block() {
+        let xml = r#"
+        <config>
+          <installSteps>
+            <installStep name="Hair">
+              <optionalFileGroups>
+                <group name="Pack" type="SelectExactlyOne">
+                  <option name="Full">
+                    <files>
+                      <file source="Data/Meshes/hair.nif"/>
+                      <folder source="Data/Textures/Hair"/>
+                    </files>
+                  </option>
+                </group>
+              </optionalFileGroups>
+            </installStep>
+          </installSteps>
+        </config>"#;
+        let groups = parse_fomod_module_config(xml).unwrap();
+        assert_eq!(groups[0].options[0].folder_prefixes.len(), 2);
+        assert!(groups[0].options[0]
+            .folder_prefixes
+            .iter()
+            .any(|p| p.contains("hair.nif")));
     }
 }

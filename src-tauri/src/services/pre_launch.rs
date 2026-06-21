@@ -49,20 +49,24 @@ pub fn validate_launch(
         .map(|p| p.display_name())
         .unwrap_or("Game");
 
-    if monitor.any_running() {
-        if monitor.is_running(&profile.id) {
-            blockers.push(item(
-                "game_already_running",
-                format!("{game_name} is already running. Close it before launching again."),
-                "error",
-            ));
-        } else {
-            blockers.push(item(
-                "game_already_running",
-                "Another game is already launching or running. Wait for it to finish before starting another.",
-                "error",
-            ));
-        }
+    if monitor.is_running(&profile.id) {
+        blockers.push(item(
+            "game_already_running",
+            format!("{game_name} is already running. Close it before launching again."),
+            "error",
+        ));
+    } else if monitor.is_waiting(&profile.id) {
+        blockers.push(item(
+            "game_launch_pending",
+            format!("{game_name} is still starting. Wait for it to appear or reset launch state."),
+            "error",
+        ));
+    } else if monitor.any_running() {
+        blockers.push(item(
+            "game_already_running",
+            "Another game is already running. Wait for it to finish before starting another.",
+            "error",
+        ));
     }
 
     if config.launch_method == "steam" {

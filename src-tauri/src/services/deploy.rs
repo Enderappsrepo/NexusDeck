@@ -112,6 +112,7 @@ pub fn has_loose_fallout4_data_folders(paths: &[String]) -> bool {
         "tools/",
         "seq/",
         "facegen/",
+        "calientetools/",
     ];
 
     paths.iter().any(|p| {
@@ -120,6 +121,23 @@ pub fn has_loose_fallout4_data_folders(paths: &[String]) -> bool {
             let folder = folder.trim_end_matches('/');
             lower.starts_with(&format!("{folder}/")) || lower.contains(&format!("/{folder}/"))
         })
+    })
+}
+
+/// True when entries include mesh/texture/asset files that must not use copy_loose_to_data.
+pub fn entries_have_loose_assets(entries: &[ArchiveEntry]) -> bool {
+    let paths = normalized_relative_paths(entries);
+    if has_loose_fallout4_data_folders(&paths) {
+        return true;
+    }
+    paths.iter().any(|p| {
+        let lower = p.to_lowercase();
+        lower.ends_with(".nif")
+            || lower.ends_with(".dds")
+            || lower.ends_with(".tga")
+            || lower.ends_with(".hkx")
+            || lower.ends_with(".wav")
+            || lower.ends_with(".xwm")
     })
 }
 
@@ -565,5 +583,18 @@ mod tests {
         assert_eq!(map["Textures/Armor/a.dds"], "Textures/Armor/a.dds");
         // First-seen "Meshes" casing wins for the later "MESHES".
         assert_eq!(map["MESHES/y.nif"], "Meshes/y.nif");
+    }
+
+    #[test]
+    fn calientetools_counts_as_loose_data_folder() {
+        assert!(has_loose_fallout4_data_folders(&[
+            "CalienteTools/BodySlide/BodySlide x64.exe".to_string()
+        ]));
+    }
+
+    #[test]
+    fn entries_have_loose_assets_detects_nif() {
+        let entries = vec![entry("Data/Plugins/mod.esp"), entry("Meshes/body.nif")];
+        assert!(entries_have_loose_assets(&entries));
     }
 }

@@ -287,5 +287,17 @@ pub fn build_plan_for_strategy(
             _ => game_path.display().to_string(),
         };
     }
+    refine_plan_for_entries(&mut plan, entries);
     Ok(plan)
+}
+
+fn refine_plan_for_entries(plan: &mut DeployPlan, entries: &[ArchiveEntry]) {
+    if crate::services::deploy::entries_have_loose_assets(entries)
+        && plan.strategy == "copy_loose_to_data"
+    {
+        plan.strategy = "merge_loose_to_data".to_string();
+        plan.description =
+            "Asset files detected — meshes and textures will be installed into your Data folder."
+                .to_string();
+    }
 }

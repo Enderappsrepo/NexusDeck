@@ -104,6 +104,14 @@ pub fn get_game_running_state(
 }
 
 #[tauri::command]
+pub fn clear_launch_tracking(
+    profile_id: String,
+    monitor: State<'_, Arc<ProcessMonitor>>,
+) -> Result<()> {
+    monitor.clear_tracking(&profile_id)
+}
+
+#[tauri::command]
 pub async fn stop_game(
     profile_id: String,
     graceful: Option<bool>,
@@ -210,6 +218,17 @@ pub async fn detect_bodyslide(profile_id: String) -> Result<BodySlideInfo> {
         .await
         .map_err(|e| {
             crate::error::NexusDeckError::Other(format!("BodySlide detection failed: {e}"))
+        })?
+}
+
+#[tauri::command]
+pub async fn get_body_setup_status(
+    profile_id: String,
+) -> Result<crate::services::tools::BodySetupStatus> {
+    tokio::task::spawn_blocking(move || crate::services::tools::get_body_setup_status(&profile_id))
+        .await
+        .map_err(|e| {
+            crate::error::NexusDeckError::Other(format!("Body setup status failed: {e}"))
         })?
 }
 

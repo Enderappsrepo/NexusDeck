@@ -76,6 +76,8 @@ pub struct InstallPreview {
     pub default_selections: Vec<crate::services::install_options::SelectedInstallOption>,
     pub install_wizard_required: bool,
     pub install_wizard: Option<crate::services::install_options::InstallWizard>,
+    #[serde(default)]
+    pub option_file_counts: std::collections::HashMap<String, u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -317,9 +319,14 @@ fn available_strategies() -> Vec<StrategyOption> {
             description: "Copy archive Data/ folder into the game Data/ directory".into(),
         },
         StrategyOption {
+            id: "merge_loose_to_data".into(),
+            label: "Merge loose assets into Data/".into(),
+            description: "Install meshes, textures, CalienteTools, and other folders into Data/".into(),
+        },
+        StrategyOption {
             id: "copy_loose_to_data".into(),
-            label: "Copy loose files to Data/".into(),
-            description: "Copy .esp, .ba2, and related files into Data/".into(),
+            label: "Copy plugins to Data/".into(),
+            description: "Copy .esp/.esm/.ba2 files only into Data/".into(),
         },
         StrategyOption {
             id: "merge_root".into(),
@@ -451,6 +458,7 @@ pub async fn preview_mod_install(
             default_selections: Vec::new(),
             install_wizard_required: true,
             install_wizard: None,
+            option_file_counts: std::collections::HashMap::new(),
         });
     }
 
@@ -534,6 +542,12 @@ pub async fn preview_mod_install(
         &selections,
         install_wizard.as_ref(),
     );
+    let option_file_counts = crate::services::install_options::compute_option_file_counts(
+        &all_entries,
+        &option_groups,
+        &selections,
+        install_wizard.as_ref(),
+    );
 
     preview_progress(
         &app,
@@ -602,6 +616,7 @@ pub async fn preview_mod_install(
         default_selections,
         install_wizard_required: false,
         install_wizard,
+        option_file_counts,
     })
 }
 
@@ -667,11 +682,26 @@ pub async fn prepare_mod_install(
     );
 
     let extract_dir_for_list = temp_extract.clone();
-    let entries = tokio::task::spawn_blocking(move || {
+    let mut entries = tokio::task::spawn_blocking(move || {
         crate::services::archive::list_extracted_entries(&extract_dir_for_list)
     })
     .await
     .map_err(|e| crate::error::NexusDeckError::Other(format!("Extract analysis failed: {e}")))??;
+
+    let extract_dir_nested = temp_extract.clone();
+    let nested_count = tokio::task::spawn_blocking(move || {
+        crate::services::archive::extract_nested_archives(&extract_dir_nested, 2)
+    })
+    .await
+    .map_err(|e| crate::error::NexusDeckError::Other(format!("Nested extract failed: {e}")))??;
+    if nested_count > 0 {
+        let extract_dir_refresh = temp_extract.clone();
+        entries = tokio::task::spawn_blocking(move || {
+            crate::services::archive::list_extracted_entries(&extract_dir_refresh)
+        })
+        .await
+        .map_err(|e| crate::error::NexusDeckError::Other(format!("Extract analysis failed: {e}")))??;
+    }
 
     let archive_for_wizard = archive.clone();
     let extract_dir_for_options = temp_extract.clone();
@@ -861,28 +891,6 @@ pub async fn install_mod_from_archive(
     } else {
         options.selected_options.clone()
     };
-    let entries = crate::services::install_options::apply_install_selections(
-        &all_entries,
-        &option_groups,
-        &selections,
-        fomod_wizard.as_ref(),
-    );
-
-    if !option_groups.is_empty() {
-        crate::services::install_options::validate_fomod_selection_deploy(
-            &option_groups,
-            &selections,
-            &entries,
-            fomod_wizard.as_ref(),
-        )?;
-    }
-
-    let plan = games::build_plan_for_strategy(
-        &profile.game_domain,
-        PathBuf::from(&profile.game_path).as_path(),
-        &entries,
-        &options.strategy,
-    )?;
 
     if !using_prepared {
         let entry_count = all_entries.len() as u32;
@@ -938,6 +946,29 @@ pub async fn install_mod_from_archive(
         })??;
     }
 
+    let entries = crate::services::install_options::apply_install_selections(
+        &all_entries,
+        &option_groups,
+        &selections,
+        fomod_wizard.as_ref(),
+    );
+
+    if !option_groups.is_empty() {
+        crate::services::install_options::validate_fomod_selection_deploy(
+            &option_groups,
+            &selections,
+            &entries,
+            fomod_wizard.as_ref(),
+        )?;
+    }
+
+    let plan = games::build_plan_for_strategy(
+        &profile.game_domain,
+        PathBuf::from(&profile.game_path).as_path(),
+        &entries,
+        &options.strategy,
+    )?;
+
     crate::services::install_options::prune_extract_dir(&temp_extract, &all_entries, &entries)?;
 
     install_progress(
@@ -972,6 +1003,16 @@ pub async fn install_mod_from_archive(
 
     let deploy_paths = compute_deploy_paths(&plan, &entries, game_path.as_path());
     let (planned_paths, _) = filter_deploy_paths(&deploy_paths, overwrite);
+
+    for path in planned_paths.iter().take(25) {
+        session.debug("deploy", &format!("→ {path}"));
+    }
+    if planned_paths.len() > 25 {
+        session.info(
+            "deploy",
+            &format!("… and {} more file(s)", planned_paths.len() - 25),
+        );
+    }
 
     let merge_options = MergeOptions {
         overwrite,

@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, CheckCircle2, Circle, ImageIcon, Square } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, Circle, ImageIcon, Square } from "lucide-react";
 import type {
   FomodCondition,
   FomodFlag,
   InstallOptionGroup,
   InstallWizard,
+  InstallWizardStep,
   SelectedInstallOption,
 } from "@/lib/nexus/types";
 import { loadFomodAssetUrl } from "@/lib/fomodAssets";
-import { InstallWizardStepper, type WizardStepItem } from "@/components/mod/InstallWizardStepper";
 import { cn } from "@/lib/utils";
 
 export interface WizardGroupPage {
@@ -17,11 +17,17 @@ export interface WizardGroupPage {
   sectionDescription?: string | null;
 }
 
+export interface WizardStepPage {
+  step: InstallWizardStep;
+  groups: InstallOptionGroup[];
+}
+
 interface FomodInstallWizardProps {
   wizard: InstallWizard;
   extractDir: string;
   selections: SelectedInstallOption[];
-  currentGroupIndex: number;
+  currentStepIndex: number;
+  optionFileCounts?: Record<string, number>;
   onSelectionsChange: (selections: SelectedInstallOption[]) => void;
   disabled?: boolean;
 }
@@ -104,6 +110,27 @@ export function filterVisibleWizardGroups(
   return pages;
 }
 
+export function filterVisibleWizardSteps(
+  wizard: InstallWizard,
+  selections: SelectedInstallOption[]
+): WizardStepPage[] {
+  const flags = activeFlagsFromSelections(wizard, selections);
+  const pages: WizardStepPage[] = [];
+
+  for (const step of wizard.steps) {
+    if (!conditionMatches(step.condition, flags)) continue;
+    const groups: InstallOptionGroup[] = [];
+    for (const group of step.groups) {
+      if (!conditionMatches(group.condition, flags)) continue;
+      groups.push(group);
+    }
+    if (groups.length > 0) {
+      pages.push({ step, groups });
+    }
+  }
+  return pages;
+}
+
 function FomodOptionImage({
   extractDir,
   imagePath,
@@ -170,46 +197,52 @@ function FomodOptionImage({
 function selectionHint(group: InstallOptionGroup) {
   switch (group.selection_type) {
     case "select_one":
-      return "Choose one option (required)";
+      return "Choose one (required)";
     case "select_at_most_one":
-      return "Optional — choose one or none";
+      return "Optional — one or none";
     case "select_at_least_one":
-      return "Choose at least one option";
+      return "Choose at least one";
     default:
-      return "Optional — choose any that apply";
+      return "Optional — any that apply";
   }
 }
 
-function WizardGroupPageView({
-  page,
+function OptionListGroup({
+  group,
   selections,
-  extractDir,
+  optionFileCounts,
+  focusedOptionId,
+  onFocusOption,
   onSelectionsChange,
   disabled,
 }: {
-  page: WizardGroupPage;
+  group: InstallOptionGroup;
   selections: SelectedInstallOption[];
-  extractDir: string;
+  optionFileCounts?: Record<string, number>;
+  focusedOptionId: string | null;
+  onFocusOption: (id: string) => void;
   onSelectionsChange: (selections: SelectedInstallOption[]) => void;
   disabled?: boolean;
 }) {
-  const group = page.group;
   const selectedIds = getGroupOptionIds(selections, group.id);
   const isSelectOne = group.selection_type === "select_one";
   const isSelectAtMostOne = group.selection_type === "select_at_most_one";
   const isSingleChoice = isSelectOne || isSelectAtMostOne;
 
   const handleSelectOne = (optionId: string) => {
+    onFocusOption(optionId);
     onSelectionsChange(updateGroupSelection(selections, group.id, [optionId]));
   };
 
   const handleSelectAtMostOne = (optionId: string) => {
+    onFocusOption(optionId);
     const current = getGroupOptionIds(selections, group.id);
     const next = current.includes(optionId) ? [] : [optionId];
     onSelectionsChange(updateGroupSelection(selections, group.id, next));
   };
 
   const handleToggleMulti = (optionId: string) => {
+    onFocusOption(optionId);
     const current = getGroupOptionIds(selections, group.id);
     const next = current.includes(optionId)
       ? current.filter((id) => id !== optionId)
@@ -218,39 +251,34 @@ function WizardGroupPageView({
   };
 
   return (
-    <fieldset className="space-y-4" disabled={disabled}>
-      {page.section && page.section !== group.name && (
-        <p className="text-sm font-medium text-[var(--color-muted)]">{page.section}</p>
-      )}
+    <fieldset className="space-y-2" disabled={disabled}>
       <div>
-        <legend className="text-2xl font-semibold">{group.name}</legend>
-        {page.sectionDescription && (
-          <p className="mt-1 text-sm text-[var(--color-muted)]">{page.sectionDescription}</p>
-        )}
-        <p className="mt-2 text-sm text-[var(--color-muted)]">{selectionHint(group)}</p>
+        <legend className="text-lg font-semibold">{group.name}</legend>
+        <p className="text-xs text-[var(--color-muted)]">{selectionHint(group)}</p>
       </div>
-
-      <div
-        className={cn("grid gap-4", group.options.length > 2 ? "sm:grid-cols-2" : "grid-cols-1")}
-        role={isSingleChoice ? "radiogroup" : "group"}
-        aria-label={group.name}
-      >
+      <div className="space-y-1" role={isSingleChoice ? "radiogroup" : "group"} aria-label={group.name}>
         {group.options.map((option) => {
           const checked = selectedIds.includes(option.id);
           const inputId = `wizard-${group.id}-${option.id}`;
+          const fileCount = optionFileCounts?.[option.id];
+          const zeroFiles = fileCount === 0;
+          const isFocused = focusedOptionId === option.id;
 
           return (
             <label
               key={option.id}
               htmlFor={inputId}
               className={cn(
-                "focusable relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border-2 transition-all",
+                "focusable flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 transition-all",
                 checked
-                  ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 shadow-[var(--shadow-md)]"
-                  : "border-[var(--color-border)] hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-secondary)]/40",
+                  ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
+                  : isFocused
+                    ? "border-[var(--color-border-strong)] bg-[var(--color-secondary)]/40"
+                    : "border-[var(--color-border)] hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-secondary)]/30",
                 disabled && "pointer-events-none opacity-60"
               )}
               data-focusable="true"
+              onMouseEnter={() => onFocusOption(option.id)}
             >
               <input
                 id={inputId}
@@ -262,46 +290,33 @@ function WizardGroupPageView({
                   else if (isSelectAtMostOne) handleSelectAtMostOne(option.id);
                   else handleToggleMulti(option.id);
                 }}
-                className="sr-only"
+                className="mt-1 h-4 w-4 accent-[var(--color-primary)]"
                 disabled={disabled}
               />
-
-              <div className="absolute right-3 top-3 z-10">
-                {isSingleChoice ? (
-                  checked ? (
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--color-primary)] text-white">
-                      <Circle className="h-3 w-3 fill-current" />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{option.label}</span>
+                  {fileCount !== undefined && (
+                    <span
+                      className={cn(
+                        "rounded-md px-1.5 py-0.5 text-xs",
+                        zeroFiles
+                          ? "bg-[var(--color-warning)]/15 text-[var(--color-warning)]"
+                          : "bg-[var(--color-secondary)] text-[var(--color-muted)]"
+                      )}
+                    >
+                      {zeroFiles ? (
+                        <span className="inline-flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" />0 files
+                        </span>
+                      ) : (
+                        `${fileCount.toLocaleString()} files`
+                      )}
                     </span>
-                  ) : (
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-[var(--color-border)] bg-[var(--color-card)]/90" />
-                  )
-                ) : checked ? (
-                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--color-primary)] text-white">
-                    <Check className="h-4 w-4" />
-                  </span>
-                ) : (
-                  <span className="flex h-7 w-7 items-center justify-center rounded-md border-2 border-[var(--color-border)] bg-[var(--color-card)]/90 text-[var(--color-muted)]">
-                    <Square className="h-3.5 w-3.5" />
-                  </span>
-                )}
-              </div>
-
-              <FomodOptionImage
-                extractDir={extractDir}
-                imagePath={option.image_path}
-                alt={option.label}
-                className="aspect-[16/10] w-full"
-              />
-
-              <div className="space-y-1 p-4">
-                <div className="flex items-start justify-between gap-2 pr-8">
-                  <p className="font-medium leading-snug">{option.label}</p>
-                  {checked && (
-                    <CheckCircle2 className="h-5 w-5 shrink-0 text-[var(--color-primary)]" />
                   )}
                 </div>
                 {option.description && (
-                  <p className="text-sm text-[var(--color-muted)]">{option.description}</p>
+                  <p className="mt-0.5 text-sm text-[var(--color-muted)]">{option.description}</p>
                 )}
               </div>
             </label>
@@ -316,53 +331,107 @@ export function FomodInstallWizard({
   wizard,
   extractDir,
   selections,
-  currentGroupIndex,
+  currentStepIndex,
+  optionFileCounts,
   onSelectionsChange,
   disabled = false,
 }: FomodInstallWizardProps) {
-  const pages = useMemo(
-    () => filterVisibleWizardGroups(wizard, selections),
+  const stepPages = useMemo(
+    () => filterVisibleWizardSteps(wizard, selections),
     [wizard, selections]
   );
-  const stepItems: WizardStepItem[] = useMemo(
-    () => pages.map((page) => ({ id: page.group.id, label: page.group.name })),
-    [pages]
-  );
+  const currentPage = stepPages[currentStepIndex];
 
-  const currentPage = pages[currentGroupIndex];
-  const [moduleImage, setModuleImage] = useState<string | null>(null);
+  const [focusedOptionId, setFocusedOptionId] = useState<string | null>(null);
+
+  const focusedOption = useMemo(() => {
+    if (!currentPage) return null;
+    for (const group of currentPage.groups) {
+      const selected = getGroupOptionIds(selections, group.id);
+      for (const option of group.options) {
+        if (focusedOptionId === option.id || selected.includes(option.id)) {
+          return option;
+        }
+      }
+    }
+    return currentPage.groups[0]?.options[0] ?? null;
+  }, [currentPage, selections, focusedOptionId]);
 
   useEffect(() => {
-    if (!wizard.module_image_path) {
-      setModuleImage(null);
-      return;
-    }
-    loadFomodAssetUrl(extractDir, wizard.module_image_path).then(setModuleImage);
-  }, [extractDir, wizard.module_image_path]);
+    if (focusedOption) setFocusedOptionId(focusedOption.id);
+  }, [currentStepIndex, focusedOption?.id]);
 
   if (!currentPage) return null;
 
   return (
-    <div className="space-y-5">
-      {moduleImage && currentGroupIndex === 0 && (
-        <div className="overflow-hidden rounded-2xl border border-[var(--color-border)]">
-          <img
-            src={moduleImage}
-            alt={wizard.module_name ?? "Mod installer"}
-            className="max-h-36 w-full object-cover"
+    <div className="grid gap-5 lg:grid-cols-[180px_minmax(0,1fr)_minmax(220px,280px)]">
+      <nav className="space-y-1" aria-label="Install steps">
+        {stepPages.map((page, index) => {
+          const active = index === currentStepIndex;
+          const done = index < currentStepIndex;
+          return (
+            <div
+              key={page.step.id}
+              className={cn(
+                "rounded-lg px-3 py-2 text-sm",
+                active
+                  ? "bg-[var(--color-primary)]/15 font-semibold text-[var(--color-primary)]"
+                  : done
+                    ? "text-[var(--color-success)]"
+                    : "text-[var(--color-muted)]"
+              )}
+            >
+              <span className="flex items-center gap-2">
+                {done ? (
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                ) : (
+                  <Circle className={cn("h-4 w-4 shrink-0", active && "fill-current")} />
+                )}
+                <span className="truncate">{page.step.name}</span>
+              </span>
+            </div>
+          );
+        })}
+      </nav>
+
+      <div className="min-w-0 space-y-5">
+        {currentPage.step.description && (
+          <p className="text-sm text-[var(--color-muted)]">{currentPage.step.description}</p>
+        )}
+        {currentPage.groups.map((group) => (
+          <OptionListGroup
+            key={group.id}
+            group={group}
+            selections={selections}
+            optionFileCounts={optionFileCounts}
+            focusedOptionId={focusedOptionId}
+            onFocusOption={setFocusedOptionId}
+            onSelectionsChange={onSelectionsChange}
+            disabled={disabled}
           />
-        </div>
-      )}
+        ))}
+      </div>
 
-      <InstallWizardStepper steps={stepItems} currentIndex={currentGroupIndex} />
-
-      <WizardGroupPageView
-        page={currentPage}
-        selections={selections}
-        extractDir={extractDir}
-        onSelectionsChange={onSelectionsChange}
-        disabled={disabled}
-      />
+      <aside className="space-y-3 lg:sticky lg:top-0 lg:self-start">
+        {focusedOption && (
+          <>
+            <FomodOptionImage
+              extractDir={extractDir}
+              imagePath={focusedOption.image_path}
+              alt={focusedOption.label}
+              className="aspect-[4/5] w-full"
+            />
+            <div>
+              <p className="font-semibold">{focusedOption.label}</p>
+              {focusedOption.description && (
+                <p className="mt-1 text-sm text-[var(--color-muted)]">
+                  {focusedOption.description}
+                </p>
+              )}
+            </div>
+          </>
+        )}
+      </aside>
     </div>
   );
 }
@@ -384,16 +453,22 @@ export function wizardGroupIsValid(
   }
 }
 
+export function wizardStepIsValid(
+  stepPage: WizardStepPage,
+  selections: SelectedInstallOption[]
+): boolean {
+  return stepPage.groups.every((group) => wizardGroupIsValid(group, selections));
+}
+
 export function buildWizardStepItems(
   wizard: InstallWizard | null | undefined,
+  selections: SelectedInstallOption[] = [],
   includeReview = true
-): WizardStepItem[] {
-  const items: WizardStepItem[] = [{ id: "welcome", label: "Welcome" }];
+) {
+  const items = [{ id: "welcome", label: "Welcome" }];
   if (wizard?.steps.length) {
-    for (const step of wizard.steps) {
-      for (const group of step.groups) {
-        items.push({ id: group.id, label: group.name });
-      }
+    for (const page of filterVisibleWizardSteps(wizard, selections)) {
+      items.push({ id: page.step.id, label: page.step.name });
     }
   } else {
     items.push({ id: "options", label: "Options" });

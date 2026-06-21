@@ -15,6 +15,8 @@ use crate::games::GameRegistry;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameRunningState {
     pub running: bool,
+    /// Launch was initiated but the game process has not appeared yet.
+    pub waiting: bool,
     pub profile_id: String,
     pub pid: Option<u32>,
     pub started_at: Option<i64>,
@@ -29,10 +31,11 @@ struct TrackedGame {
     history_id: String,
     known_pids: Vec<u32>,
     process_seen: bool,
+    started_event_emitted: bool,
 }
 
-/// How long to keep a launch session active while waiting for the game process to appear.
-const LAUNCH_GRACE_SECS: i64 = 300;
+/// How long to keep waiting for the game process before giving up.
+const LAUNCH_GRACE_SECS: i64 = 120;
 
 pub struct ProcessMonitor {
     inner: Arc<Mutex<MonitorInner>>,
@@ -71,22 +74,53 @@ impl ProcessMonitor {
     }
 
     pub fn is_running(&self, profile_id: &str) -> bool {
-        self.inner.lock().tracked.contains_key(profile_id)
+        self.inner
+            .lock()
+            .tracked
+            .get(profile_id)
+            .is_some_and(|t| t.process_seen)
+    }
+
+    pub fn is_waiting(&self, profile_id: &str) -> bool {
+        self.inner
+            .lock()
+            .tracked
+            .get(profile_id)
+            .is_some_and(|t| !t.process_seen)
     }
 
     pub fn any_running(&self) -> bool {
+        self.inner
+            .lock()
+            .tracked
+            .values()
+            .any(|t| t.process_seen)
+    }
+
+    pub fn any_active(&self) -> bool {
         !self.inner.lock().tracked.is_empty()
     }
 
     pub fn active_profile_id(&self) -> Option<String> {
-        self.inner.lock().tracked.keys().next().cloned()
+        self.inner
+            .lock()
+            .tracked
+            .iter()
+            .find(|(_, t)| t.process_seen)
+            .map(|(id, _)| id.clone())
+    }
+
+    pub fn clear_tracking(&self, profile_id: &str) -> Result<()> {
+        self.finish_tracking(profile_id, false);
+        Ok(())
     }
 
     pub fn get_state(&self, profile_id: &str) -> GameRunningState {
         let inner = self.inner.lock();
         if let Some(tracked) = inner.tracked.get(profile_id) {
             GameRunningState {
-                running: true,
+                running: tracked.process_seen,
+                waiting: !tracked.process_seen,
                 profile_id: profile_id.to_string(),
                 pid: tracked.known_pids.first().copied(),
                 started_at: Some(tracked.started_at),
@@ -95,6 +129,7 @@ impl ProcessMonitor {
         } else {
             GameRunningState {
                 running: false,
+                waiting: false,
                 profile_id: profile_id.to_string(),
                 pid: None,
                 started_at: None,
@@ -119,8 +154,10 @@ impl ProcessMonitor {
             .collect();
 
         let mut known_pids = Vec::new();
+        let mut process_seen = false;
         if let Some(pid) = direct_pid {
             known_pids.push(pid);
+            process_seen = true;
         }
 
         self.inner.lock().tracked.insert(
@@ -132,11 +169,14 @@ impl ProcessMonitor {
                 started_at: chrono::Utc::now().timestamp(),
                 history_id,
                 known_pids,
-                process_seen: false,
+                process_seen,
+                started_event_emitted: process_seen,
             },
         );
 
-        self.emit_game_started(profile_id);
+        if process_seen {
+            self.emit_game_started(profile_id);
+        }
         Ok(())
     }
 
@@ -150,7 +190,7 @@ impl ProcessMonitor {
         };
 
         let mut system = System::new();
-        system.refresh_processes(ProcessesToUpdate::All, true);
+        refresh_processes_for_names(&mut system, &process_names, &known_pids);
 
         let mut killed = false;
         for (pid, process) in system.processes() {
@@ -202,12 +242,30 @@ impl ProcessMonitor {
             return;
         }
 
+        let (process_names, known_pids): (Vec<Vec<String>>, Vec<Vec<u32>>) = {
+            let inner = self.inner.lock();
+            profile_ids
+                .iter()
+                .map(|id| {
+                    inner.tracked.get(id).map(|t| {
+                        (t.process_names.clone(), t.known_pids.clone())
+                    })
+                })
+                .collect::<Option<Vec<_>>>()
+                .unwrap_or_default()
+                .into_iter()
+                .unzip()
+        };
+
+        let all_names: Vec<String> = process_names.iter().flatten().cloned().collect();
+        let all_pids: Vec<u32> = known_pids.iter().flatten().copied().collect();
+
         let mut system = System::new();
-        system.refresh_processes(ProcessesToUpdate::All, true);
+        refresh_processes_for_names(&mut system, &all_names, &all_pids);
         let now = chrono::Utc::now().timestamp();
 
         for profile_id in profile_ids {
-            let (process_alive, process_seen, started_at) = {
+            let (process_alive, was_seen, emit_start, started_at) = {
                 let mut inner = self.inner.lock();
                 let Some(tracked) = inner.tracked.get_mut(&profile_id) else {
                     continue;
@@ -223,18 +281,28 @@ impl ProcessMonitor {
                     system.process(Pid::from_u32(*pid)).is_some()
                 });
 
+                let was_seen = tracked.process_seen;
                 if alive {
                     tracked.process_seen = true;
                 }
 
-                (alive, tracked.process_seen, tracked.started_at)
+                let emit_start = alive && !tracked.started_event_emitted;
+                if emit_start {
+                    tracked.started_event_emitted = true;
+                }
+
+                (alive, was_seen, emit_start, tracked.started_at)
             };
+
+            if emit_start {
+                self.emit_game_started(&profile_id);
+            }
 
             if process_alive {
                 continue;
             }
 
-            if !process_seen {
+            if !was_seen {
                 if now - started_at < LAUNCH_GRACE_SECS {
                     continue;
                 }
@@ -252,7 +320,9 @@ impl ProcessMonitor {
             let ended_at = chrono::Utc::now().timestamp();
             let duration = ended_at - tracked.started_at;
             let _ = db::update_launch_history_end(&tracked.history_id, ended_at, duration, success);
-            self.emit_game_exited(profile_id);
+            if tracked.started_event_emitted {
+                self.emit_game_exited(profile_id);
+            }
         }
     }
 
@@ -268,6 +338,21 @@ impl ProcessMonitor {
             let state = self.get_state(profile_id);
             let _ = handle.emit("game:exited", state);
         }
+    }
+}
+
+fn refresh_processes_for_names(system: &mut System, process_names: &[String], known_pids: &[u32]) {
+    if known_pids.is_empty() && process_names.is_empty() {
+        return;
+    }
+
+    if !known_pids.is_empty() {
+        let pids: Vec<Pid> = known_pids.iter().map(|p| Pid::from_u32(*p)).collect();
+        system.refresh_processes(ProcessesToUpdate::Some(&pids), true);
+    }
+
+    if !process_names.is_empty() {
+        system.refresh_processes(ProcessesToUpdate::All, true);
     }
 }
 
