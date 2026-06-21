@@ -540,6 +540,112 @@ pub fn apply_install_selections(
         .collect()
 }
 
+/// Rewrite kept entry paths according to active FOMOD source→destination mappings
+/// (e.g. `00 Required/CBBE.esp` + destination `Data` → `CBBE.esp`).
+pub fn apply_fomod_destination_remap(
+    entries: &[ArchiveEntry],
+    groups: &[InstallOptionGroup],
+    selections: &[SelectedInstallOption],
+    wizard: Option<&InstallWizard>,
+) -> Vec<ArchiveEntry> {
+    let Some(wizard) = wizard else {
+        return entries.to_vec();
+    };
+    let mappings = active_fomod_file_mappings(groups, selections, wizard);
+    if mappings.is_empty() {
+        return entries.to_vec();
+    }
+
+    let prefix = infer_content_prefix(entries);
+    entries
+        .iter()
+        .map(|entry| {
+            let rel = normalize_entry_path(&entry.path, prefix.as_deref());
+            let remapped = remap_entry_for_fomod_mappings(&rel, &mappings).unwrap_or(rel);
+            ArchiveEntry {
+                path: remapped,
+                ..entry.clone()
+            }
+        })
+        .collect()
+}
+
+fn active_fomod_file_mappings(
+    groups: &[InstallOptionGroup],
+    selections: &[SelectedInstallOption],
+    wizard: &InstallWizard,
+) -> Vec<FomodFileRef> {
+    let mut mappings = wizard.required_files.clone();
+    let flags = active_fomod_flags(groups, selections);
+    for pattern in &wizard.conditional_patterns {
+        if condition_matches(&pattern.condition, &flags) {
+            mappings.extend(pattern.files.clone());
+        }
+    }
+    mappings
+}
+
+fn remap_entry_for_fomod_mappings(rel: &str, mappings: &[FomodFileRef]) -> Option<String> {
+    let rel = rel.replace('\\', "/");
+    let mut best: Option<(usize, String)> = None;
+
+    for mapping in mappings {
+        let Some(remapped) = remap_entry_for_fomod_mapping(&rel, mapping) else {
+            continue;
+        };
+        let source = mapping.source.replace('\\', "/").trim_matches('/').to_string();
+        let score = source.len();
+        if best.as_ref().map(|(len, _)| score > *len).unwrap_or(true) {
+            best = Some((score, remapped));
+        }
+    }
+
+    best.map(|(_, path)| path)
+}
+
+fn remap_entry_for_fomod_mapping(rel: &str, mapping: &FomodFileRef) -> Option<String> {
+    let dest = mapping.destination.as_deref()?.trim();
+    if dest.is_empty() {
+        return None;
+    }
+    let source = mapping.source.replace('\\', "/").trim_matches('/').to_string();
+    let dest = dest.replace('\\', "/").trim_matches('/').to_string();
+
+    for candidate in fomod_source_match_candidates(&source) {
+        if rel == candidate {
+            return Some(apply_fomod_destination(&dest, ""));
+        }
+        if let Some(suffix) = rel.strip_prefix(&format!("{candidate}/")) {
+            return Some(apply_fomod_destination(&dest, suffix));
+        }
+    }
+    None
+}
+
+fn fomod_source_match_candidates(source: &str) -> Vec<String> {
+    let mut out = vec![source.to_string()];
+    if !source.to_lowercase().starts_with("data/") {
+        out.push(format!("Data/{source}"));
+    }
+    if let Some(stripped) = source
+        .strip_prefix("Data/")
+        .or_else(|| source.strip_prefix("data/"))
+    {
+        out.push(stripped.to_string());
+    }
+    out
+}
+
+fn apply_fomod_destination(dest: &str, suffix: &str) -> String {
+    if suffix.is_empty() {
+        return dest.to_string();
+    }
+    if dest.eq_ignore_ascii_case("data") {
+        return suffix.replace('\\', "/");
+    }
+    format!("{}/{}", dest.trim_matches('/'), suffix.replace('\\', "/"))
+}
+
 /// Count deployable files per option when that option is selected (for wizard UI badges).
 pub fn compute_option_file_counts(
     all_entries: &[ArchiveEntry],
@@ -579,7 +685,8 @@ pub fn compute_option_file_counts(
                 }
             }
             let filtered = apply_install_selections(all_entries, groups, &sim, wizard);
-            let file_count = filtered.iter().filter(|e| !e.is_dir).count() as u32;
+            let remapped = apply_fomod_destination_remap(&filtered, groups, &sim, wizard);
+            let file_count = remapped.iter().filter(|e| !e.is_dir).count() as u32;
             counts.insert(option.id.clone(), file_count);
         }
     }
@@ -880,8 +987,7 @@ pub fn prune_extract_dir(
         if kept.contains(&entry.path.replace('\\', "/")) {
             continue;
         }
-        let disk = crate::services::deploy::resolve_extract_root(extract_dir)
-            .join(entry.path.replace('/', std::path::MAIN_SEPARATOR_STR));
+        let disk = crate::services::deploy::resolve_entry_source_path(extract_dir, entries, entry);
         if disk.is_file() {
             let _ = std::fs::remove_file(&disk);
         }
@@ -1798,6 +1904,64 @@ mod tests {
 
         let groups = detect_heuristic_groups(&entries);
         assert!(groups.is_empty());
+    }
+
+    #[test]
+    fn remaps_fomod_destination_folders_into_data_root() {
+        let xml = r#"
+        <config>
+          <requiredInstallFiles>
+            <folder source="00 Required" destination="Data"/>
+          </requiredInstallFiles>
+          <installSteps>
+            <installStep name="Body">
+              <optionalFileGroups>
+                <group name="Shape" type="SelectExactlyOne" defaultOption="Curvy">
+                  <plugins>
+                    <plugin name="Curvy">
+                      <conditionFlags>
+                        <flag name="CurvyBody">On</flag>
+                      </conditionFlags>
+                    </plugin>
+                  </plugins>
+                </group>
+              </optionalFileGroups>
+            </installStep>
+          </installSteps>
+          <conditionalFileInstalls>
+            <patterns>
+              <pattern>
+                <dependencies operator="And">
+                  <flagDependency flag="CurvyBody" value="On"/>
+                </dependencies>
+                <files>
+                  <folder source="01 Curvy" destination="Data"/>
+                </files>
+              </pattern>
+            </patterns>
+          </conditionalFileInstalls>
+        </config>"#;
+
+        let wizard = parse_fomod_wizard(xml).unwrap();
+        let groups = wizard.flattened_groups();
+        let selections = vec![SelectedInstallOption {
+            group_id: groups[0].id.clone(),
+            option_ids: vec![groups[0].options[0].id.clone()],
+        }];
+        let entries = vec![
+            entry("00 Required/CBBE.esp"),
+            entry("01 Curvy/meshes/actors/character/characterassets/FemaleBody.nif"),
+            entry("02 Slim/meshes/actors/character/characterassets/FemaleBody.nif"),
+        ];
+        let kept = apply_install_selections(&entries, &groups, &selections, Some(&wizard));
+        let remapped = apply_fomod_destination_remap(&kept, &groups, &selections, Some(&wizard));
+
+        assert!(remapped.iter().any(|e| e.path == "CBBE.esp"));
+        assert!(remapped
+            .iter()
+            .any(|e| e.path == "meshes/actors/character/characterassets/FemaleBody.nif"));
+        assert!(!remapped.iter().any(|e| e.path.contains("01 Curvy")));
+        assert!(!remapped.iter().any(|e| e.path.contains("00 Required")));
     }
 
     #[test]

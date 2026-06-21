@@ -168,6 +168,36 @@ pub fn is_fallout4_data_file(path: &str) -> bool {
         || lower.ends_with(".modgroups")
 }
 
+/// Resolve the on-disk path for an archive entry under an extract directory,
+/// accounting for single-folder wrappers (but not Data/ itself).
+pub fn resolve_entry_source_path(
+    extract_dir: &Path,
+    _entries: &[ArchiveEntry],
+    entry: &ArchiveEntry,
+) -> PathBuf {
+    let content_root = resolve_extract_root(extract_dir);
+    let rel = entry.path.replace('\\', "/");
+    let wrapper_prefix = content_root
+        .strip_prefix(extract_dir)
+        .ok()
+        .and_then(|p| {
+            let stripped = p.to_string_lossy().replace('\\', "/");
+            if stripped.is_empty() {
+                None
+            } else {
+                Some(format!("{}/", stripped.trim_matches('/')))
+            }
+        });
+
+    let rel = if let Some(prefix) = wrapper_prefix {
+        rel.strip_prefix(&prefix).unwrap_or(&rel).to_string()
+    } else {
+        rel
+    };
+
+    content_root.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR))
+}
+
 pub fn resolve_extract_root(extract_dir: &Path) -> PathBuf {
     let Ok(entries) = std::fs::read_dir(extract_dir) else {
         return extract_dir.to_path_buf();
@@ -181,6 +211,32 @@ pub fn resolve_extract_root(extract_dir: &Path) -> PathBuf {
     extract_dir.to_path_buf()
 }
 
+pub fn compute_entry_deploy_target(
+    game_path: &Path,
+    plan: &DeployPlan,
+    rel: &str,
+) -> Option<PathBuf> {
+    let rel = rel.replace('\\', "/");
+    match plan.strategy.as_str() {
+        "merge_data" => {
+            let rel = rel
+                .strip_prefix("Data/")
+                .or_else(|| rel.strip_prefix("data/"))
+                .unwrap_or(&rel);
+            Some(game_path.join("Data").join(rel))
+        }
+        "copy_loose_to_data" => {
+            if !is_fallout4_data_file(&rel) {
+                return None;
+            }
+            Some(game_path.join("Data").join(rel))
+        }
+        "merge_loose_to_data" => Some(game_path.join("Data").join(rel)),
+        "staging_only" => None,
+        _ => Some(game_path.join(&rel)),
+    }
+}
+
 pub fn compute_deploy_paths(
     plan: &DeployPlan,
     entries: &[ArchiveEntry],
@@ -191,33 +247,84 @@ pub fn compute_deploy_paths(
 
     for entry in entries.iter().filter(|e| !e.is_dir) {
         let rel = strip_archive_prefix(&entry.path, prefix.as_deref());
-        let rel = rel.replace('\\', "/");
-
-        let target = match plan.strategy.as_str() {
-            "merge_data" => {
-                let rel = rel
-                    .strip_prefix("Data/")
-                    .or_else(|| rel.strip_prefix("data/"))
-                    .unwrap_or(&rel);
-                game_path.join("Data").join(rel)
-            }
-            "copy_loose_to_data" => {
-                if !is_fallout4_data_file(&rel) {
-                    continue;
-                }
-                game_path.join("Data").join(rel)
-            }
-            "merge_loose_to_data" => game_path.join("Data").join(rel),
-            "staging_only" => continue,
-            _ => game_path.join(&rel),
-        };
-
-        paths.push(target.display().to_string());
+        if let Some(target) = compute_entry_deploy_target(game_path, plan, &rel) {
+            paths.push(target.display().to_string());
+        }
     }
 
     paths.sort();
     paths.dedup();
     paths
+}
+
+/// Deploy filtered archive entries file-by-file. Uses each entry's archive path
+/// to locate the source file (wrapper-aware) and the deploy plan for targets.
+pub fn deploy_extracted_entries(
+    extract_dir: &Path,
+    source_entries: &[ArchiveEntry],
+    deploy_entries: &[ArchiveEntry],
+    game_path: &Path,
+    plan: &DeployPlan,
+    options: MergeOptions,
+) -> Result<Vec<String>> {
+    let prefix = infer_content_prefix(deploy_entries);
+    let pairs: Vec<_> = source_entries
+        .iter()
+        .zip(deploy_entries.iter())
+        .filter(|(_, deploy)| !deploy.is_dir)
+        .collect();
+    let total = pairs.len();
+    let resolve_case = std::env::consts::OS == "linux";
+    let mut case_cache = CaseCache::new();
+    let mut deployed = Vec::new();
+
+    if plan.strategy.as_str() == "staging_only" {
+        return Ok(deployed);
+    }
+
+    for (index, (source_entry, deploy_entry)) in pairs.iter().enumerate() {
+        let src = resolve_entry_source_path(extract_dir, source_entries, source_entry);
+        if !src.is_file() {
+            continue;
+        }
+
+        let rel = strip_archive_prefix(&deploy_entry.path, prefix.as_deref());
+        let target_path = compute_entry_deploy_target(game_path, plan, &rel);
+        let Some(target_path) = target_path else {
+            continue;
+        };
+
+        let target = if resolve_case {
+            let base = target_path.parent().unwrap_or(game_path);
+            let rel_name = target_path
+                .strip_prefix(base)
+                .unwrap_or(target_path.as_path());
+            resolve_deploy_target(base, rel_name, &mut case_cache)
+        } else {
+            target_path
+        };
+
+        if target.exists() && !options.overwrite {
+            continue;
+        }
+
+        if options.dry_run {
+            deployed.push(target.display().to_string());
+        } else {
+            deploy_file(&src, &target)?;
+            deployed.push(target.display().to_string());
+        }
+
+        if let Some(ref on_progress) = options.on_progress {
+            on_progress(MergeProgressEvent {
+                files_done: index + 1,
+                files_total: total,
+                current_file: rel,
+            });
+        }
+    }
+
+    Ok(deployed)
 }
 
 pub fn filter_deploy_paths(paths: &[String], overwrite: bool) -> (Vec<String>, usize) {
@@ -565,6 +672,63 @@ mod tests {
         let a = resolve_deploy_target(&base, Path::new("Meshes/Weapon/sword.nif"), &mut cache);
         let b = resolve_deploy_target(&base, Path::new("meshes/weapon/axe.nif"), &mut cache);
         assert_eq!(a.parent().unwrap(), b.parent().unwrap());
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_entry_source_path_honors_wrapper_prefix() {
+        let base = std::env::temp_dir().join(format!(
+            "nexusdeck-entry-src-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&base);
+        let wrapper = base.join("Commonwealth Cuts");
+        let data_file = wrapper.join("Data").join("KSHairdos.esp");
+        fs::create_dir_all(data_file.parent().unwrap()).unwrap();
+        fs::write(&data_file, b"x").unwrap();
+
+        let entries = vec![entry("Commonwealth Cuts/Data/KSHairdos.esp")];
+        let resolved =
+            resolve_entry_source_path(&base, &entries, &entries[0]);
+        assert_eq!(resolved, data_file);
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn deploy_extracted_entries_uses_wrapper_aware_sources() {
+        let base = std::env::temp_dir().join(format!(
+            "nexusdeck-entry-deploy-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&base);
+        let extract = base.join("extract");
+        let game = base.join("game");
+        let wrapper = extract.join("Commonwealth Cuts");
+        let src_file = wrapper.join("Data").join("KSHairdos.esp");
+        fs::create_dir_all(src_file.parent().unwrap()).unwrap();
+        fs::write(&src_file, b"plugin").unwrap();
+        fs::create_dir_all(game.join("Data")).unwrap();
+
+        let entries = vec![entry("Commonwealth Cuts/Data/KSHairdos.esp")];
+        let plan = merge_data_plan();
+        let deployed = deploy_extracted_entries(
+            &extract,
+            &entries,
+            &entries,
+            &game,
+            &plan,
+            MergeOptions {
+                overwrite: true,
+                dry_run: false,
+                on_progress: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(deployed.len(), 1);
+        assert!(game.join("Data").join("KSHairdos.esp").exists());
 
         let _ = fs::remove_dir_all(&base);
     }

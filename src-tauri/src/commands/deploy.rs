@@ -536,8 +536,14 @@ pub async fn preview_mod_install(
     let default_selections =
         crate::services::install_options::default_selections(&option_groups);
     let selections = selected_options.unwrap_or(default_selections.clone());
-    let entries = crate::services::install_options::apply_install_selections(
+    let disk_entries = crate::services::install_options::apply_install_selections(
         &all_entries,
+        &option_groups,
+        &selections,
+        install_wizard.as_ref(),
+    );
+    let entries = crate::services::install_options::apply_fomod_destination_remap(
+        &disk_entries,
         &option_groups,
         &selections,
         install_wizard.as_ref(),
@@ -946,8 +952,14 @@ pub async fn install_mod_from_archive(
         })??;
     }
 
-    let entries = crate::services::install_options::apply_install_selections(
+    let disk_entries = crate::services::install_options::apply_install_selections(
         &all_entries,
+        &option_groups,
+        &selections,
+        fomod_wizard.as_ref(),
+    );
+    let entries = crate::services::install_options::apply_fomod_destination_remap(
+        &disk_entries,
         &option_groups,
         &selections,
         fomod_wizard.as_ref(),
@@ -957,7 +969,7 @@ pub async fn install_mod_from_archive(
         crate::services::install_options::validate_fomod_selection_deploy(
             &option_groups,
             &selections,
-            &entries,
+            &disk_entries,
             fomod_wizard.as_ref(),
         )?;
     }
@@ -969,7 +981,7 @@ pub async fn install_mod_from_archive(
         &options.strategy,
     )?;
 
-    crate::services::install_options::prune_extract_dir(&temp_extract, &all_entries, &entries)?;
+    crate::services::install_options::prune_extract_dir(&temp_extract, &all_entries, &disk_entries)?;
 
     install_progress(
         &app,
@@ -1027,6 +1039,7 @@ pub async fn install_mod_from_archive(
     let domain = profile.game_domain.clone();
     let profile_for_deploy = profile.clone();
     let temp_extract_deploy = temp_extract.clone();
+    let disk_entries_deploy = disk_entries.clone();
     let entries_deploy = entries.clone();
     let plan_for_deploy = plan.clone();
     let merge_options_deploy = merge_options.clone();
@@ -1042,6 +1055,7 @@ pub async fn install_mod_from_archive(
                 &domain,
                 &profile_for_deploy,
                 &temp_extract_deploy,
+                &disk_entries_deploy,
                 &entries_deploy,
                 Some(&plan_for_deploy),
                 merge_options_deploy,

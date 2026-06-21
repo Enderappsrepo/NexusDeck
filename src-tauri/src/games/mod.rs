@@ -239,7 +239,8 @@ pub fn deploy_mod(
     domain: &str,
     profile: &Profile,
     extract_dir: &Path,
-    entries: &[ArchiveEntry],
+    source_entries: &[ArchiveEntry],
+    deploy_entries: &[ArchiveEntry],
     plan_override: Option<&DeployPlan>,
     merge_options: MergeOptions,
     mod_name: &str,
@@ -247,8 +248,23 @@ pub fn deploy_mod(
     let plugin = GameRegistry::get(domain)?;
     let plan = plan_override
         .cloned()
-        .unwrap_or_else(|| plugin.analyze_archive(Path::new(&profile.game_path), entries));
-    let manifest = plugin.deploy_extracted(profile, extract_dir, &plan, merge_options)?;
+        .unwrap_or_else(|| plugin.analyze_archive(Path::new(&profile.game_path), deploy_entries));
+    let game_root = Path::new(&profile.game_path);
+    let files = if deploy_entries.is_empty() || plan.strategy == "staging_only" {
+        plugin
+            .deploy_extracted(profile, extract_dir, &plan, merge_options)?
+            .files
+    } else {
+        crate::services::deploy::deploy_extracted_entries(
+            extract_dir,
+            source_entries,
+            deploy_entries,
+            game_root,
+            &plan,
+            merge_options,
+        )?
+    };
+    let manifest = InstallManifest { files };
 
     let existing: Vec<(String, Vec<String>)> = crate::db::list_installed_mods(&profile.id)?
         .into_iter()
