@@ -27,6 +27,8 @@ pub struct InstallOptions {
     pub selected_options: Vec<crate::services::install_options::SelectedInstallOption>,
     #[serde(default)]
     pub prepared_extract_dir: Option<String>,
+    #[serde(default)]
+    pub wizard_hash: Option<String>,
 }
 
 impl Default for InstallOptions {
@@ -37,6 +39,7 @@ impl Default for InstallOptions {
             overwrite_files: false,
             selected_options: Vec::new(),
             prepared_extract_dir: None,
+            wizard_hash: None,
         }
     }
 }
@@ -48,6 +51,12 @@ impl InstallOptions {
         stored.prepared_extract_dir = None;
         stored
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FomodWizardState {
+    pub wizard: crate::services::install_options::InstallWizard,
+    pub active_flags: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -405,8 +414,16 @@ pub async fn preview_mod_install(
         entry_count,
     );
 
-    let install_wizard_required = extract_dir.is_none()
-        && crate::services::install_options::archive_has_fomod_config(&all_entries);
+    let install_wizard_required = if extract_dir.is_some() {
+        false
+    } else if !crate::services::install_options::archive_has_fomod_config(&all_entries) {
+        false
+    } else if crate::services::install_options::should_defer_fomod_detection(&archive, &all_entries)
+    {
+        true
+    } else {
+        false
+    };
 
     if install_wizard_required {
         let archive_folders = archive_top_level_folders(&all_entries);
@@ -737,6 +754,8 @@ pub async fn install_mod_from_archive(
     let profile = db::get_profile(&profile_id)?
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
 
+    let mut options = options;
+
     let explicit_replace = replace_mod_id.clone();
     let matching_mods: Vec<_> = db::list_installed_mods(&profile_id)?
         .into_iter()
@@ -761,13 +780,9 @@ pub async fn install_mod_from_archive(
     }
 
     let archive = PathBuf::from(&archive_path);
-    let using_prepared = options.prepared_extract_dir.is_some() && replace_mod_id.is_none();
+    let using_prepared = options.prepared_extract_dir.is_some();
     let temp_extract = if let Some(ref prepared) = options.prepared_extract_dir {
-        if using_prepared {
-            PathBuf::from(prepared)
-        } else {
-            install_work_dir()?.join(format!("nexusdeck-install-{}", Uuid::new_v4()))
-        }
+        PathBuf::from(prepared)
     } else {
         install_work_dir()?.join(format!("nexusdeck-install-{}", Uuid::new_v4()))
     };
@@ -993,6 +1008,14 @@ pub async fn install_mod_from_archive(
         .filter(|t| t != "[]")
         .unwrap_or(saved_tags_json);
 
+    if let Some(ref wizard) = fomod_wizard {
+        if crate::services::install_options::wizard_has_install_rules(wizard) {
+            options.wizard_hash = Some(crate::services::install_options::wizard_structure_hash(
+                wizard,
+            ));
+        }
+    }
+
     let install_options_json = serde_json::to_string(&options.for_storage())?;
 
     let mut mod_record = InstalledMod {
@@ -1079,6 +1102,23 @@ pub async fn finish_mod_update(
     let profile = db::get_profile(&download.profile_id)?
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
 
+    let archive = PathBuf::from(&download.dest_path);
+    if let Ok(entries) = list_archive_entries(&archive) {
+        if let Some(wizard) =
+            crate::services::install_options::detect_fomod_wizard(&archive, &entries)
+        {
+            if crate::services::install_options::wizard_has_install_rules(&wizard) {
+                let new_hash =
+                    crate::services::install_options::wizard_structure_hash(&wizard);
+                if options.wizard_hash.as_deref() != Some(new_hash.as_str()) {
+                    return Err(crate::error::NexusDeckError::Other(
+                        "REWIZARD_REQUIRED: The mod's FOMOD installer changed. Run through the install wizard to choose options.".into(),
+                    ));
+                }
+            }
+        }
+    }
+
     let file_version = nexus
         .get_mod_files(&profile.game_domain, installed.nexus_mod_id as u64)
         .await
@@ -1118,6 +1158,41 @@ pub async fn finish_mod_update(
     let _ = app.emit("mod-update-complete", &mod_record);
 
     Ok(mod_record)
+}
+
+#[tauri::command]
+pub fn get_fomod_wizard_state(
+    extract_dir: String,
+    archive_path: String,
+    selections: Vec<crate::services::install_options::SelectedInstallOption>,
+) -> Result<FomodWizardState> {
+    use crate::services::archive::list_extracted_entries;
+
+    let extract = PathBuf::from(extract_dir);
+    let archive = PathBuf::from(archive_path);
+    let entries = list_extracted_entries(&extract)?;
+    let wizard = crate::services::install_options::detect_install_wizard_from_dir(
+        &archive,
+        &extract,
+        &entries,
+    );
+    let filtered =
+        crate::services::install_options::filter_visible_wizard(&wizard, &selections);
+    let active_flags =
+        crate::services::install_options::active_fomod_flag_map(&wizard, &selections);
+    Ok(FomodWizardState {
+        wizard: filtered,
+        active_flags,
+    })
+}
+
+#[tauri::command]
+pub fn cleanup_prepare_dir(extract_dir: String) -> Result<()> {
+    let path = PathBuf::from(extract_dir);
+    if path.is_dir() {
+        let _ = std::fs::remove_dir_all(&path);
+    }
+    Ok(())
 }
 
 #[tauri::command]

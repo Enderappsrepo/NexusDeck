@@ -1,8 +1,8 @@
 # NexusDeck
 
-A lightweight, controller-friendly Nexus Mods client for **Steam Deck** and **Windows**.
+A lightweight, controller-friendly Nexus Mods client for **Steam Deck** and **Windows**, with **DeckModFix** automation for Skyrim SE modding.
 
-NexusDeck lets you browse, download, and install mods with a console-like UI optimized for handheld PCs. Fallout 4 is the first fully supported game.
+NexusDeck lets you browse, download, and install mods with a console-like UI optimized for handheld PCs. **Skyrim Special Edition** and **Fallout 4** are fully supported with DeckModFix troubleshooting, Proton automation, and MO2 integration.
 
 ## Features
 
@@ -13,6 +13,10 @@ NexusDeck lets you browse, download, and install mods with a console-like UI opt
 - Secure API key storage via OS keyring
 - Steam library auto-detection (`libraryfolders.vdf`)
 - Fallout 4 Setup Wizard (path, staging, F4SE, profile, test deploy)
+- **Skyrim SE DeckModFix** — extended setup (Proton prefix, protontricks, SKSE, MO2 vs direct)
+- **Troubleshoot hub** — diagnostic scan, one-click safe fixes, Markdown export
+- **MO2 integration** — rockerbacon Linux installer wrapper + instance paths
+- Skyrim SE Deck INI presets (Lite / Balanced / Quality)
 - Advanced mod search with category, tag, trending, and endorsement filters
 - Download queue with resume, cancel, retry, concurrency limit, and speed cap
 - Auto-install prompt after download completes
@@ -43,6 +47,7 @@ NexusDeck lets you browse, download, and install mods with a console-like UI opt
 ### Linux / Steam Deck
 - **Flatpak** is the only supported Linux install (bundles WebKitGTK for SteamOS)
 - For local Flatpak builds: `flatpak`, `flatpak-builder`, Flathub remote
+- **DeckModFix host tools** (not bundled in Flatpak): `protontricks` or Flatpak `com.github.Matoking.protontricks`, `git` (MO2 installer)
 
 ## Development
 

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { OnboardingStepIndicator } from "@/components/wizard/OnboardingStepIndicator";
+import { useGamepadBackHandler } from "@/hooks/useGamepadRouter";
 import { useAuthStore } from "@/stores";
 import { api } from "@/lib/commands";
 import type { GameCandidate, PlatformInfo } from "@/lib/nexus/types";
@@ -43,6 +44,28 @@ function OnboardingPage() {
   const visibleStep: OnboardingStep =
     user && step !== "apikey" && step !== "finish" ? "finish" : step;
   const stepIndex = STEPS.indexOf(visibleStep);
+
+  const goBackStep = () => {
+    if (visibleStep === "finish") {
+      setStep("apikey");
+      return;
+    }
+    if (visibleStep === "apikey") {
+      setStep(platform?.is_steam_deck ? "library" : "steam");
+      return;
+    }
+    if (visibleStep === "library") {
+      setStep("steam");
+      return;
+    }
+    if (visibleStep === "steam") {
+      setStep("welcome");
+    }
+  };
+
+  useGamepadBackHandler(() => {
+    if (visibleStep !== "welcome") goBackStep();
+  });
 
   const scanSteam = async () => {
     const steam = await api.detectSteamInstall();
@@ -134,7 +157,7 @@ function OnboardingPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-xl flex-col gap-6 py-8">
+    <div className="mx-auto flex max-w-xl flex-col gap-6 py-8" data-scroll-pane>
       <div className="flex flex-col items-center gap-3 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[image:var(--gradient-primary)] text-2xl font-bold text-white shadow-[var(--shadow-glow)]">
           ND
@@ -226,7 +249,7 @@ function OnboardingPage() {
                   <span className="font-mono">{detectedGames[0].install_path}</span>
                 </p>
               )}
-              <Button variant="secondary" onClick={scanSteam}>
+              <Button variant="secondary" onClick={scanSteam} data-focusable="true">
                 Scan again
               </Button>
             </div>
@@ -250,6 +273,7 @@ function OnboardingPage() {
                   className="mt-2"
                   value={steamName}
                   onChange={(e) => setSteamName(e.target.value)}
+                  data-focusable="true"
                 />
               </div>
               {steamAdded ? (
@@ -257,7 +281,7 @@ function OnboardingPage() {
                   Added to Steam. Restart Steam for the shortcut to appear.
                 </p>
               ) : (
-                <Button loading={addingToSteam} onClick={addToSteam} variant="secondary">
+                <Button loading={addingToSteam} onClick={addToSteam} variant="secondary" data-focusable="true">
                   Add NexusDeck to Steam
                 </Button>
               )}
@@ -277,6 +301,7 @@ function OnboardingPage() {
                 placeholder="Nexus API Key"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
+                data-focusable="true"
               />
               <Button
                 variant="ghost"
@@ -284,6 +309,7 @@ function OnboardingPage() {
                 onClick={() =>
                   openUrl("https://www.nexusmods.com/users/myaccount?tab=api+access")
                 }
+                data-focusable="true"
               >
                 Get your API key from Nexus Mods
               </Button>
@@ -309,6 +335,7 @@ function OnboardingPage() {
                     loading={finishing}
                     onClick={() => finishSetup(true)}
                     className="flex-1"
+                    data-focusable="true"
                   >
                     Set up Fallout 4
                   </Button>
@@ -318,6 +345,7 @@ function OnboardingPage() {
                   loading={finishing}
                   onClick={() => finishSetup(false)}
                   className="flex-1"
+                  data-focusable="true"
                 >
                   Go to home
                 </Button>
@@ -326,7 +354,8 @@ function OnboardingPage() {
                 <Link
                   to="/games/$domain/setup"
                   params={{ domain: "fallout4" }}
-                  className="text-center text-sm text-[var(--color-primary)]"
+                  className="focusable text-center text-sm text-[var(--color-primary)]"
+                  data-focusable="true"
                 >
                   Open setup wizard later
                 </Link>
@@ -343,6 +372,7 @@ function OnboardingPage() {
                 (visibleStep === "apikey" && !apiKey.trim()) ||
                 addingToSteam
               }
+              data-focusable="true"
             >
               {loading
                 ? "Connecting..."

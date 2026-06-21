@@ -1,11 +1,18 @@
 import { createRootRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { AppShell } from "@/components/layout/AppShell";
 import { DownloadQueuePanel } from "@/components/download/DownloadQueuePanel";
 import { InstallPromptDialog } from "@/components/install/InstallPromptDialog";
+import { InstallQueuePanel } from "@/components/install/InstallQueuePanel";
 import { ModInstallDialog } from "@/components/mod/ModInstallDialog";
-import { useAuthStore, useDownloadsStore, useGamesStore } from "@/stores";
+import {
+  useAuthStore,
+  useDownloadsStore,
+  useGamesStore,
+  useInstallQueueStore,
+  useSettingsStore,
+} from "@/stores";
 import { ControllerHintBar } from "@/components/controller/ControllerHintBar";
 import { CommandPalette } from "@/components/controller/CommandPalette";
 import { useFocusNavigation } from "@/hooks/useFocusNavigation";
@@ -16,7 +23,9 @@ import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
 import { useLaunchStore } from "@/stores/launchStore";
 import { api } from "@/lib/commands";
 import { ensureGamepadPolyfill } from "@/lib/gamepadPolyfill";
-import type { DownloadProgress, ModFileInfo, Profile } from "@/lib/nexus/types";
+import type { DownloadProgress, Profile, AppUpdateInfo } from "@/lib/nexus/types";
+
+const DISMISSED_UPDATE_KEY = "nexusdeck_dismissed_update_version";
 
 function markBootReady() {
   window.__nexusdeckBootReady?.();
@@ -57,20 +66,40 @@ function RootLayout() {
   const setError = useDownloadsStore((s) => s.setError);
   const dismiss = useDownloadsStore((s) => s.dismiss);
   const hydrateFromRecords = useDownloadsStore((s) => s.hydrateFromRecords);
+  const downloadSettings = useSettingsStore((s) => s.downloadSettings);
+  const loadSettings = useSettingsStore((s) => s.loadSettings);
   const updatingDownloadsRef = useRef(new Set<string>());
   const subscribeLaunchEvents = useLaunchStore((s) => s.subscribeEvents);
   const loadLaunchSettings = useLaunchStore((s) => s.loadSettings);
   const launchFromStore = useLaunchStore((s) => s.launch);
 
-  const [installPrompt, setInstallPrompt] = useState<DownloadProgress | null>(null);
-  const [pendingInstall, setPendingInstall] = useState<{
-    profile: Profile;
-    modId: number;
-    modName: string;
-    file: ModFileInfo;
-    archivePath: string;
-    replaceModId?: string;
-  } | null>(null);
+  const installPrompt = useInstallQueueStore((s) => s.installPrompt);
+  const activeJob = useInstallQueueStore((s) => s.getActiveJob());
+  const showInstallPrompt = useInstallQueueStore((s) => s.showInstallPrompt);
+  const dismissInstallPrompt = useInstallQueueStore((s) => s.dismissInstallPrompt);
+  const enqueueFromDownload = useInstallQueueStore((s) => s.enqueueFromDownload);
+  const completeActive = useInstallQueueStore((s) => s.completeActive);
+  const cancelActive = useInstallQueueStore((s) => s.cancelActive);
+
+  const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
+
+  useEffect(() => {
+    void api.checkAppUpdate().then((info) => {
+      if (!info.update_available && !info.update_required) return;
+      const dismissed = localStorage.getItem(DISMISSED_UPDATE_KEY);
+      if (!info.update_required && dismissed === info.latest_version) return;
+      setUpdateInfo(info);
+    }).catch(() => {});
+  }, []);
+
+  const dismissUpdate = useCallback(() => {
+    if (updateInfo && !updateInfo.update_required) {
+      localStorage.setItem(DISMISSED_UPDATE_KEY, updateInfo.latest_version);
+    }
+    setUpdateInfo(null);
+  }, [updateInfo]);
+  const prioritizeDownload = useInstallQueueStore((s) => s.prioritizeDownload);
+  const pendingByDownloadId = useInstallQueueStore((s) => s.pendingByDownloadId);
 
   const completeUpdateDownload = useCallback(
     async (download: DownloadProgress) => {
@@ -80,37 +109,64 @@ function RootLayout() {
         await api.completeModUpdate(download.id);
         await dismiss(download.id);
       } catch (err) {
-        setError(download.id, err instanceof Error ? err.message : String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("REWIZARD_REQUIRED")) {
+          await enqueueFromDownload(download, "update", profiles, {
+            replaceModId: download.update_target_mod_id,
+          });
+        } else {
+          setError(download.id, message);
+        }
       } finally {
         updatingDownloadsRef.current.delete(download.id);
       }
     },
-    [dismiss, setError]
+    [dismiss, setError, enqueueFromDownload, profiles]
   );
 
-  const handleInstallNowFromDownload = useCallback(async (download: DownloadProgress) => {
-    if (download.update_target_mod_id) {
-      await completeUpdateDownload(download);
-      return;
-    }
-    const prof = resolveProfile(profiles, download);
-    if (!prof) return;
-    try {
-      const files = await api.getModFiles(download.game_domain, download.mod_id);
-      const file = files.find((f) => f.file_id === download.file_id) ?? files[0];
-      if (!file) return;
-      setPendingInstall({
-        profile: prof,
-        modId: download.mod_id,
-        modName: download.mod_name || file.name,
-        file,
-        archivePath: download.dest_path,
-        replaceModId: download.update_target_mod_id,
-      });
-    } catch {
-      setInstallPrompt(download);
-    }
-  }, [profiles, completeUpdateDownload]);
+  const handleDownloadComplete = useCallback(
+    async (download: DownloadProgress) => {
+      if (download.update_target_mod_id) {
+        await completeUpdateDownload(download);
+        return;
+      }
+
+      const pending = pendingByDownloadId[download.id];
+      const autoInstall =
+        download.auto_install ||
+        pending?.source === "collection" ||
+        pending?.source === "dep" ||
+        downloadSettings.auto_install_after_download;
+
+      if (autoInstall) {
+        const source = pending?.source ?? "manual";
+        await enqueueFromDownload(download, source, profiles, {
+          replaceModId: pending?.replaceModId,
+        });
+      } else {
+        showInstallPrompt(download);
+      }
+    },
+    [
+      pendingByDownloadId,
+      downloadSettings.auto_install_after_download,
+      completeUpdateDownload,
+      enqueueFromDownload,
+      profiles,
+      showInstallPrompt,
+    ]
+  );
+
+  const handleInstallNowFromDownload = useCallback(
+    async (download: DownloadProgress, front = false) => {
+      if (download.update_target_mod_id) {
+        await completeUpdateDownload(download);
+        return;
+      }
+      await enqueueFromDownload(download, "manual", profiles, { front });
+    },
+    [profiles, completeUpdateDownload, enqueueFromDownload]
+  );
 
   useFocusNavigation(containerRef);
   useGamepadBack();
@@ -124,6 +180,7 @@ function RootLayout() {
     initialize();
     loadProfiles();
     loadLaunchSettings();
+    loadSettings();
     api.listDownloads().then(hydrateFromRecords);
     const unsubLaunch = subscribeLaunchEvents();
     api
@@ -145,6 +202,7 @@ function RootLayout() {
     hydrateFromRecords,
     subscribeLaunchEvents,
     loadLaunchSettings,
+    loadSettings,
     navigate,
     pathname,
   ]);
@@ -170,17 +228,7 @@ function RootLayout() {
     );
     listen<DownloadProgress>("download-complete", (e) => {
       setProgress(e.payload);
-      const download = e.payload;
-      if (download.update_target_mod_id) {
-        void completeUpdateDownload(download);
-        return;
-      }
-      const autoInstall = useDownloadsStore.getState().consumeAutoInstall(e.payload.id);
-      if (autoInstall) {
-        void handleInstallNowFromDownload(e.payload);
-      } else {
-        setInstallPrompt(e.payload);
-      }
+      void handleDownloadComplete(e.payload);
     }).then((u) => unsubs.push(u));
     listen<{ id: string; error: string }>("download-error", (e) => {
       setError(e.payload.id, e.payload.error);
@@ -195,65 +243,79 @@ function RootLayout() {
       });
     }).then((u) => unsubs.push(u));
     return () => unsubs.forEach((u) => u());
-  }, [setProgress, setError, navigate, handleInstallNowFromDownload, completeUpdateDownload]);
+  }, [setProgress, setError, navigate, handleDownloadComplete]);
 
   useEffect(() => {
     const onInstall = (e: Event) => {
-      const { downloadId } = (e as CustomEvent).detail as { downloadId: string };
+      const { downloadId, front } = (e as CustomEvent).detail as {
+        downloadId: string;
+        front?: boolean;
+      };
       const download = active[downloadId];
       if (download?.status === "complete") {
-        void handleInstallNowFromDownload(download);
+        if (front) prioritizeDownload(downloadId);
+        void handleInstallNowFromDownload(download, front);
       }
     };
     window.addEventListener("nexusdeck-install-download", onInstall);
     return () => window.removeEventListener("nexusdeck-install-download", onInstall);
-  }, [active, handleInstallNowFromDownload]);
+  }, [active, handleInstallNowFromDownload, prioritizeDownload]);
 
   const promptProfile = installPrompt
     ? resolveProfile(profiles, installPrompt)
     : undefined;
 
   const handleInstallNow = async () => {
-    if (!installPrompt || !promptProfile) return;
+    if (!installPrompt) return;
     await handleInstallNowFromDownload(installPrompt);
-    setInstallPrompt(null);
+    dismissInstallPrompt();
+  };
+
+  const handleInstallComplete = async (downloadId?: string) => {
+    const clearAfterInstall =
+      localStorage.getItem("nexusdeck_clear_download_after_install") !== "false";
+    if (downloadId && clearAfterInstall) {
+      await dismiss(downloadId).catch(() => {});
+    }
+    completeActive(downloadId);
   };
 
   return (
     <GamepadRouterProvider>
       <div ref={containerRef} className="flex h-full min-h-screen flex-col">
         <BootReadyMarker />
-        <AppShell hideNav={isOnboarding}>
+        <AppShell hideNav={isOnboarding} updateInfo={updateInfo} onDismissUpdate={dismissUpdate}>
           <Outlet />
         </AppShell>
         {!isOnboarding && <DownloadQueuePanel />}
+        {!isOnboarding && <InstallQueuePanel />}
         {!isOnboarding && <ControllerHintBar />}
         <CommandPalette />
 
-      {!isOnboarding && (
-        <InstallPromptDialog
-          open={!!installPrompt}
-          onOpenChange={(open) => !open && setInstallPrompt(null)}
-          download={installPrompt}
-          profile={promptProfile ?? null}
-          onInstall={handleInstallNow}
-          onDismiss={() => setInstallPrompt(null)}
-        />
-      )}
+        {!isOnboarding && (
+          <InstallPromptDialog
+            open={!!installPrompt}
+            onOpenChange={(open) => !open && dismissInstallPrompt()}
+            download={installPrompt}
+            profile={promptProfile ?? null}
+            onInstall={handleInstallNow}
+            onDismiss={dismissInstallPrompt}
+          />
+        )}
 
-      {!isOnboarding && pendingInstall && (
-        <ModInstallDialog
-          open
-          onOpenChange={(open) => !open && setPendingInstall(null)}
-          profile={pendingInstall.profile}
-          modId={pendingInstall.modId}
-          modName={pendingInstall.modName}
-          file={pendingInstall.file}
-          archivePathOverride={pendingInstall.archivePath}
-          replaceModId={pendingInstall.replaceModId}
-          onInstalled={() => setPendingInstall(null)}
-        />
-      )}
+        {!isOnboarding && activeJob && (
+          <ModInstallDialog
+            open
+            onOpenChange={(open) => !open && cancelActive()}
+            profile={activeJob.profile}
+            modId={activeJob.modId}
+            modName={activeJob.modName}
+            file={activeJob.file}
+            archivePathOverride={activeJob.archivePath}
+            replaceModId={activeJob.replaceModId}
+            onInstalled={() => void handleInstallComplete(activeJob.downloadId)}
+          />
+        )}
       </div>
     </GamepadRouterProvider>
   );

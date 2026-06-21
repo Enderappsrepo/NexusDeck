@@ -5,7 +5,8 @@ import { useGamesStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { CollectionInstallDialog } from "@/components/collections/CollectionInstallDialog";
 import type { CollectionDetail } from "@/lib/nexus/types";
-import { Button } from "@/components/ui/button";
+import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
+import { GP } from "@/lib/gamepad/buttons";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
@@ -26,6 +27,10 @@ function CollectionDetailPage() {
   const [error, setError] = useState<unknown>(null);
   const [installOpen, setInstallOpen] = useState(false);
 
+  useGamepadContextAction(GP.X, () => {
+    if (detail) setInstallOpen(true);
+  }, "collectionDetail");
+
   useEffect(() => {
     setLoading(true);
     api
@@ -40,7 +45,7 @@ function CollectionDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="mx-auto max-w-4xl" data-scroll-pane>
       <Link
         to="/games/$domain/collections"
         params={{ domain }}
@@ -78,7 +83,7 @@ function CollectionDetailPage() {
                 {detail.mod_count} mods
               </Badge>
             </div>
-            <Button onClick={() => setInstallOpen(true)}>
+            <Button onClick={() => setInstallOpen(true)} data-focusable="true">
               <Download className="h-4 w-4" />
               Install collection
             </Button>

@@ -1,0 +1,7 @@
+{
+  "id": "apply_deck_ini_preset",
+  "title": "Apply Deck Lite INI preset",
+  "description": "1280×800 borderless, reduced shadows and god rays for 40–60 FPS on Deck.",
+  "fix": { "type": "apply_deck_ini_preset", "backup": true, "confirm": false },
+  "deck_tip": "Use Deck Balanced when plugged in for higher settings."
+}

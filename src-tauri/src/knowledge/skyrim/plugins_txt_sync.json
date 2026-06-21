@@ -1,0 +1,8 @@
+{
+  "id": "sync_plugins_txt",
+  "title": "plugins.txt out of sync",
+  "description": "Enabled plugins in NexusDeck are not reflected in the game's plugins.txt.",
+  "symptoms": ["plugins_txt"],
+  "fix": { "type": "sync_plugins_txt", "backup": true, "confirm": false },
+  "deck_tip": "Run sync after changing load order or enabling/disabling mods."
+}

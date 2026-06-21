@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   AlertTriangle,
@@ -14,14 +14,18 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
   buildWizardStepItems,
+  filterVisibleWizardGroups,
   flattenWizardGroups,
   FomodInstallWizard,
   wizardGroupIsValid,
 } from "@/components/mod/FomodInstallWizard";
 import { InstallOptionsPanel } from "@/components/mod/InstallOptionsPanel";
+import { InstallSummaryPanel } from "@/components/mod/InstallSummaryPanel";
 import { InstallWizardStepper } from "@/components/mod/InstallWizardStepper";
 import { api } from "@/lib/commands";
+import { useGamepadBackHandler } from "@/hooks/useGamepadRouter";
 import { loadFomodAssetUrl, releaseFomodAssetUrls } from "@/lib/fomodAssets";
+import { useUiLockStore } from "@/stores/uiLockStore";
 import type {
   InstallOptions,
   InstallPreview,
@@ -118,6 +122,33 @@ export function ModInstallDialog({
     return () => window.clearInterval(timer);
   }, [extracting]);
 
+  const previewDebounceRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!open || !archivePath || !preview) return;
+    if (phase !== "wizard" && phase !== "options") return;
+
+    if (previewDebounceRef.current) {
+      window.clearTimeout(previewDebounceRef.current);
+    }
+    previewDebounceRef.current = window.setTimeout(() => {
+      void loadPreview(strategy, archivePath, selections, preparedExtractDir);
+    }, 300);
+
+    return () => {
+      if (previewDebounceRef.current) {
+        window.clearTimeout(previewDebounceRef.current);
+      }
+    };
+  }, [selections, phase, open, archivePath, strategy, preparedExtractDir]);
+
+  useEffect(() => {
+    if (open) return;
+    if (preparedExtractDir) {
+      void api.cleanupPrepareDir(preparedExtractDir).catch(() => {});
+    }
+  }, [open, preparedExtractDir]);
+
   useEffect(() => {
     if (preview && preview.file_count === 0 && preview.skipped_existing > 0) {
       setOverwriteFiles(true);
@@ -126,8 +157,9 @@ export function ModInstallDialog({
 
   const wizardRequired = !!preview?.install_wizard_required;
   const wizardGroupPages = useMemo(
-    () => (installWizard ? flattenWizardGroups(installWizard) : []),
-    [installWizard]
+    () =>
+      installWizard ? filterVisibleWizardGroups(installWizard, selections) : [],
+    [installWizard, selections]
   );
   const wizardGroupCount = wizardGroupPages.length;
   const hasWizardSteps = wizardGroupCount > 0;
@@ -178,6 +210,7 @@ export function ModInstallDialog({
 
   const resolveInitialPhase = (result: InstallPreview) => {
     if (result.install_wizard_required) return "welcome" as const;
+    if (result.install_wizard && result.install_wizard.steps.length > 0) return "wizard" as const;
     if (result.option_groups.length > 0) return "options" as const;
     return "review" as const;
   };
@@ -213,7 +246,14 @@ export function ModInstallDialog({
         }
         setArchivePath(resolved);
         const result = await loadPreview("auto", resolved, undefined, null);
-        if (result) setPhase(resolveInitialPhase(result));
+        if (!result) return;
+        const nextPhase = resolveInitialPhase(result);
+        if (nextPhase === "wizard" && !result.install_wizard_required) {
+          setPhase("welcome");
+          await extractAndConfigure();
+        } else {
+          setPhase(nextPhase);
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         setArchivePath("");
@@ -266,6 +306,16 @@ export function ModInstallDialog({
       setAnalysisProgress(null);
     };
   }, [open, profile.id, extracting, installing]);
+
+  // While extracting/installing, lock the whole flow: the dialog can't be
+  // dismissed (Esc / outside / X / Cancel) and the global Back paths no-op, so
+  // an accidental tap or B-press can't bail out of an install in progress.
+  const installBusy = extracting || installing || phase === "installing";
+  const setInstallBusy = useUiLockStore((s) => s.setInstallBusy);
+  useEffect(() => {
+    setInstallBusy(installBusy);
+    return () => setInstallBusy(false);
+  }, [installBusy, setInstallBusy]);
 
   const extractAndConfigure = async () => {
     if (!archivePath) return;
@@ -435,6 +485,12 @@ export function ModInstallDialog({
     phase === "options" ||
     (phase === "review" && (hasWizardSteps || !!preview?.option_groups.length || wizardRequired));
 
+  useGamepadBackHandler(() => {
+    if (!open || installBusy) return;
+    if (showBack) goBack();
+    else onOpenChange(false);
+  });
+
   const primaryLabel =
     phase === "installing"
       ? installProgress?.message ?? "Installing…"
@@ -470,6 +526,8 @@ export function ModInstallDialog({
       title={`Install: ${displayTitle}`}
       description={`${file.name} · v${file.version}`}
       className="max-w-4xl"
+      dismissible={!installBusy}
+      disableOutsideClose
     >
       <div className="space-y-5">
         {!loading && preview && showStepper && phase !== "welcome" && (
@@ -491,6 +549,38 @@ export function ModInstallDialog({
             )}
           </div>
         )}
+
+        {(phase === "wizard" || phase === "options") && preview ? (
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="min-w-0 space-y-5">
+              {phase === "wizard" && installWizard && preparedExtractDir && (
+                <FomodInstallWizard
+                  wizard={installWizard}
+                  extractDir={preparedExtractDir}
+                  selections={selections}
+                  currentGroupIndex={wizardGroupIndex}
+                  onSelectionsChange={handleSelectionsChange}
+                  disabled={loading || installing || extracting}
+                />
+              )}
+
+              {phase === "options" && preview.option_groups.length > 0 && (
+                <InstallOptionsPanel
+                  groups={preview.option_groups}
+                  selections={selections}
+                  onChange={handleSelectionsChange}
+                  disabled={loading || installing || extracting}
+                />
+              )}
+            </div>
+            <InstallSummaryPanel
+              preview={preview}
+              gamePath={profile.game_path}
+              loading={loading}
+              className="lg:sticky lg:top-0 lg:self-start"
+            />
+          </div>
+        ) : null}
 
         {phase === "welcome" && preview && !extracting && (
           <div className="overflow-hidden rounded-2xl border border-[var(--color-border)]">
@@ -528,26 +618,6 @@ export function ModInstallDialog({
               </p>
             </div>
           </div>
-        )}
-
-        {phase === "wizard" && installWizard && preparedExtractDir && (
-          <FomodInstallWizard
-            wizard={installWizard}
-            extractDir={preparedExtractDir}
-            selections={selections}
-            currentGroupIndex={wizardGroupIndex}
-            onSelectionsChange={handleSelectionsChange}
-            disabled={loading || installing || extracting}
-          />
-        )}
-
-        {phase === "options" && preview && preview.option_groups.length > 0 && (
-          <InstallOptionsPanel
-            groups={preview.option_groups}
-            selections={selections}
-            onChange={handleSelectionsChange}
-            disabled={loading || installing || extracting}
-          />
         )}
 
         {phase === "review" && preview && (
@@ -747,7 +817,13 @@ export function ModInstallDialog({
         )}
 
         <div className="flex gap-3">
-          <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => onOpenChange(false)}
+            disabled={installBusy}
+            data-focusable="true"
+          >
             Cancel
           </Button>
           {showBack && (
@@ -756,6 +832,7 @@ export function ModInstallDialog({
               className="flex-1"
               onClick={goBack}
               disabled={loading || installing || extracting}
+              data-focusable="true"
             >
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back
@@ -766,6 +843,7 @@ export function ModInstallDialog({
             className="flex-[1.4]"
             onClick={() => void goNext()}
             disabled={primaryDisabled}
+            data-focusable="true"
           >
             {loading && phase === "review" ? (
               <>

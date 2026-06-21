@@ -1071,20 +1071,23 @@ pub fn merge_directory(
         .filter(|e| e.file_type().is_file())
         .collect();
     let total = file_entries.len();
+    let resolve_case = std::env::consts::OS == "linux";
+    let mut case_cache = crate::services::deploy::CaseCache::new();
 
     for (index, entry) in file_entries.iter().enumerate() {
         let rel = entry.path().strip_prefix(src).unwrap();
-        let target = dest.join(rel);
+        let target = if resolve_case {
+            crate::services::deploy::resolve_deploy_target(dest, rel, &mut case_cache)
+        } else {
+            dest.join(rel)
+        };
         if target.exists() && !options.overwrite {
             continue;
         }
         if options.dry_run {
             deployed.push(target.display().to_string());
         } else {
-            if let Some(parent) = target.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::copy(entry.path(), &target)?;
+            crate::services::deploy::deploy_file(entry.path(), &target)?;
             deployed.push(target.display().to_string());
         }
 

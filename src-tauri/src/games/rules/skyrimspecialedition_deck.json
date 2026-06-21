@@ -1,0 +1,81 @@
+{
+  "rules": [
+    {
+      "id": "skse_required",
+      "severity": "error",
+      "condition": {
+        "installed_name_contains": ["SKSE", "SkyUI", "Address Library"],
+        "script_extender_missing": true
+      },
+      "message": "SKSE-dependent mods installed but SKSE not detected.",
+      "deck_tip": "Run the SKSE wizard step and match your Skyrim.exe version exactly."
+    },
+    {
+      "id": "too_many_texture_mods",
+      "severity": "warning",
+      "condition": {
+        "category_count": { "category": "texture", "gte": 4 }
+      },
+      "message": "Multiple texture overhauls detected — VRAM pressure on Deck.",
+      "deck_tip": "Pick one main texture pack; use 1K–2K variants for Deck."
+    },
+    {
+      "id": "too_many_weather_mods",
+      "severity": "warning",
+      "condition": {
+        "category_count": { "category": "weather", "gte": 2 }
+      },
+      "message": "Multiple weather/lighting mods may conflict and hurt FPS.",
+      "deck_tip": "Keep one weather overhaul (Cathedral, Obsidian, or similar)."
+    },
+    {
+      "id": "enb_on_deck",
+      "severity": "info",
+      "condition": {
+        "installed_name_contains": ["ENB"],
+        "platform": "linux"
+      },
+      "message": "ENB on Proton is experimental — backup before enabling.",
+      "deck_tip": "Disable ENB on battery; use ReShade-lite presets if needed."
+    },
+    {
+      "id": "bodyslide_on_deck",
+      "severity": "warning",
+      "condition": {
+        "installed_name_contains": ["BodySlide", "CBBE", "3BA"],
+        "platform": "linux"
+      },
+      "message": "BodySlide tooling is desktop-oriented on Deck.",
+      "deck_tip": "Pre-build BodySlide presets on PC, then copy output to Deck."
+    },
+    {
+      "id": "high_mod_count",
+      "severity": "info",
+      "condition": {
+        "category_count": { "category": "", "gte": 80 }
+      },
+      "message": "Large mod list — longer loads and higher memory use on Deck.",
+      "deck_tip": "Use Deck Lite INI preset and avoid redundant gameplay overhauls."
+    },
+    {
+      "id": "fnis_nemesis",
+      "severity": "warning",
+      "condition": {
+        "installed_name_contains": ["FNIS", "Nemesis", "Animated"],
+        "platform": "linux"
+      },
+      "message": "Animation framework mods need Nemesis/FNIS run after install.",
+      "deck_tip": "Generate behavior patches on desktop or via Proton tool launch."
+    },
+    {
+      "id": "ussep_recommended",
+      "severity": "info",
+      "condition": {
+        "installed_name_contains": ["Unofficial Skyrim"],
+        "category_count": { "category": "", "gte": 5 }
+      },
+      "message": "Unofficial Skyrim Special Edition Patch detected — good foundation.",
+      "deck_tip": "Keep USSEP near the top of your load order."
+    }
+  ]
+}

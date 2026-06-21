@@ -1,16 +1,19 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AdvisorFinding,
+  BodySlideInfo,
   CollectionDetail,
   CollectionSummary,
   DependencyGraph,
   DownloadProgress,
   DownloadRecord,
   DownloadSettings,
+  FomodWizardState,
   F4seInstallInfo,
   ScriptExtenderInstallInfo,
   GameCandidate,
   GameSummary,
+  GameListPage,
   InstallOptions,
   InstallPreview,
   InstallPrepareResult,
@@ -87,6 +90,7 @@ export const api = {
     gamePath: string;
     stagingPath: string;
     protonPrefixPath?: string | null;
+    modManager?: string | null;
   }) =>
     invoke<Profile>("create_profile", {
       gameDomain: params.gameDomain,
@@ -94,6 +98,7 @@ export const api = {
       gamePath: params.gamePath,
       stagingPath: params.stagingPath,
       protonPrefixPath: params.protonPrefixPath ?? null,
+      modManager: params.modManager ?? null,
     }),
 
   listProfiles: () => invoke<Profile[]>("list_profiles"),
@@ -151,8 +156,8 @@ export const api = {
   getModFiles: (gameDomain: string, modId: number) =>
     invoke<ModFileInfo[]>("get_mod_files", { gameDomain, modId }),
 
-  listNexusGames: (query: string, count: number) =>
-    invoke<GameSummary[]>("list_nexus_games", { query, count }),
+  listNexusGames: (query: string, count: number, offset = 0) =>
+    invoke<GameListPage>("list_nexus_games", { query, count, offset }),
 
   startModDownload: (params: {
     gameDomain: string;
@@ -363,6 +368,20 @@ export const api = {
       relativePath: params.relativePath,
     }),
 
+  getFomodWizardState: (params: {
+    extractDir: string;
+    archivePath: string;
+    selections: SelectedInstallOption[];
+  }) =>
+    invoke<FomodWizardState>("get_fomod_wizard_state", {
+      extractDir: params.extractDir,
+      archivePath: params.archivePath,
+      selections: params.selections,
+    }),
+
+  cleanupPrepareDir: (extractDir: string) =>
+    invoke<void>("cleanup_prepare_dir", { extractDir }),
+
   getInstallStrategies: () => invoke<StrategyOption[]>("get_install_strategies"),
 
   detectF4se: (gamePath: string) =>
@@ -438,6 +457,9 @@ export const api = {
 
   watchStagingReady: (stagingPath: string, fileName: string) =>
     invoke<boolean>("watch_staging_ready", { stagingPath, fileName }),
+
+  startStagingWatcher: (stagingPath: string, fileName: string) =>
+    invoke<void>("start_staging_watcher", { stagingPath, fileName }),
 
   listInstalledMods: (profileId: string) =>
     invoke<InstalledMod[]>("list_installed_mods", { profileId }),
@@ -552,12 +574,115 @@ export const api = {
   batchLaunchTools: (profileId: string, toolIds: string[]) =>
     invoke<string[]>("batch_launch_tools", { profileId, toolIds }),
 
+  detectBodyslide: (profileId: string) =>
+    invoke<BodySlideInfo>("detect_bodyslide", { profileId }),
+
+  launchBodyslide: (profileId: string) =>
+    invoke<string>("launch_bodyslide", { profileId }),
+
   logStartupEvent: (step: string, detail?: string) =>
     invoke<void>("log_startup_event", { step, detail: detail ?? null }),
 
   getStartupDiagnostics: () => invoke<string>("get_startup_diagnostics"),
 
   getStartupLogPath: () => invoke<string>("get_startup_log_path"),
+
+  runDiagnosticScan: (profileId: string) =>
+    invoke<import("@/lib/autofix-types").DiagnosticScanResult>("run_diagnostic_scan", {
+      profileId,
+    }),
+
+  applyAutofix: (profileId: string, remedyId: string) =>
+    invoke<import("@/lib/autofix-types").ApplyFixesResult>("apply_autofix", {
+      profileId,
+      remedyId,
+    }),
+
+  applySafeAutofixes: (profileId: string) =>
+    invoke<import("@/lib/autofix-types").ApplyFixesResult>("apply_safe_autofixes", {
+      profileId,
+    }),
+
+  listAutofixRemedies: (gameDomain: string) =>
+    invoke<import("@/lib/autofix-types").RemedyDefinition[]>("list_autofix_remedies", {
+      gameDomain,
+    }),
+
+  exportDiagnosticMarkdown: (profileId: string) =>
+    invoke<string>("export_diagnostic_markdown", { profileId }),
+
+  getGameManifest: (domain: string) =>
+    invoke<import("@/lib/autofix-types").GameManifestEntry>("get_game_manifest", { domain }),
+
+  listGameManifests: () =>
+    invoke<import("@/lib/autofix-types").GameManifestEntry[]>("list_game_manifests"),
+
+  getWabbajackChecklist: () => invoke<string[]>("get_wabbajack_checklist"),
+
+  checkPrefixStatus: (protonPrefixPath: string | null, myGamesFolder: string) =>
+    invoke<import("@/lib/autofix-types").PrefixStatus>("check_prefix_status", {
+      protonPrefixPath,
+      myGamesFolder,
+    }),
+
+  bootstrapVanillaLaunch: (appId: number) =>
+    invoke<{ launched: boolean; prefix_exists: boolean; message: string }>(
+      "bootstrap_vanilla_launch",
+      { appId }
+    ),
+
+  checkProtonVersion: (appId: number) =>
+    invoke<{ compatible: boolean; proton_version: string | null; recommended: string; message: string }>(
+      "check_proton_version",
+      { appId }
+    ),
+
+  detectProtontricks: () =>
+    invoke<import("@/lib/autofix-types").ProtontricksInfo>("detect_protontricks"),
+
+  installProtonDeps: (gameDomain: string, dryRun = false) =>
+    invoke<import("@/lib/autofix-types").ProtonDepsResult>("install_proton_deps", {
+      gameDomain,
+      dryRun,
+    }),
+
+  detectMo2: () => invoke<import("@/lib/autofix-types").Mo2Status>("detect_mo2"),
+
+  getMo2Status: (profileId: string) =>
+    invoke<import("@/lib/autofix-types").Mo2Status>("get_mo2_status", { profileId }),
+
+  installMo2: (profileId: string) =>
+    invoke<import("@/lib/autofix-types").Mo2Status>("install_mo2", { profileId }),
+
+  configureMo2Instance: (profileId: string, modsPath: string | null) =>
+    invoke<import("@/lib/autofix-types").Mo2Status>("configure_mo2_instance", {
+      profileId,
+      modsPath,
+    }),
+
+  getMo2SkseHint: () => invoke<string>("get_mo2_skse_hint"),
+
+  detectSseedit: (profileId: string) =>
+    invoke<import("@/lib/autofix-types").SseEditInfo>("detect_sseedit", { profileId }),
+
+  launchSseedit: (profileId: string) => invoke<string>("launch_sseedit", { profileId }),
+
+  resetProfileMods: (params: {
+    profileId: string;
+    backupBefore?: boolean;
+    clearStaging?: boolean;
+    clearDownloads?: boolean;
+    resetPluginsTxt?: boolean;
+  }) =>
+    invoke<import("@/lib/nexus/types").ResetProfileResult>("reset_profile_mods", {
+      profileId: params.profileId,
+      backupBefore: params.backupBefore ?? true,
+      clearStaging: params.clearStaging ?? true,
+      clearDownloads: params.clearDownloads ?? true,
+      resetPluginsTxt: params.resetPluginsTxt ?? true,
+    }),
+
+  checkAppUpdate: () => invoke<import("@/lib/nexus/types").AppUpdateInfo>("check_app_update"),
 };
 
 export const logStartupEvent = api.logStartupEvent;

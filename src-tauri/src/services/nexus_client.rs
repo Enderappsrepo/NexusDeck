@@ -94,6 +94,28 @@ pub struct GameSummary {
     pub id: u64,
     pub name: String,
     pub domain_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mod_count: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hero_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameListPage {
+    pub games: Vec<GameSummary>,
+    pub total_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct GameArtworkTemplates {
+    v1_tile: Option<String>,
+    v1_tile_blurred: Option<String>,
+    v2_tile: Option<String>,
+    v2_hero: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -833,7 +855,12 @@ impl NexusClient {
         Ok(links)
     }
 
-    pub async fn list_games(&self, query: &str, count: u32) -> Result<Vec<GameSummary>> {
+    pub async fn list_games(
+        &self,
+        query: &str,
+        count: u32,
+        offset: u32,
+    ) -> Result<GameListPage> {
         let filter = if query.is_empty() {
             serde_json::Value::Null
         } else {
@@ -843,12 +870,20 @@ impl NexusClient {
         };
 
         let gql = r#"
-            query ListGames($filter: GamesSearchFilter, $count: Int) {
-                games(filter: $filter, count: $count, sort: [{ name: { direction: ASC } }]) {
+            query ListGames($filter: GamesSearchFilter, $count: Int, $offset: Int) {
+                games(
+                    filter: $filter,
+                    count: $count,
+                    offset: $offset,
+                    sort: [{ name: { direction: ASC } }]
+                ) {
                     nodes {
                         id
                         name
                         domainName
+                        modCount
+                        genre
+                        artworkSchema
                     }
                     totalCount
                 }
@@ -856,18 +891,76 @@ impl NexusClient {
         "#;
 
         let result: serde_json::Value = self
-            .graphql(gql, serde_json::json!({ "filter": filter, "count": count }))
+            .graphql(
+                gql,
+                serde_json::json!({ "filter": filter, "count": count, "offset": offset }),
+            )
             .await?;
 
-        Ok(result
+        let templates = self.load_game_artwork_templates().await.ok();
+        let total_count = result
+            .pointer("/games/totalCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        let games = result
             .pointer("/games/nodes")
             .and_then(|n| n.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(parse_game_summary_node)
+                    .filter_map(|node| parse_game_summary_node(node, templates.as_ref()))
                     .collect::<Vec<_>>()
             })
-            .unwrap_or_default())
+            .unwrap_or_default();
+
+        Ok(GameListPage { games, total_count })
+    }
+
+    async fn load_game_artwork_templates(&self) -> Result<GameArtworkTemplates> {
+        if let Some(cached) = self.get_cache("game_artwork_templates") {
+            if let Ok(templates) = serde_json::from_str::<GameArtworkTemplates>(&cached) {
+                return Ok(templates);
+            }
+        }
+
+        let gql = r#"
+            query GameArtwork {
+                gameArtwork {
+                    schemaV1 { tile tileBlurred }
+                    schemaV2 { tile hero thumbnail }
+                }
+            }
+        "#;
+
+        let result: serde_json::Value = self.graphql(gql, serde_json::json!({})).await?;
+        let root = result.get("gameArtwork").ok_or_else(|| {
+            NexusDeckError::Other("Missing gameArtwork in GraphQL response".into())
+        })?;
+
+        let templates = GameArtworkTemplates {
+            v1_tile: root
+                .pointer("/schemaV1/tile")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            v1_tile_blurred: root
+                .pointer("/schemaV1/tileBlurred")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            v2_tile: root
+                .pointer("/schemaV2/tile")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            v2_hero: root
+                .pointer("/schemaV2/hero")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+        };
+
+        if let Ok(raw) = serde_json::to_string(&templates) {
+            self.set_cache("game_artwork_templates", &raw, Duration::from_secs(86400));
+        }
+
+        Ok(templates)
     }
 
     pub async fn get_mod_requirements(
@@ -1390,7 +1483,52 @@ fn json_u64(value: &serde_json::Value, keys: &[&str]) -> Option<u64> {
     None
 }
 
-fn parse_game_summary_node(node: &serde_json::Value) -> Option<GameSummary> {
+fn resolve_artwork_url(template: &str, game_id: u64) -> String {
+    let id = game_id.to_string();
+    template
+        .replace("{gameId}", &id)
+        .replace("{game_id}", &id)
+        .replace("{id}", &id)
+}
+
+fn artwork_for_game(
+    templates: Option<&GameArtworkTemplates>,
+    game_id: u64,
+    artwork_schema: Option<&str>,
+) -> (Option<String>, Option<String>) {
+    let Some(templates) = templates else {
+        return (None, None);
+    };
+    let schema = artwork_schema.unwrap_or("V2");
+    if schema.eq_ignore_ascii_case("V2") {
+        (
+            templates
+                .v2_tile
+                .as_ref()
+                .map(|t| resolve_artwork_url(t, game_id)),
+            templates
+                .v2_hero
+                .as_ref()
+                .map(|t| resolve_artwork_url(t, game_id)),
+        )
+    } else {
+        (
+            templates
+                .v1_tile
+                .as_ref()
+                .map(|t| resolve_artwork_url(t, game_id)),
+            templates
+                .v1_tile_blurred
+                .as_ref()
+                .map(|t| resolve_artwork_url(t, game_id)),
+        )
+    }
+}
+
+fn parse_game_summary_node(
+    node: &serde_json::Value,
+    templates: Option<&GameArtworkTemplates>,
+) -> Option<GameSummary> {
     let id = node
         .get("id")
         .and_then(|v| v.as_u64())
@@ -1398,10 +1536,18 @@ fn parse_game_summary_node(node: &serde_json::Value) -> Option<GameSummary> {
     let name = json_str(node, &["name"])?.to_string();
     let domain_name =
         json_str(node, &["domain_name", "domainName", "domain", "game_domain"])?.to_string();
+    let mod_count = json_u64(node, &["mod_count", "modCount"]);
+    let genre = json_str(node, &["genre"]).map(str::to_string);
+    let artwork_schema = json_str(node, &["artworkSchema", "artwork_schema"]);
+    let (tile_url, hero_url) = artwork_for_game(templates, id, artwork_schema);
     Some(GameSummary {
         id,
         name,
         domain_name,
+        mod_count,
+        genre,
+        tile_url,
+        hero_url,
     })
 }
 

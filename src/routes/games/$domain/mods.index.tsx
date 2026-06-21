@@ -16,11 +16,18 @@ import { Badge } from "@/components/ui/badge";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ModGridSkeleton } from "@/components/ui/LoadingSkeleton";
-import { useModsStore, useGamesStore, useAuthStore } from "@/stores";
+import { useModsStore, useGamesStore, useAuthStore, useDownloadsStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { DEFAULT_FILTERS } from "@/lib/nexus/filters";
 import { cn, gameGradient } from "@/lib/utils";
 import type { ModSearchFilters } from "@/lib/nexus/types";
+import { modFileDownloadName } from "@/lib/nexus/types";
+import { useGamepadContextAction, useGamepadTabs } from "@/hooks/useGamepadRouter";
+import { GP } from "@/lib/gamepad/buttons";
+import { focusedBrowseModId } from "@/lib/gamepad/domHelpers";
+import { useEndorseFocusedMod } from "@/hooks/useEndorseFocusedMod";
+
+const SORT_OPTIONS = ["endorsements", "downloads", "updated"] as const;
 
 function parseFiltersFromSearch(search: Record<string, unknown>): ModSearchFilters {
   const tagsRaw = search.tags;
@@ -88,9 +95,50 @@ function ModBrowserPage() {
   } = useModsStore();
   const { getProfile } = useGamesStore();
   const user = useAuthStore((s) => s.user);
+  const setProgress = useDownloadsStore((s) => s.setProgress);
   const profile = getProfile(domain);
   const [importOpen, setImportOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+
+  useGamepadTabs([...SORT_OPTIONS], sort, setSort);
+
+  useGamepadContextAction(
+    GP.X,
+    async () => {
+      const modIdNum = focusedBrowseModId();
+      if (!modIdNum || !profile) return;
+      try {
+        const modFiles = await api.getModFiles(domain, modIdNum);
+        const primary = modFiles.find((f) => f.is_primary) ?? modFiles[0];
+        if (!primary) {
+          navigate({
+            to: "/games/$domain/mods/$modId",
+            params: { domain, modId: String(modIdNum) },
+          });
+          return;
+        }
+        const progress = await api.startModDownload({
+          gameDomain: domain,
+          modId: modIdNum,
+          fileId: primary.file_id,
+          fileName: modFileDownloadName(primary),
+          stagingPath: profile.staging_path,
+          expectedSizeKb: primary.size_kb,
+          modName: mods.find((m) => m.mod_id === modIdNum)?.name,
+          profileId: profile.id,
+        });
+        setProgress(progress);
+      } catch {
+        navigate({
+          to: "/games/$domain/mods/$modId",
+          params: { domain, modId: String(modIdNum) },
+        });
+      }
+    },
+    "browse"
+  );
+
+  useEndorseFocusedMod(domain, mods, "browse");
 
   useEffect(() => {
     loadCategories(domain);
@@ -164,7 +212,7 @@ function ModBrowserPage() {
   const resultLabel = query.trim() ? `Results for "${query.trim()}"` : "Popular mods";
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="mx-auto max-w-6xl" data-scroll-pane>
       {/* Page header */}
       <header className="page-hero mb-6">
         <div className="relative p-6 sm:p-8">

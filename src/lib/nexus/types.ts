@@ -30,6 +30,16 @@ export type InstallOptionSelectionType =
   | "select_any"
   | "select_at_least_one";
 
+export interface FomodFlag {
+  name: string;
+  value: string;
+}
+
+export interface FomodCondition {
+  operator?: string;
+  flags: FomodFlag[];
+}
+
 export interface InstallOptionChoice {
   id: string;
   label: string;
@@ -37,6 +47,7 @@ export interface InstallOptionChoice {
   folder_prefixes: string[];
   image_path?: string | null;
   default: boolean;
+  condition_flags?: FomodFlag[];
 }
 
 export interface InstallWizardStep {
@@ -44,6 +55,7 @@ export interface InstallWizardStep {
   name: string;
   description?: string | null;
   groups: InstallOptionGroup[];
+  condition?: FomodCondition | null;
 }
 
 export interface InstallWizard {
@@ -57,6 +69,7 @@ export interface InstallOptionGroup {
   name: string;
   selection_type: InstallOptionSelectionType;
   options: InstallOptionChoice[];
+  condition?: FomodCondition | null;
 }
 
 export interface SelectedInstallOption {
@@ -70,6 +83,12 @@ export interface InstallOptions {
   overwrite_files: boolean;
   selected_options?: SelectedInstallOption[];
   prepared_extract_dir?: string | null;
+  wizard_hash?: string | null;
+}
+
+export interface FomodWizardState {
+  wizard: InstallWizard;
+  active_flags: Record<string, string>;
 }
 
 export interface InstallPreview {
@@ -153,6 +172,7 @@ export interface Profile {
   game_path: string;
   staging_path: string;
   proton_prefix_path?: string | null;
+  mod_manager?: string | null;
   created_at: number;
 }
 
@@ -168,6 +188,15 @@ export interface GameSummary {
   id: number;
   name: string;
   domain_name: string;
+  mod_count?: number | null;
+  genre?: string | null;
+  tile_url?: string | null;
+  hero_url?: string | null;
+}
+
+export interface GameListPage {
+  games: GameSummary[];
+  total_count: number;
 }
 
 export interface ModSummary {
@@ -275,6 +304,8 @@ export interface DownloadProgress {
   mod_name?: string;
   profile_id?: string;
   update_target_mod_id?: string;
+  auto_install?: boolean;
+  queue_position?: number;
 }
 
 export interface DownloadRecord {
@@ -315,6 +346,7 @@ export function downloadRecordToProgress(record: DownloadRecord): DownloadProgre
 export interface DownloadSettings {
   max_concurrent: number;
   speed_limit_kbps: number;
+  auto_install_after_download?: boolean;
 }
 
 export interface ModSearchFilters {
@@ -558,6 +590,12 @@ export interface PlaytimeStats {
   session_count: number;
 }
 
+export interface BodySlideInfo {
+  installed: boolean;
+  exe_path?: string | null;
+  working_dir?: string | null;
+}
+
 export interface SteamShortcutInfo {
   id: string;
   profile_id: string;
@@ -630,4 +668,24 @@ export interface ApplyGameSettingsResult {
   config_dir: string;
   backup_dir: string;
   applied: string[];
+}
+
+export interface ResetProfileResult {
+  mods_removed: number;
+  downloads_cleared: number;
+  staging_cleared: boolean;
+  plugins_txt_reset: boolean;
+  backup_path: string | null;
+  warnings: string[];
+}
+
+export interface AppUpdateInfo {
+  current_version: string;
+  latest_version: string;
+  minimum_version: string | null;
+  update_available: boolean;
+  update_required: boolean;
+  message: string;
+  release_url: string;
+  release_notes: string | null;
 }

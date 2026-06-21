@@ -1,10 +1,11 @@
 import { cn } from "@/lib/utils";
-import { gameArt } from "@/lib/gameArt";
+import { gameArt, type GameArtOverrides } from "@/lib/gameArt";
 
 interface GameArtProps {
   domain: string;
   variant?: "hero" | "tile";
   className?: string;
+  overrides?: GameArtOverrides;
 }
 
 const HERO_MASK = "linear-gradient(90deg, transparent 0%, black 45%)";
@@ -15,11 +16,9 @@ const HERO_MASK = "linear-gradient(90deg, transparent 0%, black 45%)";
  *   2. a per-game accent glow for depth (no asset required),
  *   3. real key art when registered for the domain (masked for legibility),
  *   4. a readability scrim so overlaid titles/stats stay crisp.
- *
- * Drop into any `position: relative` container.
  */
-export function GameArt({ domain, variant = "hero", className }: GameArtProps) {
-  const art = gameArt(domain);
+export function GameArt({ domain, variant = "hero", className, overrides }: GameArtProps) {
+  const art = gameArt(domain, overrides);
   const src = variant === "hero" ? art.hero : art.tile;
 
   return (
@@ -60,8 +59,8 @@ export function GameArt({ domain, variant = "hero", className }: GameArtProps) {
         className={cn(
           "absolute inset-0",
           variant === "hero"
-            ? "bg-gradient-to-r from-[var(--color-card)] via-[var(--color-card)]/45 to-transparent"
-            : "bg-gradient-to-t from-[var(--color-card)] via-transparent to-transparent"
+            ? "bg-gradient-to-r from-[var(--color-card)] via-[var(--color-card)]/50 to-transparent"
+            : "bg-gradient-to-t from-[var(--color-card)] via-[var(--color-card)]/20 to-transparent"
         )}
       />
     </div>

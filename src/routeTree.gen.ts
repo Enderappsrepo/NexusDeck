@@ -14,8 +14,10 @@ import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GamesIndexRouteImport } from './routes/games/index'
 import { Route as GamesDomainIndexRouteImport } from './routes/games/$domain/index'
+import { Route as GamesDomainTroubleshootRouteImport } from './routes/games/$domain/troubleshoot'
 import { Route as GamesDomainSetupRouteImport } from './routes/games/$domain/setup'
 import { Route as GamesDomainModsRouteImport } from './routes/games/$domain/mods'
+import { Route as GamesDomainMo2RouteImport } from './routes/games/$domain/mo2'
 import { Route as GamesDomainLibraryRouteImport } from './routes/games/$domain/library'
 import { Route as GamesDomainCompareRouteImport } from './routes/games/$domain/compare'
 import { Route as GamesDomainModsIndexRouteImport } from './routes/games/$domain/mods.index'
@@ -49,6 +51,11 @@ const GamesDomainIndexRoute = GamesDomainIndexRouteImport.update({
   path: '/games/$domain/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GamesDomainTroubleshootRoute = GamesDomainTroubleshootRouteImport.update({
+  id: '/games/$domain/troubleshoot',
+  path: '/games/$domain/troubleshoot',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GamesDomainSetupRoute = GamesDomainSetupRouteImport.update({
   id: '/games/$domain/setup',
   path: '/games/$domain/setup',
@@ -57,6 +64,11 @@ const GamesDomainSetupRoute = GamesDomainSetupRouteImport.update({
 const GamesDomainModsRoute = GamesDomainModsRouteImport.update({
   id: '/games/$domain/mods',
   path: '/games/$domain/mods',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GamesDomainMo2Route = GamesDomainMo2RouteImport.update({
+  id: '/games/$domain/mo2',
+  path: '/games/$domain/mo2',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GamesDomainLibraryRoute = GamesDomainLibraryRouteImport.update({
@@ -104,8 +116,10 @@ export interface FileRoutesByFullPath {
   '/games/': typeof GamesIndexRoute
   '/games/$domain/compare': typeof GamesDomainCompareRoute
   '/games/$domain/library': typeof GamesDomainLibraryRoute
+  '/games/$domain/mo2': typeof GamesDomainMo2Route
   '/games/$domain/mods': typeof GamesDomainModsRouteWithChildren
   '/games/$domain/setup': typeof GamesDomainSetupRoute
+  '/games/$domain/troubleshoot': typeof GamesDomainTroubleshootRoute
   '/games/$domain/': typeof GamesDomainIndexRoute
   '/games/$domain/collections/$slug': typeof GamesDomainCollectionsSlugRoute
   '/games/$domain/mods/$modId': typeof GamesDomainModsModIdRoute
@@ -120,7 +134,9 @@ export interface FileRoutesByTo {
   '/games': typeof GamesIndexRoute
   '/games/$domain/compare': typeof GamesDomainCompareRoute
   '/games/$domain/library': typeof GamesDomainLibraryRoute
+  '/games/$domain/mo2': typeof GamesDomainMo2Route
   '/games/$domain/setup': typeof GamesDomainSetupRoute
+  '/games/$domain/troubleshoot': typeof GamesDomainTroubleshootRoute
   '/games/$domain': typeof GamesDomainIndexRoute
   '/games/$domain/collections/$slug': typeof GamesDomainCollectionsSlugRoute
   '/games/$domain/mods/$modId': typeof GamesDomainModsModIdRoute
@@ -136,8 +152,10 @@ export interface FileRoutesById {
   '/games/': typeof GamesIndexRoute
   '/games/$domain/compare': typeof GamesDomainCompareRoute
   '/games/$domain/library': typeof GamesDomainLibraryRoute
+  '/games/$domain/mo2': typeof GamesDomainMo2Route
   '/games/$domain/mods': typeof GamesDomainModsRouteWithChildren
   '/games/$domain/setup': typeof GamesDomainSetupRoute
+  '/games/$domain/troubleshoot': typeof GamesDomainTroubleshootRoute
   '/games/$domain/': typeof GamesDomainIndexRoute
   '/games/$domain/collections/$slug': typeof GamesDomainCollectionsSlugRoute
   '/games/$domain/mods/$modId': typeof GamesDomainModsModIdRoute
@@ -154,8 +172,10 @@ export interface FileRouteTypes {
     | '/games/'
     | '/games/$domain/compare'
     | '/games/$domain/library'
+    | '/games/$domain/mo2'
     | '/games/$domain/mods'
     | '/games/$domain/setup'
+    | '/games/$domain/troubleshoot'
     | '/games/$domain/'
     | '/games/$domain/collections/$slug'
     | '/games/$domain/mods/$modId'
@@ -170,7 +190,9 @@ export interface FileRouteTypes {
     | '/games'
     | '/games/$domain/compare'
     | '/games/$domain/library'
+    | '/games/$domain/mo2'
     | '/games/$domain/setup'
+    | '/games/$domain/troubleshoot'
     | '/games/$domain'
     | '/games/$domain/collections/$slug'
     | '/games/$domain/mods/$modId'
@@ -185,8 +207,10 @@ export interface FileRouteTypes {
     | '/games/'
     | '/games/$domain/compare'
     | '/games/$domain/library'
+    | '/games/$domain/mo2'
     | '/games/$domain/mods'
     | '/games/$domain/setup'
+    | '/games/$domain/troubleshoot'
     | '/games/$domain/'
     | '/games/$domain/collections/$slug'
     | '/games/$domain/mods/$modId'
@@ -202,8 +226,10 @@ export interface RootRouteChildren {
   GamesIndexRoute: typeof GamesIndexRoute
   GamesDomainCompareRoute: typeof GamesDomainCompareRoute
   GamesDomainLibraryRoute: typeof GamesDomainLibraryRoute
+  GamesDomainMo2Route: typeof GamesDomainMo2Route
   GamesDomainModsRoute: typeof GamesDomainModsRouteWithChildren
   GamesDomainSetupRoute: typeof GamesDomainSetupRoute
+  GamesDomainTroubleshootRoute: typeof GamesDomainTroubleshootRoute
   GamesDomainIndexRoute: typeof GamesDomainIndexRoute
   GamesDomainCollectionsSlugRoute: typeof GamesDomainCollectionsSlugRoute
   GamesDomainPreviewModIdRoute: typeof GamesDomainPreviewModIdRoute
@@ -247,6 +273,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GamesDomainIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/games/$domain/troubleshoot': {
+      id: '/games/$domain/troubleshoot'
+      path: '/games/$domain/troubleshoot'
+      fullPath: '/games/$domain/troubleshoot'
+      preLoaderRoute: typeof GamesDomainTroubleshootRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/games/$domain/setup': {
       id: '/games/$domain/setup'
       path: '/games/$domain/setup'
@@ -259,6 +292,13 @@ declare module '@tanstack/react-router' {
       path: '/games/$domain/mods'
       fullPath: '/games/$domain/mods'
       preLoaderRoute: typeof GamesDomainModsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/games/$domain/mo2': {
+      id: '/games/$domain/mo2'
+      path: '/games/$domain/mo2'
+      fullPath: '/games/$domain/mo2'
+      preLoaderRoute: typeof GamesDomainMo2RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/games/$domain/library': {
@@ -334,8 +374,10 @@ const rootRouteChildren: RootRouteChildren = {
   GamesIndexRoute: GamesIndexRoute,
   GamesDomainCompareRoute: GamesDomainCompareRoute,
   GamesDomainLibraryRoute: GamesDomainLibraryRoute,
+  GamesDomainMo2Route: GamesDomainMo2Route,
   GamesDomainModsRoute: GamesDomainModsRouteWithChildren,
   GamesDomainSetupRoute: GamesDomainSetupRoute,
+  GamesDomainTroubleshootRoute: GamesDomainTroubleshootRoute,
   GamesDomainIndexRoute: GamesDomainIndexRoute,
   GamesDomainCollectionsSlugRoute: GamesDomainCollectionsSlugRoute,
   GamesDomainPreviewModIdRoute: GamesDomainPreviewModIdRoute,

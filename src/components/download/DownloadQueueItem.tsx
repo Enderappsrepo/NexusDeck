@@ -56,6 +56,8 @@ export function DownloadQueueItem({
               ? error ?? "Download failed"
               : complete
                 ? "Complete"
+                : download.status === "queued" && download.queue_position && download.queue_position > 1
+                  ? `Waiting ${download.queue_position} of ${download.queue_position}`
                 : download.bytes_total > 0
                   ? `${formatBytes(download.bytes_done)} / ${formatBytes(download.bytes_total)}`
                   : "Starting download..."}

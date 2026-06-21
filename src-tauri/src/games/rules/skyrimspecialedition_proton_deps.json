@@ -1,0 +1,11 @@
+{
+  "app_id": 489830,
+  "packages": [
+    "vcrun2019",
+    "dotnet48",
+    "d3dx9_43",
+    "xact",
+    "xinput"
+  ],
+  "description": "Common Proton dependencies for Skyrim SE modding (SKSE plugins, .NET mods, audio)."
+}

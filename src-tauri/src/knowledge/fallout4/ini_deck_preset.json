@@ -1,0 +1,7 @@
+{
+  "id": "apply_deck_ini_preset",
+  "title": "Apply Deck INI preset",
+  "description": "Apply NexusDeck's Fallout 4 Deck performance INI preset.",
+  "fix": { "type": "apply_deck_ini_preset", "backup": true, "confirm": false },
+  "deck_tip": "1280×800 borderless with god rays off."
+}

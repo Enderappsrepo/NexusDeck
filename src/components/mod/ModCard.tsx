@@ -30,6 +30,7 @@ export function ModCard({ mod, domain, className, compact = false }: ModCardProp
         className
       )}
       data-focusable="true"
+      data-nexus-mod-id={mod.mod_id}
     >
       <div
         className={cn(

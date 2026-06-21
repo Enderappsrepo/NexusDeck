@@ -16,6 +16,7 @@ import {
   useControllerContextMenu,
 } from "@/components/controller/ControllerContextMenu";
 import { useFocusGroup } from "@/hooks/useFocusGroup";
+import { focusedLibraryModId } from "@/lib/gamepad/domHelpers";
 import { GP } from "@/lib/gamepad/buttons";
 import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
 import { useGamesStore } from "@/stores";
@@ -158,12 +159,18 @@ function LibraryPage() {
     return () => unsubs.forEach((u) => u());
   }, [refreshLibrary]);
 
-  useGamepadContextAction(GP.X, () => {
-    const mod = mods.find((m) => m.id === focusedModId);
-    if (mod && !compareMode) void toggleMod(mod);
-  });
+  useGamepadContextAction(
+    GP.X,
+    () => {
+      const modId = focusedLibraryModId() ?? focusedModId;
+      const mod = mods.find((m) => m.id === modId);
+      if (mod && !compareMode) void toggleMod(mod);
+    },
+    "library"
+  );
 
-  const focusedMod = mods.find((m) => m.id === focusedModId);
+  const resolvedFocusId = focusedLibraryModId() ?? focusedModId;
+  const focusedMod = mods.find((m) => m.id === resolvedFocusId);
   const { menu: contextMenu } = useControllerContextMenu(
     focusedMod
       ? [
@@ -214,7 +221,8 @@ function LibraryPage() {
           },
         ]
       : [],
-    focusedMod?.name
+    focusedMod?.name,
+    "library"
   );
 
   const handleModClick = (mod: InstalledMod) => {

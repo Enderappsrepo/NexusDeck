@@ -1,6 +1,7 @@
 mod creation_engine;
 mod fallout4;
 mod scaffold;
+mod skyrimspecialedition;
 pub mod script_extender_meta;
 
 use std::path::{Path, PathBuf};
@@ -15,6 +16,7 @@ use crate::db::Profile;
 
 pub use creation_engine::CreationEnginePlugin;
 pub use fallout4::Fallout4Plugin;
+pub use skyrimspecialedition::SkyrimSpecialEditionPlugin;
 pub use script_extender_meta::{install_info as script_extender_install_info, ScriptExtenderInstallInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,6 +113,7 @@ impl GameRegistry {
     pub fn get(domain: &str) -> Result<Box<dyn GamePlugin>> {
         match domain {
             "fallout4" => Ok(Box::new(Fallout4Plugin)),
+            "skyrimspecialedition" => Ok(Box::new(SkyrimSpecialEditionPlugin)),
             other => CreationEnginePlugin::find_config(other)
                 .map(creation_engine::box_plugin)
                 .ok_or_else(|| NexusDeckError::GameNotFound(other.to_string())),
@@ -118,17 +121,24 @@ impl GameRegistry {
     }
 
     pub fn supported_domains() -> Vec<&'static str> {
-        let mut domains = vec!["fallout4"];
+        let mut domains = vec!["fallout4", "skyrimspecialedition"];
         domains.extend(CreationEnginePlugin::ALL.iter().map(|c| c.domain));
         domains
     }
 
     pub fn supported_games() -> Vec<SupportedGameInfo> {
-        let mut games = vec![SupportedGameInfo {
-            domain: "fallout4".to_string(),
-            display_name: "Fallout 4".to_string(),
-            script_extender_label: Some("F4SE".to_string()),
-        }];
+        let mut games = vec![
+            SupportedGameInfo {
+                domain: "fallout4".to_string(),
+                display_name: "Fallout 4".to_string(),
+                script_extender_label: Some("F4SE".to_string()),
+            },
+            SupportedGameInfo {
+                domain: "skyrimspecialedition".to_string(),
+                display_name: "Skyrim Special Edition".to_string(),
+                script_extender_label: Some("SKSE".to_string()),
+            },
+        ];
         games.extend(CreationEnginePlugin::ALL.iter().map(|c| SupportedGameInfo {
             domain: c.domain.to_string(),
             display_name: c.display_name.to_string(),
@@ -218,6 +228,9 @@ pub fn run_wizard_step(domain: &str, step: &str, payload: serde_json::Value) -> 
             data: serde_json::json!({ "test": "ok" }),
             message: "Test deployment check passed (dry run)".to_string(),
         }),
+        other if domain == "skyrimspecialedition" => {
+            SkyrimSpecialEditionPlugin::run_wizard_step(other, payload)
+        }
         _ => Err(NexusDeckError::Other(format!("Unknown wizard step: {step}"))),
     }
 }

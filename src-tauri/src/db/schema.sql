@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     game_path TEXT NOT NULL,
     staging_path TEXT NOT NULL,
     proton_prefix_path TEXT,
+    mod_manager TEXT DEFAULT 'direct',
     created_at INTEGER NOT NULL
 );
 

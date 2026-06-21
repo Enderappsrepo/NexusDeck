@@ -4,7 +4,7 @@ import { AppDialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/commands";
-import { useDownloadsStore } from "@/stores";
+import { useDownloadsStore, useInstallQueueStore } from "@/stores";
 import type { CollectionDetail, Profile } from "@/lib/nexus/types";
 import { modFileDownloadName } from "@/lib/nexus/types";
 
@@ -26,7 +26,7 @@ export function CollectionInstallDialog({
   const [installing, setInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setProgress = useDownloadsStore((s) => s.setProgress);
-  const markAutoInstall = useDownloadsStore((s) => s.markAutoInstall);
+  const registerPendingInstall = useInstallQueueStore((s) => s.registerPendingInstall);
 
   const requiredMods = collection.mods.filter((m) => !m.optional);
 
@@ -49,7 +49,7 @@ export function CollectionInstallDialog({
           modName: entry.name,
           profileId: profile.id,
         });
-        markAutoInstall(progress.id);
+        registerPendingInstall(progress.id, { source: "collection" });
         setProgress(progress);
       }
       onOpenChange(false);

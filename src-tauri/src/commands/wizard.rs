@@ -41,9 +41,14 @@ pub fn create_profile(
     game_path: String,
     staging_path: String,
     proton_prefix_path: Option<String>,
+    mod_manager: Option<String>,
 ) -> Result<Profile> {
     ensure_dir(std::path::Path::new(&staging_path))?;
     let existing = db::get_profile_by_domain(&game_domain)?;
+    let manager = mod_manager
+        .filter(|s| !s.is_empty())
+        .or_else(|| existing.as_ref().and_then(|p| p.mod_manager.clone()))
+        .unwrap_or_else(|| "direct".to_string());
     let profile = Profile {
         id: existing
             .as_ref()
@@ -54,6 +59,7 @@ pub fn create_profile(
         game_path,
         staging_path,
         proton_prefix_path,
+        mod_manager: Some(manager),
         created_at: existing
             .as_ref()
             .map(|p| p.created_at)

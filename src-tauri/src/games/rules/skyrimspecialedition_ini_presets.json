@@ -1,0 +1,52 @@
+{
+  "presets": [
+    {
+      "id": "deck_lite",
+      "label": "Deck Lite (40 FPS battery)",
+      "description": "1280×800 borderless, minimal shadows, god rays off — best for battery.",
+      "values": {
+        "display_mode": "borderless",
+        "width": "1280",
+        "height": "800",
+        "godrays": "0",
+        "depth_of_field": "0",
+        "motion_blur": "0",
+        "shadow_distance": "2000.0000",
+        "shadow_map": "512",
+        "anisotropy": "4"
+      }
+    },
+    {
+      "id": "deck_balanced",
+      "label": "Deck Balanced (60 FPS)",
+      "description": "1280×800 borderless, medium shadows — default DeckModFix target.",
+      "values": {
+        "display_mode": "borderless",
+        "width": "1280",
+        "height": "800",
+        "godrays": "0",
+        "depth_of_field": "0",
+        "motion_blur": "0",
+        "shadow_distance": "4000.0000",
+        "shadow_map": "1024",
+        "anisotropy": "8"
+      }
+    },
+    {
+      "id": "deck_quality",
+      "label": "Deck Quality (plugged in)",
+      "description": "1920×1200 borderless with higher shadows when docked.",
+      "values": {
+        "display_mode": "borderless",
+        "width": "1920",
+        "height": "1200",
+        "godrays": "1",
+        "depth_of_field": "0",
+        "motion_blur": "0",
+        "shadow_distance": "8000.0000",
+        "shadow_map": "2048",
+        "anisotropy": "8"
+      }
+    }
+  ]
+}

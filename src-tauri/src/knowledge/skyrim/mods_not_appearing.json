@@ -1,0 +1,9 @@
+{
+  "id": "enable_archive_invalidation",
+  "title": "Mods not appearing in game",
+  "description": "Loose-file mods install but textures/meshes do not show — archive invalidation is off.",
+  "symptoms": ["mods_not_appearing", "archive_invalidation"],
+  "detect": { "type": "archive_invalidation" },
+  "fix": { "type": "enable_archive_invalidation", "backup": true, "confirm": false, "destructive": false },
+  "deck_tip": "Always enable archive invalidation when deploying loose files on Deck."
+}

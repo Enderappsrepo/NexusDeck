@@ -1,0 +1,7 @@
+{
+  "id": "proton_compatibility",
+  "title": "Proton compatibility",
+  "description": "Use Proton GE 9+ or Proton Experimental for best Bethesda modding support.",
+  "fix": { "type": "proton_guidance", "backup": false, "confirm": false },
+  "deck_tip": "Set per-game compatibility in Steam → Properties → Compatibility."
+}

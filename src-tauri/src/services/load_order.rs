@@ -76,6 +76,7 @@ pub fn auto_sort_load_order(profile_id: &str) -> Result<Vec<InstalledMod>> {
 fn load_rules(game_domain: &str) -> LoadOrderRules {
     let embedded = match game_domain {
         "fallout4" => include_str!("../games/rules/fallout4_load_order.json"),
+        "skyrimspecialedition" => include_str!("../games/rules/skyrimspecialedition_load_order.json"),
         _ => {
             return LoadOrderRules {
                 category_tiers: HashMap::new(),

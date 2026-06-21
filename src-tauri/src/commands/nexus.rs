@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::error::Result;
-use crate::services::nexus_client::{GameSummary, ModCategory, ModDetail, ModFileInfo, ModSearchFilters, ModSearchResult, ModSummary, NexusClient};
+use crate::services::nexus_client::{GameListPage, ModCategory, ModDetail, ModFileInfo, ModSearchFilters, ModSearchResult, ModSummary, NexusClient};
 
 #[tauri::command]
 pub async fn search_mods(
@@ -73,9 +73,10 @@ pub async fn get_mod_files(
 pub async fn list_nexus_games(
     query: String,
     count: u32,
+    offset: u32,
     nexus: State<'_, Arc<NexusClient>>,
-) -> Result<Vec<GameSummary>> {
-    nexus.list_games(&query, count).await
+) -> Result<GameListPage> {
+    nexus.list_games(&query, count, offset).await
 }
 
 #[tauri::command]

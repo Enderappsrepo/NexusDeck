@@ -118,11 +118,18 @@ export function useGamepadBackHandler(onBack: () => void) {
 
 export function useGamepadContextAction(
   button: number,
-  handler: (ctx: InputContext) => void
+  handler: (ctx: InputContext) => void,
+  contexts?: InputContext | InputContext[]
 ) {
   useEffect(() => {
-    return gamepadRouter.onContextAction(button, handler);
-  }, [button, handler]);
+    return gamepadRouter.onContextAction(button, (ctx) => {
+      if (contexts) {
+        const allowed = Array.isArray(contexts) ? contexts : [contexts];
+        if (!allowed.includes(ctx)) return;
+      }
+      handler(ctx);
+    });
+  }, [button, handler, contexts]);
 }
 
 export { gamepadRouter };

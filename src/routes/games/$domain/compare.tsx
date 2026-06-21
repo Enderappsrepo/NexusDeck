@@ -5,6 +5,8 @@ import { useCompareStore } from "@/stores/compareStore";
 import { useGamesStore } from "@/stores";
 import { ModCompareView } from "@/components/compare/ModCompareView";
 import { api } from "@/lib/commands";
+import { useGamepadContextAction, useGamepadTabs } from "@/hooks/useGamepadRouter";
+import { GP } from "@/lib/gamepad/buttons";
 import type { InstalledMod } from "@/lib/nexus/types";
 
 export const Route = createFileRoute("/games/$domain/compare")({
@@ -15,8 +17,6 @@ export const Route = createFileRoute("/games/$domain/compare")({
   }),
 });
 
-import { useGamepadTabs } from "@/hooks/useGamepadTabs";
-
 function ComparePage() {
   const { domain } = useParams({ from: "/games/$domain/compare" });
   const { modA, modB } = Route.useSearch();
@@ -26,6 +26,7 @@ function ComparePage() {
   const [mods, setMods] = useState<InstalledMod[]>([]);
   const [selectedA, setSelectedA] = useState(modA ?? "");
   const [selectedB, setSelectedB] = useState(modB ?? "");
+  const [activePicker, setActivePicker] = useState<"a" | "b">("a");
 
   useEffect(() => {
     if (profile) {
@@ -40,7 +41,18 @@ function ComparePage() {
   }, [modA, modB]);
 
   const modIds = mods.map((m) => m.id);
-  useGamepadTabs(modIds, selectedA || modIds[0] || "", (id) => setSelectedA(id));
+  const activeSelection = activePicker === "a" ? selectedA : selectedB;
+
+  useGamepadTabs(modIds, activeSelection || modIds[0] || "", (id) => {
+    if (activePicker === "a") setSelectedA(id);
+    else setSelectedB(id);
+  });
+
+  useGamepadContextAction(
+    GP.X,
+    () => setActivePicker((p) => (p === "a" ? "b" : "a")),
+    "compare"
+  );
 
   useEffect(() => {
     if (profile && selectedA && selectedB && selectedA !== selectedB) {
@@ -53,7 +65,7 @@ function ComparePage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-5xl" data-scroll-pane>
       <Link
         to="/games/$domain/library"
         params={{ domain }}
@@ -68,11 +80,18 @@ function ComparePage() {
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2">
         <label className="space-y-2">
-          <span className="text-sm text-[var(--color-muted)]">Mod A</span>
+          <span className="text-sm text-[var(--color-muted)]">
+            Mod A {activePicker === "a" && "(active)"}
+          </span>
           <select
             value={selectedA}
             onChange={(e) => setSelectedA(e.target.value)}
-            className="focusable h-12 w-full rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 transition-colors focus-visible:border-[var(--color-primary)] focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none"
+            onFocus={() => setActivePicker("a")}
+            className={`focusable h-12 w-full rounded-xl border-2 bg-[var(--color-surface-1)] px-3 transition-colors focus-visible:border-[var(--color-primary)] focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none ${
+              activePicker === "a"
+                ? "border-[var(--color-primary)]"
+                : "border-[var(--color-border)]"
+            }`}
             data-focusable="true"
           >
             <option value="">Select mod...</option>
@@ -84,11 +103,18 @@ function ComparePage() {
           </select>
         </label>
         <label className="space-y-2">
-          <span className="text-sm text-[var(--color-muted)]">Mod B</span>
+          <span className="text-sm text-[var(--color-muted)]">
+            Mod B {activePicker === "b" && "(active)"}
+          </span>
           <select
             value={selectedB}
             onChange={(e) => setSelectedB(e.target.value)}
-            className="focusable h-12 w-full rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 transition-colors focus-visible:border-[var(--color-primary)] focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none"
+            onFocus={() => setActivePicker("b")}
+            className={`focusable h-12 w-full rounded-xl border-2 bg-[var(--color-surface-1)] px-3 transition-colors focus-visible:border-[var(--color-primary)] focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none ${
+              activePicker === "b"
+                ? "border-[var(--color-primary)]"
+                : "border-[var(--color-border)]"
+            }`}
             data-focusable="true"
           >
             <option value="">Select mod...</option>

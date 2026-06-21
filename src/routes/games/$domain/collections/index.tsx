@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Layers } from "lucide-react";
 import { useGamesStore } from "@/stores";
@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ModGridSkeleton } from "@/components/ui/LoadingSkeleton";
+import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
+import { GP } from "@/lib/gamepad/buttons";
+import { focusedCollectionSlug } from "@/lib/gamepad/domHelpers";
 import type { CollectionSummary } from "@/lib/nexus/types";
 
 export const Route = createFileRoute("/games/$domain/collections/")({
@@ -16,6 +19,7 @@ export const Route = createFileRoute("/games/$domain/collections/")({
 
 function CollectionsPage() {
   const { domain } = useParams({ from: "/games/$domain/collections/" });
+  const navigate = useNavigate();
   const { getProfile } = useGamesStore();
   const profile = getProfile(domain);
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
@@ -40,12 +44,23 @@ function CollectionsPage() {
     load(0, false).finally(() => setLoading(false));
   }, [profile, domain]);
 
+  useGamepadContextAction(
+    GP.X,
+    () => {
+      const slug = focusedCollectionSlug();
+      if (slug) {
+        navigate({ to: "/games/$domain/collections/$slug", params: { domain, slug } });
+      }
+    },
+    "collections"
+  );
+
   if (!profile) {
     return <p className="text-[var(--color-muted)]">Set up this game first.</p>;
   }
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="mx-auto max-w-6xl" data-scroll-pane>
       <Link
         to="/games/$domain"
         params={{ domain }}
@@ -91,6 +106,7 @@ function CollectionsPage() {
           <Button
             variant="secondary"
             disabled={loadingMore}
+            data-focusable="true"
             onClick={async () => {
               setLoadingMore(true);
               await load(collections.length, true);

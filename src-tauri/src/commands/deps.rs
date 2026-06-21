@@ -47,7 +47,7 @@ pub async fn queue_missing_dependencies(
             .find(|f| f.is_primary)
             .or_else(|| files.first());
         if let Some(file) = primary {
-            downloads
+            let progress = downloads
                 .enqueue_download(
                     app.clone(),
                     Arc::clone(&*nexus),
@@ -63,7 +63,8 @@ pub async fn queue_missing_dependencies(
                     0,
                 )
                 .await?;
-            queued.push(req.name);
+            downloads.mark_auto_install(&progress.id);
+            queued.push(progress.id);
         }
     }
 

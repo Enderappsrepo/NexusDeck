@@ -2,10 +2,12 @@ import { GP } from "./buttons";
 import type { InputContext } from "./contexts";
 import {
   activateFocused,
+  dispatchQuickLaunch,
   isTypingElement,
   moveFocus,
   scrollFocusedPane,
 } from "./focusNavigation";
+import { focusedDownloadId, isDownloadRowComplete } from "./domHelpers";
 
 export type ButtonHandler = (button: number) => void;
 export type AxisHandler = (axis: number, value: number) => void;
@@ -95,6 +97,12 @@ class GamepadRouterImpl {
   };
 
   private onDisconnect = (): void => {
+    if (!this.getPad()) {
+      this.controllerActive = false;
+      document.documentElement.removeAttribute("data-controller");
+      this.pressed.clear();
+      this.repeatStates.clear();
+    }
     this.notify();
   };
 
@@ -265,6 +273,11 @@ class GamepadRouterImpl {
     }
 
     switch (button) {
+      case GP.Y:
+        if (this.context === "home" || this.context === "gameHub") {
+          dispatchQuickLaunch();
+        }
+        break;
       case GP.DPAD_UP:
         moveFocus("up");
         break;
@@ -281,20 +294,33 @@ class GamepadRouterImpl {
         activateFocused();
         break;
       case GP.X:
+        if (isDownloadRowComplete()) {
+          const downloadId = focusedDownloadId();
+          if (downloadId) {
+            window.dispatchEvent(
+              new CustomEvent("nexusdeck-install-download", {
+                detail: { downloadId },
+              })
+            );
+            break;
+          }
+        }
         window.dispatchEvent(new CustomEvent("nexusdeck-secondary-action"));
         break;
       case GP.SELECT:
         this.toggleHintBar();
         break;
       case GP.START:
-        if (
-          this.context === "gameHub" ||
-          this.context === "library" ||
-          this.context === "browse"
+        if (this.context === "library") {
+          document.querySelector<HTMLElement>("[data-library-search]")?.focus();
+        } else if (
+          this.context === "browse" ||
+          this.context === "discover" ||
+          this.context === "gameHub"
         ) {
-          const selector =
-            this.context === "library" ? "[data-library-search]" : "[data-mod-search]";
-          document.querySelector<HTMLElement>(selector)?.focus();
+          document.querySelector<HTMLElement>("[data-mod-search]")?.focus();
+        } else if (this.context === "games") {
+          document.querySelector<HTMLElement>("[data-games-search]")?.focus();
         } else {
           window.dispatchEvent(new CustomEvent("nexusdeck-open-command-palette"));
         }
@@ -349,6 +375,12 @@ class GamepadRouterImpl {
 
   private fireTriggerScroll(direction: "up" | "down"): void {
     const el = document.activeElement as HTMLElement;
+    if (this.context === "modDetail") {
+      window.dispatchEvent(
+        new CustomEvent("nexusdeck-gallery-scroll", { detail: { direction } })
+      );
+      return;
+    }
     if (
       this.context === "library" &&
       el?.dataset.modId

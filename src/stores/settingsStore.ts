@@ -21,7 +21,7 @@ interface SettingsState {
 const GYRO_SCROLL_KEY = "nexusdeck_gyro_scroll";
 
 export const useSettingsStore = create<SettingsState>((set) => ({
-  downloadSettings: { max_concurrent: 2, speed_limit_kbps: 0 },
+  downloadSettings: { max_concurrent: 2, speed_limit_kbps: 0, auto_install_after_download: false },
   batteryMode: localStorage.getItem(BATTERY_MODE_KEY) === "true",
   sidebarCollapsed: localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true",
   gyroScroll: localStorage.getItem(GYRO_SCROLL_KEY) === "true",

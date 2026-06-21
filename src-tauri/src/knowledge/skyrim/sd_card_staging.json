@@ -1,0 +1,7 @@
+{
+  "id": "sd_card_staging",
+  "title": "Move staging off SD card",
+  "description": "Mod downloads and staging on removable media cause slow installs and extracts.",
+  "fix": { "type": "sd_card_staging_guidance", "backup": false, "confirm": false },
+  "deck_tip": "Point staging to ~/Games/SkyrimSE/staging on internal storage."
+}

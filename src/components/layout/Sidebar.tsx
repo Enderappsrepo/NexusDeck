@@ -62,17 +62,22 @@ export function Sidebar() {
   })?.id ?? "dashboard";
 
   useGamepadTabs(
-    GAME_NAV.map((n) => n.id),
-    activeGameNav,
+    domain ? GAME_NAV.map((n) => n.id) : GLOBAL_NAV.map((n) => n.to),
+    domain ? activeGameNav : GLOBAL_NAV.find((n) =>
+      n.to === "/" ? pathname === "/" : pathname === n.to || pathname.startsWith(`${n.to}/`)
+    )?.to ?? "/",
     (tabId) => {
-      if (!domain) return;
-      const item = GAME_NAV.find((n) => n.id === tabId);
-      if (!item) return;
-      navigate({
-        to: item.to,
-        params: { domain },
-        search: item.id === "browse" ? { modId: undefined } : undefined,
-      });
+      if (domain) {
+        const item = GAME_NAV.find((n) => n.id === tabId);
+        if (!item) return;
+        navigate({
+          to: item.to,
+          params: { domain },
+          search: item.id === "browse" ? { modId: undefined } : undefined,
+        });
+      } else {
+        navigate({ to: tabId as "/" | "/games" | "/settings" });
+      }
     }
   );
 

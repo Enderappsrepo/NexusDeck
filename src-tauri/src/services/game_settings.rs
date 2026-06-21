@@ -8,6 +8,19 @@ use crate::db::{self, Profile};
 use crate::error::{NexusDeckError, Result};
 use crate::games::GameRegistry;
 
+#[derive(Debug, Deserialize)]
+struct SkyrimPresetEntry {
+    id: String,
+    label: String,
+    description: String,
+    values: HashMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SkyrimPresetsFile {
+    presets: Vec<SkyrimPresetEntry>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameSettingDefinition {
     pub id: String,
@@ -73,7 +86,7 @@ pub fn get_game_settings_schema(profile_id: &str) -> Result<GameSettingsSchema> 
     Ok(GameSettingsSchema {
         config_dir: config_dir.display().to_string(),
         settings: setting_definitions(),
-        presets: preset_definitions(),
+        presets: preset_definitions(&profile.game_domain),
     })
 }
 
@@ -137,7 +150,8 @@ pub fn apply_game_settings(
 }
 
 pub fn apply_game_settings_preset(profile_id: &str, preset_id: &str) -> Result<ApplyGameSettingsResult> {
-    let values = preset_values(preset_id)?;
+    let profile = load_profile(profile_id)?;
+    let values = preset_values(&profile.game_domain, preset_id)?;
     apply_game_settings(profile_id, values)
 }
 
@@ -171,6 +185,26 @@ pub fn ensure_archive_invalidation(profile: &Profile) -> Result<bool> {
     write_ini_value(&path, "Archive", "bInvalidateOlderFiles", "1")?;
     write_ini_value(&path, "Archive", "sResourceDataDirsFinal", "")?;
     Ok(true)
+}
+
+pub fn is_archive_invalidation_enabled(profile: &Profile) -> Result<bool> {
+    let Ok(prefix) = ini_prefix(&profile.game_domain) else {
+        return Ok(true);
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        match profile.proton_prefix_path.as_deref() {
+            Some(p) if Path::new(p).exists() => {}
+            _ => return Ok(true),
+        }
+    }
+
+    let config_dir = resolve_my_games_dir(profile)?;
+    let path = ini_path(&config_dir, prefix, "custom");
+    let invalidate = read_ini_value(&path, "Archive", "bInvalidateOlderFiles")
+        .unwrap_or_else(|| "0".into());
+    Ok(invalidate == "1")
 }
 
 fn load_profile(profile_id: &str) -> Result<Profile> {
@@ -375,7 +409,23 @@ fn setting_definitions() -> Vec<GameSettingDefinition> {
     ]
 }
 
-fn preset_definitions() -> Vec<GameSettingsPreset> {
+fn preset_definitions(game_domain: &str) -> Vec<GameSettingsPreset> {
+    if game_domain == "skyrimspecialedition" {
+        if let Ok(file) = serde_json::from_str::<SkyrimPresetsFile>(include_str!(
+            "../games/rules/skyrimspecialedition_ini_presets.json"
+        )) {
+            return file
+                .presets
+                .into_iter()
+                .map(|p| GameSettingsPreset {
+                    id: p.id,
+                    label: p.label,
+                    description: p.description,
+                })
+                .collect();
+        }
+    }
+
     vec![
         GameSettingsPreset {
             id: "deck".into(),
@@ -400,7 +450,17 @@ fn preset_definitions() -> Vec<GameSettingsPreset> {
     ]
 }
 
-fn preset_values(preset_id: &str) -> Result<HashMap<String, String>> {
+fn preset_values(game_domain: &str, preset_id: &str) -> Result<HashMap<String, String>> {
+    if game_domain == "skyrimspecialedition" {
+        if let Ok(file) = serde_json::from_str::<SkyrimPresetsFile>(include_str!(
+            "../games/rules/skyrimspecialedition_ini_presets.json"
+        )) {
+            if let Some(preset) = file.presets.into_iter().find(|p| p.id == preset_id) {
+                return Ok(preset.values);
+            }
+        }
+    }
+
     let map = match preset_id {
         "deck" => HashMap::from([
             ("display_mode".into(), "borderless".into()),

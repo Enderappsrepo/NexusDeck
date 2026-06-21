@@ -69,7 +69,7 @@ function PreviewPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="mx-auto max-w-6xl" data-scroll-pane>
       <Link
         to="/games/$domain/mods/$modId"
         params={{ domain, modId: modIdParam }}
@@ -92,7 +92,7 @@ function PreviewPage() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <div>
+        <div data-scroll-pane>
           <h2 className="mb-3 font-semibold">File tree</h2>
           {loadingTree ? (
             <p className="text-[var(--color-muted)]">Loading archive...</p>
@@ -104,7 +104,7 @@ function PreviewPage() {
             />
           )}
         </div>
-        <div>
+        <div data-scroll-pane>
           <h2 className="mb-3 font-semibold">Texture preview</h2>
           <TexturePreview preview={preview} loading={loadingPreview} />
         </div>

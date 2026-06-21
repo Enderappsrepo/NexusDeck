@@ -44,20 +44,24 @@ function HomePage() {
 
   useEffect(() => {
     api
-      .listNexusGames("", 8)
-      .then((games) => setGames(normalizeGameSummaries(games)))
+      .listNexusGames("", 8, 0)
+      .then((page) => setGames(normalizeGameSummaries(page.games)))
       .catch(() => setGames([]));
   }, []);
 
   const primaryProfile = profiles[0];
   const launchFromStore = useLaunchStore((s) => s.launch);
 
-  useGamepadContextAction(GP.X, () => {
-    if (primaryProfile) launchFromStore(primaryProfile.id).catch(() => {});
-  });
+  useGamepadContextAction(
+    GP.X,
+    () => {
+      if (primaryProfile) launchFromStore(primaryProfile.id).catch(() => {});
+    },
+    "home"
+  );
 
   return (
-    <div className="page-section mx-auto max-w-5xl">
+    <div className="page-section mx-auto max-w-5xl" data-scroll-pane>
       {/* Hero */}
       <section className="page-hero">
         <div className="relative p-8 sm:p-10">
@@ -97,18 +101,14 @@ function HomePage() {
                 <Link
                   to="/games/$domain"
                   params={{ domain: primaryProfile.game_domain }}
-                  className="focusable block rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 transition-colors hover:border-[var(--color-primary)]/40"
+                  className="focusable relative block overflow-hidden rounded-2xl border border-[var(--color-border)] transition-colors hover:border-[var(--color-primary)]/40"
                   data-focusable="true"
                 >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={cn(
-                        "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br",
-                        gameGradient(primaryProfile.game_domain)
-                      )}
-                    >
-                      <Gamepad2 className="h-5 w-5 text-white" />
-                    </div>
+                  <div className="relative h-24">
+                    <GameArt domain={primaryProfile.game_domain} variant="tile" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-black/70 to-black/30" />
+                  </div>
+                  <div className="flex items-center gap-3 p-4">
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-semibold">{primaryProfile.name}</p>
                       <p className="truncate text-sm text-[var(--color-muted)]">
@@ -167,11 +167,12 @@ function HomePage() {
                 key={p.id}
                 className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-[var(--shadow-sm)]"
               >
-                <div className="relative h-28 overflow-hidden">
+                <div className="relative h-36 overflow-hidden">
                   <GameArt domain={p.game_domain} variant="tile" />
-                  <div className="absolute bottom-4 left-5">
-                    <h3 className="text-xl font-bold">{p.name}</h3>
-                    <p className="text-sm text-white/70">{p.game_domain}</p>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+                  <div className="absolute bottom-4 left-5 right-5">
+                    <h3 className="text-xl font-bold text-white drop-shadow">{p.name}</h3>
+                    <p className="text-sm text-white/75">{p.game_domain}</p>
                   </div>
                 </div>
 
@@ -231,7 +232,7 @@ function HomePage() {
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {games.length > 0 ? (
-            games.slice(0, 4).map((g) => (
+            games.slice(0, 8).map((g) => (
               <GameCard
                 key={g.domain_name}
                 game={g}
@@ -239,15 +240,25 @@ function HomePage() {
               />
             ))
           ) : (
-            <GameCard
-              game={{
-                domain_name: "fallout4",
-                name: "Fallout 4",
-                id: 0,
-              }}
-              supported
-            />
+            supportedGames.slice(0, 4).map((g) => (
+              <GameCard
+                key={g.domain}
+                game={{
+                  domain_name: g.domain,
+                  name: g.display_name,
+                  id: 0,
+                }}
+                supported
+              />
+            ))
           )}
+        </div>
+        <div className="mt-6 text-center">
+          <Link to="/games">
+            <Button variant="secondary" data-focusable="true">
+              Browse all games
+            </Button>
+          </Link>
         </div>
       </section>
     </div>

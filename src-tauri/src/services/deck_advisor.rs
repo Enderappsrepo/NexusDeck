@@ -37,12 +37,11 @@ pub fn analyze_profile(profile_id: &str) -> Result<Vec<AdvisorFinding>> {
 }
 
 fn load_rules(game_domain: &str) -> Result<Vec<RuleDefinition>> {
-    let path = format!("src/games/rules/{game_domain}_deck.json");
     let embedded = match game_domain {
         "fallout4" => include_str!("../games/rules/fallout4_deck.json"),
+        "skyrimspecialedition" => include_str!("../games/rules/skyrimspecialedition_deck.json"),
         _ => return Ok(Vec::new()),
     };
-    let _ = path;
     let file: RulesFile = serde_json::from_str(embedded)?;
     Ok(file.rules)
 }
@@ -54,16 +53,16 @@ fn evaluate_rules(
 ) -> Vec<AdvisorFinding> {
     let mut findings = Vec::new();
     let platform = platform_name().to_lowercase();
-    let f4se = games::run_wizard_step(
+    let script_extender_ok = games::run_wizard_step(
         &profile.game_domain,
-        "detect_f4se",
+        "detect_script_extender",
         serde_json::json!({ "game_path": profile.game_path }),
     )
     .map(|r| r.success)
     .unwrap_or(false);
 
     for rule in rules {
-        if let Some(finding) = evaluate_rule(rule, installed, &platform, f4se) {
+        if let Some(finding) = evaluate_rule(rule, installed, &platform, script_extender_ok) {
             findings.push(finding);
         }
     }
@@ -117,6 +116,12 @@ fn evaluate_rule(
         }
 
         if condition.get("f4se_missing").and_then(|v| v.as_bool()) == Some(true) && f4se_installed {
+            return None;
+        }
+
+        if condition.get("script_extender_missing").and_then(|v| v.as_bool()) == Some(true)
+            && f4se_installed
+        {
             return None;
         }
 

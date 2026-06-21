@@ -1,0 +1,9 @@
+{
+  "id": "install_proton_deps",
+  "title": "CTD on launch",
+  "description": "Crash on startup often means missing Visual C++ / .NET runtimes in the Proton prefix.",
+  "symptoms": ["ctd_launch", "log_dll_load_fail", "proton_deps_pending"],
+  "detect": { "type": "proton_deps" },
+  "fix": { "type": "install_proton_deps", "backup": false, "confirm": false },
+  "deck_tip": "Install protontricks from Discover, then run dependency install from DeckModFix."
+}

@@ -1,0 +1,36 @@
+{
+  "category_tiers": {
+    "Bug Fixes": 10,
+    "Utilities": 20,
+    "User Interface": 25,
+    "Audio": 30,
+    "Environmental": 40,
+    "Locations - New": 45,
+    "Locations - Changes": 46,
+    "Quests and Adventures": 50,
+    "Gameplay": 55,
+    "Immersion": 56,
+    "Companions": 57,
+    "NPC": 58,
+    "Weapons": 70,
+    "Armour": 71,
+    "Items and Objects - Weapons": 70,
+    "Items and Objects - Armour": 71,
+    "Items and Objects - Misc": 72,
+    "Models and Textures": 80,
+    "Animations": 81,
+    "Visuals and Graphics": 82,
+    "Cheats and God Items": 90,
+    "Patches": 95
+  },
+  "tag_adjustments": {
+    "Unofficial Patch": -20,
+    "USSEP": -20,
+    "SKSE": -15,
+    "Framework": -10,
+    "Patch": 10,
+    "Performance": 5,
+    "LOD": 8
+  },
+  "default_tier": 60
+}

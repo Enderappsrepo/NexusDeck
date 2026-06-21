@@ -1,0 +1,7 @@
+{
+  "id": "enable_archive_invalidation",
+  "title": "Enable archive invalidation",
+  "description": "Sets bInvalidateOlderFiles in SkyrimCustom.ini so loose mods load.",
+  "fix": { "type": "enable_archive_invalidation", "backup": true, "confirm": false },
+  "deck_tip": "Required for most Nexus texture and mesh mods deployed as loose files."
+}

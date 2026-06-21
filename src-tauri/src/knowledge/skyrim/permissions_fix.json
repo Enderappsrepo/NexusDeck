@@ -1,0 +1,7 @@
+{
+  "id": "fix_permissions",
+  "title": "Fix prefix permissions",
+  "description": "Proton prefix is not writable — chmod user read/write on the prefix folder.",
+  "fix": { "type": "fix_permissions", "backup": false, "confirm": false },
+  "deck_tip": "Common when the game library is on an SD card mounted read-only."
+}

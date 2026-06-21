@@ -28,6 +28,8 @@ finish-args:
   - --talk-name=org.freedesktop.impl.portal.Secret
   - --talk-name=org.freedesktop.portal.Desktop
   - --talk-name=org.freedesktop.Notifications
+  # Run host commands (Proton launch of external tools like BodySlide) via flatpak-spawn --host
+  - --talk-name=org.freedesktop.Flatpak
   # Tauri single-instance plugin (com.nexusdeck.app → org.com_nexusdeck_app)
   - --talk-name=org.com_nexusdeck_app.SingleInstance
   - --own-name=org.com_nexusdeck_app.SingleInstance

@@ -1,0 +1,7 @@
+{
+  "id": "install_proton_deps",
+  "title": "Install Proton dependencies",
+  "description": "Install vcrun2019, .NET 4.8, and DirectX components via protontricks.",
+  "fix": { "type": "install_proton_deps", "backup": false, "confirm": false },
+  "deck_tip": "Run once per prefix after creation or recreation."
+}

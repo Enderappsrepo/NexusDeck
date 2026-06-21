@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +58,7 @@ pub fn uninstall_mod(mod_id: &str) -> Result<UninstallResult> {
     }
 
     let restored = remove_mod_files_with_restore(&profile, &mod_record, true)?;
+    prune_empty_dirs(&profile, &files);
     cleanup_mod_backups(&profile, &mod_record.id)?;
 
     db::delete_installed_mod(mod_id)?;
@@ -145,6 +146,40 @@ fn cleanup_mod_backups(profile: &Profile, mod_id: &str) -> Result<()> {
         fs::remove_dir_all(&backup_root)?;
     }
     Ok(())
+}
+
+/// Remove directories under `Data/` left empty after a mod's files were removed.
+/// Walks each affected directory upward, stopping at a non-empty dir or `Data/`.
+/// Best-effort — failures are ignored.
+fn prune_empty_dirs(profile: &Profile, files: &[String]) {
+    let data_root = Path::new(&profile.game_path).join("Data");
+    let mut dirs: Vec<PathBuf> = files
+        .iter()
+        .filter_map(|f| Path::new(f).parent().map(Path::to_path_buf))
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+
+    for dir in dirs {
+        let mut current = dir;
+        while current.starts_with(&data_root) && current != data_root {
+            match fs::read_dir(&current) {
+                Ok(mut entries) => {
+                    if entries.next().is_some() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+            if fs::remove_dir(&current).is_err() {
+                break;
+            }
+            match current.parent() {
+                Some(parent) => current = parent.to_path_buf(),
+                None => break,
+            }
+        }
+    }
 }
 
 fn normalize_path(path: &str) -> String {

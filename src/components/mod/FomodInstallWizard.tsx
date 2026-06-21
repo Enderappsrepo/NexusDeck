@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, CheckCircle2, Circle, ImageIcon, Square } from "lucide-react";
 import type {
+  FomodCondition,
+  FomodFlag,
   InstallOptionGroup,
   InstallWizard,
   SelectedInstallOption,
@@ -50,6 +52,56 @@ export function flattenWizardGroups(wizard: InstallWizard): WizardGroupPage[] {
       sectionDescription: step.description,
     }))
   );
+}
+
+function activeFlagsFromSelections(
+  wizard: InstallWizard,
+  selections: SelectedInstallOption[]
+): Record<string, string> {
+  const flags: Record<string, string> = {};
+  const groups = flattenWizardGroups(wizard).map((p) => p.group);
+  for (const group of groups) {
+    const selectedIds =
+      selections.find((s) => s.group_id === group.id)?.option_ids ?? [];
+    for (const option of group.options) {
+      if (!selectedIds.includes(option.id)) continue;
+      for (const flag of option.condition_flags ?? []) {
+        flags[flag.name] = flag.value;
+      }
+    }
+  }
+  return flags;
+}
+
+function conditionMatches(
+  condition: FomodCondition | null | undefined,
+  flags: Record<string, string>
+): boolean {
+  if (!condition?.flags?.length) return true;
+  const isOr = condition.operator?.toLowerCase() === "or";
+  const matches = (flag: FomodFlag) => flags[flag.name] === flag.value;
+  return isOr ? condition.flags.some(matches) : condition.flags.every(matches);
+}
+
+export function filterVisibleWizardGroups(
+  wizard: InstallWizard,
+  selections: SelectedInstallOption[]
+): WizardGroupPage[] {
+  const flags = activeFlagsFromSelections(wizard, selections);
+  const pages: WizardGroupPage[] = [];
+
+  for (const step of wizard.steps) {
+    if (!conditionMatches(step.condition, flags)) continue;
+    for (const group of step.groups) {
+      if (!conditionMatches(group.condition, flags)) continue;
+      pages.push({
+        group,
+        section: step.name,
+        sectionDescription: step.description,
+      });
+    }
+  }
+  return pages;
 }
 
 function FomodOptionImage({
@@ -268,7 +320,10 @@ export function FomodInstallWizard({
   onSelectionsChange,
   disabled = false,
 }: FomodInstallWizardProps) {
-  const pages = useMemo(() => flattenWizardGroups(wizard), [wizard]);
+  const pages = useMemo(
+    () => filterVisibleWizardGroups(wizard, selections),
+    [wizard, selections]
+  );
   const stepItems: WizardStepItem[] = useMemo(
     () => pages.map((page) => ({ id: page.group.id, label: page.group.name })),
     [pages]

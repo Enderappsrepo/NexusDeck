@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
+import { useUiLockStore } from "@/stores/uiLockStore";
 
 const TOP_LEVEL_PATHS = new Set(["/", "/games", "/settings", "/onboarding"]);
 
@@ -19,6 +20,9 @@ export function useAppBack() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   return useCallback(() => {
+    // Don't navigate away while an install is mid-flight.
+    if (useUiLockStore.getState().installBusy) return;
+
     if (window.history.length > 1) {
       router.history.back();
       return;

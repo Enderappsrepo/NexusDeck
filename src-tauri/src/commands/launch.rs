@@ -19,6 +19,11 @@ use crate::services::steam_shortcut::{
     create_steam_shortcut as run_create_steam_shortcut, list_steam_shortcut_infos,
     write_shortcut_to_steam_vdf, NexusDeckSteamShortcutResult, SteamShortcutInfo,
 };
+use crate::services::tools::{
+    detect_bodyslide as run_detect_bodyslide, detect_sseedit as run_detect_sseedit,
+    launch_bodyslide as run_launch_bodyslide, launch_sseedit as run_launch_sseedit,
+    BodySlideInfo, SseEditInfo,
+};
 
 #[tauri::command]
 pub fn list_launch_configs(profile_id: String) -> Result<Vec<LaunchConfig>> {
@@ -197,4 +202,34 @@ pub async fn batch_launch_tools(
     tokio::task::spawn_blocking(move || run_batch_launch(&app, &profile_id, tool_ids, &monitor))
         .await
         .map_err(|e| crate::error::NexusDeckError::Other(format!("Batch launch failed: {e}")))?
+}
+
+#[tauri::command]
+pub async fn detect_bodyslide(profile_id: String) -> Result<BodySlideInfo> {
+    tokio::task::spawn_blocking(move || run_detect_bodyslide(&profile_id))
+        .await
+        .map_err(|e| {
+            crate::error::NexusDeckError::Other(format!("BodySlide detection failed: {e}"))
+        })?
+}
+
+#[tauri::command]
+pub async fn launch_bodyslide(profile_id: String) -> Result<String> {
+    tokio::task::spawn_blocking(move || run_launch_bodyslide(&profile_id))
+        .await
+        .map_err(|e| crate::error::NexusDeckError::Other(format!("BodySlide launch failed: {e}")))?
+}
+
+#[tauri::command]
+pub async fn detect_sseedit(profile_id: String) -> Result<SseEditInfo> {
+    tokio::task::spawn_blocking(move || run_detect_sseedit(&profile_id))
+        .await
+        .map_err(|e| crate::error::NexusDeckError::Other(format!("SSEEdit detection failed: {e}")))?
+}
+
+#[tauri::command]
+pub async fn launch_sseedit(profile_id: String) -> Result<String> {
+    tokio::task::spawn_blocking(move || run_launch_sseedit(&profile_id))
+        .await
+        .map_err(|e| crate::error::NexusDeckError::Other(format!("SSEEdit launch failed: {e}")))?
 }

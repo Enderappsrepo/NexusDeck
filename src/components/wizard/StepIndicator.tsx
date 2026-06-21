@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-const STEPS = [
+const DEFAULT_STEPS = [
   "Game Path",
   "Staging Folder",
   "F4SE Check",
@@ -11,14 +11,27 @@ const STEPS = [
 interface StepIndicatorProps {
   currentStep: number;
   className?: string;
+  totalSteps?: number;
+  labels?: string[];
 }
 
-export function StepIndicator({ currentStep, className }: StepIndicatorProps) {
+export function StepIndicator({
+  currentStep,
+  className,
+  totalSteps,
+  labels,
+}: StepIndicatorProps) {
+  const steps =
+    labels ??
+    (totalSteps
+      ? DEFAULT_STEPS.slice(0, totalSteps)
+      : DEFAULT_STEPS);
+
   return (
     <div className={cn("flex flex-wrap gap-2", className)}>
-      {STEPS.map((label, i) => (
+      {steps.map((label, i) => (
         <div
-          key={label}
+          key={`${label}-${i}`}
           className={cn(
             "rounded-xl px-4 py-2 text-sm font-medium",
             i === currentStep

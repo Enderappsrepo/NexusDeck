@@ -27,10 +27,10 @@ export function LaunchConfirmDialog({
         </ul>
       )}
       <div className="mt-6 flex justify-end gap-2">
-        <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <Button variant="outline" onClick={() => onOpenChange(false)} data-focusable="true">
           Cancel
         </Button>
-        <Button size="lg" onClick={onConfirm}>
+        <Button size="lg" onClick={onConfirm} data-focusable="true">
           Launch Game
         </Button>
       </div>

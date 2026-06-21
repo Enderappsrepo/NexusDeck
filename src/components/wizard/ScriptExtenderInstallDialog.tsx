@@ -136,7 +136,8 @@ export function ScriptExtenderInstallDialog({
               type="checkbox"
               checked={configureLauncher}
               onChange={(e) => setConfigureLauncher(e.target.checked)}
-              className="mt-1 h-5 w-5 accent-[var(--color-primary)]"
+              className="focusable mt-1 h-5 w-5 accent-[var(--color-primary)]"
+              data-focusable="true"
             />
             <div>
               <p className="font-medium">Configure Steam launcher</p>
@@ -156,7 +157,7 @@ export function ScriptExtenderInstallDialog({
 
         <div className="flex flex-wrap gap-3">
           {canAutoInstall && (
-            <Button size="lg" onClick={install} disabled={loading || status?.installed}>
+            <Button size="lg" onClick={install} disabled={loading || status?.installed} data-focusable="true">
               <Download className="h-5 w-5" />
               {loading
                 ? "Installing..."
@@ -170,6 +171,7 @@ export function ScriptExtenderInstallDialog({
             size="lg"
             onClick={installFromFile}
             disabled={loading || status?.installed}
+            data-focusable="true"
           >
             <FolderOpen className="h-5 w-5" />
             Install from file
@@ -178,11 +180,12 @@ export function ScriptExtenderInstallDialog({
             variant="secondary"
             onClick={() => info && openUrl(info.website_url)}
             disabled={!info?.website_url}
+            data-focusable="true"
           >
             <ExternalLink className="h-5 w-5" />
             Open website
           </Button>
-          <Button variant="outline" onClick={refresh}>
+          <Button variant="outline" onClick={refresh} data-focusable="true">
             <RefreshCw className="h-5 w-5" />
             Re-check
           </Button>

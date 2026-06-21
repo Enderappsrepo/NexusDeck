@@ -1,8 +1,10 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use tauri::{async_runtime::spawn, AppHandle, Emitter};
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
@@ -152,4 +154,30 @@ pub fn resolve_mod_archive_path(staging_path: String, file_name: String) -> Resu
 pub fn watch_staging_ready(staging_path: String, file_name: String) -> Result<bool> {
     let dir = PathBuf::from(&staging_path);
     Ok(resolve_mod_archive(&dir, &file_name).is_ok())
+}
+
+#[tauri::command]
+pub fn start_staging_watcher(
+    app: AppHandle,
+    staging_path: String,
+    file_name: String,
+) -> Result<()> {
+    let dir = PathBuf::from(staging_path);
+    let target = file_name;
+    spawn(async move {
+        for _ in 0..90 {
+            if resolve_mod_archive(&dir, &target).is_ok() {
+                let _ = app.emit(
+                    "staging-file-ready",
+                    serde_json::json!({
+                        "staging_path": dir.display().to_string(),
+                        "file_name": target,
+                    }),
+                );
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    });
+    Ok(())
 }

@@ -41,10 +41,10 @@ export function InstallPromptDialog({
       </div>
 
       <div className="mt-6 flex justify-end gap-3">
-        <Button variant="outline" onClick={onDismiss}>
+        <Button variant="outline" onClick={onDismiss} data-focusable="true">
           Later
         </Button>
-        <Button onClick={onInstall} disabled={!profile}>
+        <Button onClick={onInstall} disabled={!profile} data-focusable="true">
           Install now
         </Button>
       </div>

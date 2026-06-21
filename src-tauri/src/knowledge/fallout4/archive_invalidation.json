@@ -1,0 +1,7 @@
+{
+  "id": "enable_archive_invalidation",
+  "title": "Enable archive invalidation",
+  "description": "Required for loose-file Fallout 4 mods to appear in-game.",
+  "fix": { "type": "enable_archive_invalidation", "backup": true, "confirm": false },
+  "deck_tip": "NexusDeck can set this automatically on deploy."
+}

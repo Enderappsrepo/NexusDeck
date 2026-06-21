@@ -26,7 +26,7 @@ export function ModCompareView({ result }: ModCompareViewProps) {
           <h3 className="mb-3 text-lg font-semibold">
             Conflicts with installed mods ({result.conflicts_with_installed.length})
           </h3>
-          <div className="max-h-64 space-y-2 overflow-y-auto rounded-xl bg-[var(--color-secondary)] p-4 scrollbar-thin">
+          <div className="max-h-64 space-y-2 overflow-y-auto rounded-xl bg-[var(--color-secondary)] p-4 scrollbar-thin" data-scroll-pane>
             {result.conflicts_with_installed.map((c) => (
               <div key={c.path} className="text-sm">
                 <span className="font-mono text-[var(--color-warning)]">{c.path}</span>

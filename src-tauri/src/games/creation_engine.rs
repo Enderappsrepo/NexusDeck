@@ -113,7 +113,6 @@ impl CreationEnginePlugin {
     };
 
     pub const ALL: &'static [CreationEngineConfig] = &[
-        Self::SKYRIM_SE,
         Self::SKYRIM_LE,
         Self::FALLOUT_NV,
         Self::FALLOUT_3,

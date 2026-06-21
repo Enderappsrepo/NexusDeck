@@ -39,12 +39,18 @@ pub struct DownloadProgress {
     pub profile_id: String,
     #[serde(default)]
     pub update_target_mod_id: String,
+    #[serde(default)]
+    pub auto_install: bool,
+    #[serde(default)]
+    pub queue_position: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadSettings {
     pub max_concurrent: u32,
     pub speed_limit_kbps: u32,
+    #[serde(default)]
+    pub auto_install_after_download: bool,
 }
 
 impl Default for DownloadSettings {
@@ -52,6 +58,7 @@ impl Default for DownloadSettings {
         Self {
             max_concurrent: 2,
             speed_limit_kbps: 0,
+            auto_install_after_download: false,
         }
     }
 }
@@ -114,6 +121,10 @@ impl DownloadManager {
 
     pub fn consume_auto_install(&self, download_id: &str) -> bool {
         self.auto_install_ids.lock().remove(download_id)
+    }
+
+    fn progress_auto_install(&self, download_id: &str) -> bool {
+        self.auto_install_ids.lock().contains(download_id)
     }
 
     pub fn get_download_settings(&self) -> Result<DownloadSettings> {
@@ -273,6 +284,7 @@ impl DownloadManager {
         };
         db::insert_download(&record)?;
 
+        let queue_position = self.queue.lock().len() as u32 + 1;
         let progress = DownloadProgress {
             id: id.clone(),
             game_domain: game_domain.to_string(),
@@ -286,6 +298,8 @@ impl DownloadManager {
             mod_name: mod_name.to_string(),
             profile_id: profile_id.to_string(),
             update_target_mod_id: update_target_mod_id.to_string(),
+            auto_install: self.auto_install_ids.lock().contains(&id),
+            queue_position,
         };
 
         let _ = app.emit("download-progress", &progress);
@@ -510,7 +524,18 @@ impl DownloadManager {
             } else {
                 "failed"
             };
-            let _ = db::update_download_status(&item.id, status, 0, expected_bytes as i64);
+            let part = part_path(&dest_path);
+            let bytes_preserved = if part.exists() {
+                part.metadata().map(|m| m.len()).unwrap_or(item.resume_bytes)
+            } else {
+                item.resume_bytes
+            };
+            let _ = db::update_download_status(
+                &item.id,
+                status,
+                bytes_preserved as i64,
+                expected_bytes as i64,
+            );
             let _ = item.app.emit(
                 "download-error",
                 serde_json::json!({ "id": item.id, "error": e.to_string() }),
@@ -635,6 +660,8 @@ impl DownloadManager {
                     mod_name: mod_name.to_string(),
                     profile_id: profile_id.to_string(),
                     update_target_mod_id: update_target_mod_id.to_string(),
+                    auto_install: self.progress_auto_install(id),
+                    queue_position: 0,
                 };
                 let _ = app.emit("download-progress", &progress);
                 last_emit = Instant::now();
@@ -658,6 +685,9 @@ impl DownloadManager {
 
         db::update_download_status(id, "complete", bytes_done as i64, bytes_total as i64)?;
 
+        let auto_install = self.consume_auto_install(id)
+            || (!update_target_mod_id.is_empty() && update_target_mod_id != "");
+
         let progress = DownloadProgress {
             id: id.to_string(),
             game_domain: game_domain.to_string(),
@@ -671,6 +701,8 @@ impl DownloadManager {
             mod_name: mod_name.to_string(),
             profile_id: profile_id.to_string(),
             update_target_mod_id: update_target_mod_id.to_string(),
+            auto_install,
+            queue_position: 0,
         };
         let _ = app.emit("download-complete", &progress);
         Ok(())

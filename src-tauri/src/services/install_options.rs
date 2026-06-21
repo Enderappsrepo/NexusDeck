@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
+use sha2::{Digest, Sha256};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use serde::{Deserialize, Serialize};
@@ -67,6 +67,8 @@ pub struct InstallWizardStep {
     pub name: String,
     pub description: Option<String>,
     pub groups: Vec<InstallOptionGroup>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub condition: Option<FomodCondition>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -95,6 +97,8 @@ pub struct InstallOptionGroup {
     pub name: String,
     pub selection_type: InstallOptionSelectionType,
     pub options: Vec<InstallOptionChoice>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub condition: Option<FomodCondition>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -162,6 +166,7 @@ pub fn detect_install_wizard_from_dir(
             name: "Install options".into(),
             description: None,
             groups,
+            condition: None,
         }],
         ..Default::default()
     }
@@ -261,21 +266,23 @@ fn fomod_cache_dir() -> Result<PathBuf> {
 }
 
 fn fomod_cache_key(archive_path: &Path) -> Result<String> {
+    use std::io::Read;
     let meta = std::fs::metadata(archive_path)?;
-    let modified = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let mut file = std::fs::File::open(archive_path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    let hash = format!("{:x}", hasher.finalize());
     Ok(format!(
-        "{}-{}-{}",
-        archive_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy(),
-        meta.len(),
-        modified
+        "{}-{}",
+        hash,
+        meta.len()
     ))
 }
 
@@ -298,6 +305,7 @@ fn load_cached_fomod_groups(archive_path: &Path) -> Result<Option<InstallWizard>
             name: "Install options".into(),
             description: None,
             groups,
+            condition: None,
         }],
         ..Default::default()
     }))
@@ -606,6 +614,62 @@ fn active_fomod_flags(
         }
     }
     flags
+}
+
+pub fn active_fomod_flag_map(
+    wizard: &InstallWizard,
+    selections: &[SelectedInstallOption],
+) -> HashMap<String, String> {
+    active_fomod_flags(&wizard.flattened_groups(), selections)
+}
+
+pub fn filter_visible_wizard(
+    wizard: &InstallWizard,
+    selections: &[SelectedInstallOption],
+) -> InstallWizard {
+    let groups = wizard.flattened_groups();
+    let flags = active_fomod_flags(&groups, selections);
+
+    let mut filtered = wizard.clone();
+    filtered.steps = wizard
+        .steps
+        .iter()
+        .filter_map(|step| {
+            if let Some(ref cond) = step.condition {
+                if !condition_matches(cond, &flags) {
+                    return None;
+                }
+            }
+            let visible_groups: Vec<_> = step
+                .groups
+                .iter()
+                .filter_map(|group| {
+                    if let Some(ref cond) = group.condition {
+                        if !condition_matches(cond, &flags) {
+                            return None;
+                        }
+                    }
+                    Some(group.clone())
+                })
+                .collect();
+            if visible_groups.is_empty() {
+                return None;
+            }
+            Some(InstallWizardStep {
+                groups: visible_groups,
+                ..step.clone()
+            })
+        })
+        .collect();
+    filtered
+}
+
+pub fn wizard_structure_hash(wizard: &InstallWizard) -> String {
+    let mut hasher = Sha256::new();
+    if let Ok(json) = serde_json::to_string(wizard) {
+        hasher.update(json.as_bytes());
+    }
+    format!("{:x}", hasher.finalize())
 }
 
 fn condition_matches(condition: &FomodCondition, flags: &HashMap<String, String>) -> bool {
@@ -927,6 +991,7 @@ fn finalize_group(
     name: &str,
     selection_type: InstallOptionSelectionType,
     options: &mut Vec<InstallOptionChoice>,
+    condition: Option<FomodCondition>,
 ) {
     if options.is_empty() {
         return;
@@ -943,6 +1008,7 @@ fn finalize_group(
         },
         selection_type,
         options: options.clone(),
+        condition,
     });
     *group_index += 1;
 }
@@ -1041,11 +1107,13 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
     let mut current_step_name = String::new();
     let mut current_step_description = String::new();
     let mut current_step_groups: Vec<InstallOptionGroup> = Vec::new();
+    let mut current_step_condition = FomodCondition::default();
     let mut step_index = 0usize;
 
     let mut current_group_name = String::new();
     let mut current_group_type = InstallOptionSelectionType::SelectOne;
     let mut current_group_default = String::new();
+    let mut current_group_condition = FomodCondition::default();
     let mut current_option_name = String::new();
     let mut current_option_description = String::new();
     let mut current_option_image: Option<String> = None;
@@ -1061,6 +1129,7 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
     let mut in_pattern_dependencies = false;
     let mut in_pattern_files = false;
     let mut in_condition_flags = false;
+    let mut condition_flags_target = "";
     let mut pending_flag: Option<FomodFlag> = None;
     let mut current_pattern_condition = FomodCondition::default();
     let mut current_pattern_files: Vec<FomodFileRef> = Vec::new();
@@ -1096,7 +1165,16 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                         }
                     }
                     "files" if in_conditional_pattern => in_pattern_files = true,
-                    "conditionflags" if in_option => in_condition_flags = true,
+                    "conditionflags" if in_install_step || in_group || in_option => {
+                        in_condition_flags = true;
+                        condition_flags_target = if in_option {
+                            "option"
+                        } else if in_group {
+                            "group"
+                        } else {
+                            "step"
+                        };
+                    }
                     "flagdependency" if in_pattern_dependencies => {
                         let mut flag_name = String::new();
                         let mut flag_value = String::new();
@@ -1134,6 +1212,7 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                         current_step_name.clear();
                         current_step_description.clear();
                         current_step_groups.clear();
+                        current_step_condition = FomodCondition::default();
                         for attr in e.attributes().flatten() {
                             let key = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
                             if key == "name" {
@@ -1148,6 +1227,7 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                         current_group_name.clear();
                         current_group_default.clear();
                         current_group_type = InstallOptionSelectionType::SelectOne;
+                        current_group_condition = FomodCondition::default();
                         group_options.clear();
                         for attr in e.attributes().flatten() {
                             let key = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
@@ -1280,10 +1360,18 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                     "requiredinstallfiles" if in_required_install_files => {
                         in_required_install_files = false
                     }
-                    "conditionflags" if in_condition_flags => in_condition_flags = false,
+                    "conditionflags" if in_condition_flags => {
+                        in_condition_flags = false;
+                        condition_flags_target = "";
+                    }
                     "flag" if in_condition_flags => {
                         if let Some(flag) = pending_flag.take() {
-                            current_option_flags.push(flag);
+                            match condition_flags_target {
+                                "option" => current_option_flags.push(flag),
+                                "group" => current_group_condition.flags.push(flag),
+                                "step" => current_step_condition.flags.push(flag),
+                                _ => {}
+                            }
                         }
                     }
                     "option" | "plugin" if in_option => {
@@ -1301,6 +1389,11 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                     }
                     "group" if in_group => {
                         in_group = false;
+                        let group_condition = if current_group_condition.flags.is_empty() {
+                            None
+                        } else {
+                            Some(current_group_condition.clone())
+                        };
                         if in_install_step {
                             finalize_group(
                                 &mut current_step_groups,
@@ -1308,6 +1401,7 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                                 &current_group_name,
                                 current_group_type.clone(),
                                 &mut group_options,
+                                group_condition,
                             );
                         } else {
                             finalize_group(
@@ -1316,6 +1410,7 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                                 &current_group_name,
                                 current_group_type.clone(),
                                 &mut group_options,
+                                group_condition,
                             );
                         }
                     }
@@ -1335,6 +1430,11 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                                     Some(current_step_description.clone())
                                 },
                                 groups: current_step_groups.clone(),
+                                condition: if current_step_condition.flags.is_empty() {
+                                    None
+                                } else {
+                                    Some(current_step_condition.clone())
+                                },
                             });
                             step_index += 1;
                         }
@@ -1359,6 +1459,7 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
             name: "Install options".into(),
             description: None,
             groups: legacy_groups,
+            condition: None,
         });
     }
 
@@ -1407,6 +1508,7 @@ fn detect_heuristic_groups(entries: &[ArchiveEntry]) -> Vec<InstallOptionGroup> 
             name: "Body type".into(),
             selection_type: InstallOptionSelectionType::SelectOne,
             options: body_options,
+            condition: None,
         });
     }
     if texture_options.len() >= 2 {
@@ -1416,6 +1518,7 @@ fn detect_heuristic_groups(entries: &[ArchiveEntry]) -> Vec<InstallOptionGroup> 
             name: "Texture quality".into(),
             selection_type: InstallOptionSelectionType::SelectOne,
             options: texture_options,
+            condition: None,
         });
     }
     if !compat_options.is_empty() {
@@ -1424,6 +1527,7 @@ fn detect_heuristic_groups(entries: &[ArchiveEntry]) -> Vec<InstallOptionGroup> 
             name: "Compatibility patches".into(),
             selection_type: InstallOptionSelectionType::SelectAny,
             options: compat_options,
+            condition: None,
         });
     }
     if !misc_options.is_empty() {
@@ -1432,6 +1536,7 @@ fn detect_heuristic_groups(entries: &[ArchiveEntry]) -> Vec<InstallOptionGroup> 
             name: "Optional components".into(),
             selection_type: InstallOptionSelectionType::SelectAny,
             options: misc_options,
+            condition: None,
         });
     }
 

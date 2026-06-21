@@ -22,7 +22,7 @@ export function useControllerFocus() {
       firstRun.current = false;
       return;
     }
-    if (pathname === "/onboarding") return;
+    if (pathname === "/onboarding" || pathname.endsWith("/setup")) return;
     if (!gamepadRouter.getControllerActive()) return;
 
     // Defer one frame so the new route has committed its DOM before we look.

@@ -1,0 +1,9 @@
+{
+  "id": "prefix_bloat",
+  "title": "Prefix bloat / performance",
+  "description": "Very large Proton prefixes slow launches and waste SD card space.",
+  "symptoms": ["prefix_bloat"],
+  "detect": { "type": "prefix_size_mb", "threshold": 8192 },
+  "fix": { "type": "prefix_backup_guidance", "backup": true, "confirm": true, "destructive": true },
+  "deck_tip": "Back up the prefix, then recreate it and reinstall SKSE + protontricks deps."
+}

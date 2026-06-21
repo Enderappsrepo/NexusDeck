@@ -1,0 +1,8 @@
+{
+  "id": "wabbajack_checklist",
+  "title": "Wabbajack on Steam Deck",
+  "description": "Guided checklist for Wabbajack modlists (use Tuxborn or desktop for full automation).",
+  "symptoms": ["wabbajack"],
+  "fix": { "type": "wabbajack_guidance", "backup": false, "confirm": false },
+  "deck_tip": "Pre-install MO2, protontricks deps, and SKSE before running a Wabbajack list."
+}

@@ -73,15 +73,16 @@ export function FreeDownloadDialog({
           <Button
             onClick={() => urls?.file_page && openUrl(urls.file_page)}
             disabled={!urls?.file_page}
+            data-focusable="true"
           >
             <ExternalLink className="h-5 w-5" />
             Open file on Nexus
           </Button>
-          <Button variant="secondary" onClick={() => urls && openUrl(urls.files_tab)}>
+          <Button variant="secondary" onClick={() => urls && openUrl(urls.files_tab)} data-focusable="true">
             <ExternalLink className="h-5 w-5" />
             All files
           </Button>
-          <Button variant="outline" onClick={checkDownload} disabled={checking}>
+          <Button variant="outline" onClick={checkDownload} disabled={checking} data-focusable="true">
             <RefreshCw className="h-5 w-5" />
             {checking ? "Checking..." : ready ? "File found!" : "Check staging folder"}
           </Button>
@@ -97,7 +98,8 @@ export function FreeDownloadDialog({
           API downloads require{" "}
           <button
             type="button"
-            className="text-[var(--color-primary)] underline"
+            className="focusable text-[var(--color-primary)] underline"
+            data-focusable="true"
             onClick={() => urls && openUrl(urls.premium_info_url)}
           >
             Nexus Premium

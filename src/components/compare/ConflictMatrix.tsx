@@ -22,7 +22,7 @@ export function ConflictMatrix({ entries }: ConflictMatrixProps) {
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
+    <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]" data-scroll-pane>
       <table className="w-full text-left text-sm">
         <thead className="border-b border-[var(--color-border)] bg-[var(--color-secondary)]">
           <tr>

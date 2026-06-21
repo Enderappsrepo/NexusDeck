@@ -1,0 +1,8 @@
+{
+  "id": "reinstall_script_extender",
+  "title": "F4SE not loading",
+  "description": "F4SE loader or DLLs are missing from the game folder.",
+  "symptoms": ["f4se_missing", "script_extender_missing"],
+  "fix": { "type": "reinstall_script_extender", "backup": true, "confirm": false },
+  "deck_tip": "Install F4SE matching your Fallout 4 version before launching modded."
+}

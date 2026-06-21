@@ -16,6 +16,7 @@ export function CollectionCard({ collection, domain }: CollectionCardProps) {
       params={{ domain, slug: collection.slug }}
       className="focusable block"
       data-focusable="true"
+      data-collection-slug={collection.slug}
     >
       <Card interactive className="h-full">
         <CardHeader>

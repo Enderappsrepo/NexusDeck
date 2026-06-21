@@ -5,6 +5,7 @@ import {
   Layers,
   Search,
   Settings2,
+  Wrench,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,7 @@ import { GameModDiscovery } from "@/components/game/GameModDiscovery";
 import { GameSettingsPanel } from "@/components/game/GameSettingsPanel";
 import { GameArt } from "@/components/game/GameArt";
 import { GameStatStrip } from "@/components/game/GameStatStrip";
+import { BodySlidePanel } from "@/components/game/BodySlidePanel";
 import { ModSearchBar } from "@/components/mod/ModSearchBar";
 import { LaunchButton } from "@/components/launch/LaunchButton";
 import { useLaunchStore } from "@/stores/launchStore";
@@ -29,7 +31,7 @@ import {
 } from "@/lib/games";
 import { resolveGameDomain, usePathname, isValidGameDomain } from "@/lib/routeParams";
 import { useGamepadTabs } from "@/hooks/useGamepadTabs";
-import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
+import { gamepadRouter, useGamepadContextAction } from "@/hooks/useGamepadRouter";
 import { GP } from "@/lib/gamepad/buttons";
 import type { ScriptExtenderStatus, SupportedGameInfo } from "@/lib/nexus/types";
 
@@ -44,6 +46,7 @@ const NAV_LINKS = [
   { to: "/games/$domain/mods" as const, label: "Browse", icon: Search, withModSearch: true },
   { to: "/games/$domain/library" as const, label: "Library", icon: FolderOpen, withModSearch: false },
   { to: "/games/$domain/collections" as const, label: "Collections", icon: Layers, withModSearch: false },
+  { to: "/games/$domain/troubleshoot" as const, label: "Fix", icon: Wrench, withModSearch: false },
   { to: "/games/$domain/setup" as const, label: "Setup", icon: Settings2, withModSearch: false },
 ];
 
@@ -70,13 +73,21 @@ function GameDashboard() {
 
   useGamepadTabs([...DASHBOARD_TABS], activeTab, (tab) => setActiveTab(tab as DashboardTab));
 
-  useGamepadContextAction(GP.X, () => {
-    navigate({
-      to: "/games/$domain/mods",
-      params: { domain },
-      search: { modId: undefined },
-    });
-  });
+  useEffect(() => {
+    gamepadRouter.setContext(activeTab === "discover" ? "discover" : "gameHub");
+  }, [activeTab]);
+
+  useGamepadContextAction(
+    GP.X,
+    () => {
+      navigate({
+        to: "/games/$domain/mods",
+        params: { domain },
+        search: { modId: undefined },
+      });
+    },
+    "gameHub"
+  );
 
   useEffect(() => {
     loadSupportedGames().then(setSupportedGames);
@@ -116,15 +127,18 @@ function GameDashboard() {
   if (!profile) {
     return (
       <div className="mx-auto max-w-xl py-16 text-center">
-        <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-[var(--color-secondary)]">
-          <Settings2 className="h-10 w-10 text-[var(--color-primary)]" />
+        <div className="relative mx-auto mb-6 h-32 w-full max-w-sm overflow-hidden rounded-2xl border border-[var(--color-border)]">
+          <GameArt domain={domain} variant="tile" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+          <div className="absolute bottom-4 left-4 right-4">
+            <h1 className="text-2xl font-bold capitalize">{gameMeta?.display_name ?? domain}</h1>
+          </div>
         </div>
-        <h1 className="text-3xl font-bold capitalize">{domain}</h1>
         <p className="mt-4 text-[var(--color-muted)]">
           This game is not set up yet. Run the setup wizard to get started.
         </p>
         <Link to="/games/$domain/setup" params={{ domain }}>
-          <Button size="lg" className="mt-8">
+          <Button size="lg" className="mt-8" data-focusable="true">
             Start Setup Wizard
           </Button>
         </Link>
@@ -143,18 +157,23 @@ function GameDashboard() {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-5">
-      <section className="game-banner">
+      <section className="game-banner min-h-[220px] sm:min-h-[260px]">
         <GameArt domain={domain} variant="hero" />
         <div className="game-banner-content">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
               <Badge variant="muted" className="mb-2">
-                {domain}
+                {gameMeta?.display_name ?? domain}
               </Badge>
-              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{profile.name}</h1>
+              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl lg:text-4xl">
+                {profile.name}
+              </h1>
               <p className="mt-1 truncate text-sm text-[var(--color-muted)]" title={profile.game_path}>
                 {profile.game_path}
               </p>
+            </div>
+            <div className="relative hidden h-20 w-32 shrink-0 overflow-hidden rounded-xl border border-white/10 sm:block lg:h-24 lg:w-40">
+              <GameArt domain={domain} variant="tile" className="rounded-xl" />
             </div>
           </div>
 
@@ -217,6 +236,7 @@ function GameDashboard() {
 
         <TabsContent value="play" className="space-y-5">
           <DeckAdvisorPanel profileId={profile.id} />
+          <BodySlidePanel profileId={profile.id} />
           <GameModDiscovery domain={domain} signedIn={!!user} sections="hero" />
         </TabsContent>
 

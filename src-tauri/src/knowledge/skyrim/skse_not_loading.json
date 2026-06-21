@@ -1,0 +1,9 @@
+{
+  "id": "reinstall_skse",
+  "title": "SKSE not loading",
+  "description": "SKSE loader or DLLs are missing or do not match your Skyrim.exe version.",
+  "symptoms": ["skse_not_loading", "skse_missing", "log_skse_mismatch"],
+  "detect": { "type": "skse_game_version", "game_domain": "skyrimspecialedition" },
+  "fix": { "type": "reinstall_skse", "backup": true, "confirm": false },
+  "deck_tip": "Match SKSE to your exact Skyrim.exe version from Steam (AE vs SE builds differ)."
+}

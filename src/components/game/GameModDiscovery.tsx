@@ -13,7 +13,12 @@ import { getUserMessage } from "@/lib/apiError";
 import { DEFAULT_FILTERS } from "@/lib/nexus/filters";
 import { cn } from "@/lib/utils";
 import { useGamepadTabs } from "@/hooks/useGamepadTabs";
-import type { ModSummary } from "@/lib/nexus/types";
+import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
+import { GP } from "@/lib/gamepad/buttons";
+import { focusedBrowseModId } from "@/lib/gamepad/domHelpers";
+import { useEndorseFocusedMod } from "@/hooks/useEndorseFocusedMod";
+import { useGamesStore, useDownloadsStore } from "@/stores";
+import { modFileDownloadName, type ModSummary } from "@/lib/nexus/types";
 
 interface DiscoveryFeeds {
   featured: ModSummary[];
@@ -82,6 +87,47 @@ export function GameModDiscovery({
       }
     }
   );
+
+  const { getProfile } = useGamesStore();
+  const profile = getProfile(domain);
+  const setProgress = useDownloadsStore((s) => s.setProgress);
+
+  useGamepadContextAction(
+    GP.X,
+    async () => {
+      if (view !== "browse") return;
+      const modIdNum = focusedBrowseModId();
+      if (!modIdNum || !profile) return;
+      try {
+        const modFiles = await api.getModFiles(domain, modIdNum);
+        const primary = modFiles.find((f) => f.is_primary) ?? modFiles[0];
+        if (!primary) return;
+        const modName =
+          browseMods.find((m) => m.mod_id === modIdNum)?.name ??
+          feeds.topEndorsed.find((m) => m.mod_id === modIdNum)?.name;
+        const progress = await api.startModDownload({
+          gameDomain: domain,
+          modId: modIdNum,
+          fileId: primary.file_id,
+          fileName: modFileDownloadName(primary),
+          stagingPath: profile.staging_path,
+          expectedSizeKb: primary.size_kb,
+          modName,
+          profileId: profile.id,
+        });
+        setProgress(progress);
+      } catch {
+        // Fall through — user can open mod detail manually
+      }
+    },
+    "discover"
+  );
+
+  const endorseMods =
+    view === "browse"
+      ? browseMods
+      : [...feeds.topEndorsed, ...feeds.mostDownloaded, ...feeds.recentlyUpdated];
+  useEndorseFocusedMod(domain, endorseMods, "discover");
 
   const loadDiscovery = () => {
     setLoading(true);

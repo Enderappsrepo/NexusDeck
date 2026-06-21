@@ -11,7 +11,7 @@ export function ControllerHintBar() {
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 border-t border-[var(--color-border)] bg-[var(--color-card)]/95 px-4 py-2 backdrop-blur-md"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] border-t border-[var(--color-border)] bg-[var(--color-card)]/95 px-4 py-2 backdrop-blur-md"
       data-controller-hint-bar
       aria-hidden
     >

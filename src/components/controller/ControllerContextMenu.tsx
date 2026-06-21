@@ -1,7 +1,9 @@
-import { useState } from "react";
-import { Download, Eye, GitCompare, Power } from "lucide-react";import { AppDialog } from "@/components/ui/dialog";
+import { useEffect, useState } from "react";
+import { Download, Eye, GitCompare, Power } from "lucide-react";
+import { AppDialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { GP } from "@/lib/gamepad/buttons";
+import type { InputContext } from "@/lib/gamepad/contexts";
 import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
 
 export interface ContextMenuAction {
@@ -12,11 +14,20 @@ export interface ContextMenuAction {
   variant?: "default" | "danger";
 }
 
-export function useControllerContextMenu(actions: ContextMenuAction[], title?: string) {  const [open, setOpen] = useState(false);
+export function useControllerContextMenu(
+  actions: ContextMenuAction[],
+  title?: string,
+  context: InputContext = "library"
+) {
+  const [open, setOpen] = useState(false);
 
-  useGamepadContextAction(GP.Y, () => {
-    if (actions.length > 0) setOpen(true);
-  });
+  useGamepadContextAction(
+    GP.Y,
+    () => {
+      if (actions.length > 0) setOpen(true);
+    },
+    context
+  );
 
   const menu = (
     <AppDialog open={open} onOpenChange={setOpen} title={title ?? "Actions"}>

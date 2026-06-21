@@ -1,0 +1,48 @@
+{
+  "games": [
+    {
+      "domain": "skyrimspecialedition",
+      "display_name": "Skyrim Special Edition",
+      "steam_app_id": 489830,
+      "knowledge_pack": "skyrim",
+      "proton_deps": "skyrimspecialedition_proton_deps.json",
+      "deck_rules": "skyrimspecialedition_deck.json",
+      "load_order_rules": "skyrimspecialedition_load_order.json",
+      "ini_presets": "skyrimspecialedition_ini_presets.json",
+      "mod_managers": ["direct", "mo2"],
+      "remedies": [
+        "skyrim/skse_not_loading",
+        "skyrim/mods_not_appearing",
+        "skyrim/ctd_launch",
+        "skyrim/prefix_bloat",
+        "skyrim/plugins_txt_sync",
+        "skyrim/archive_invalidation",
+        "skyrim/proton_deps_missing",
+        "skyrim/permissions_fix",
+        "skyrim/ini_deck_preset",
+        "skyrim/sd_card_staging",
+        "skyrim/wabbajack_checklist",
+        "shared/proton_common"
+      ]
+    },
+    {
+      "domain": "fallout4",
+      "display_name": "Fallout 4",
+      "steam_app_id": 377160,
+      "knowledge_pack": "fallout4",
+      "proton_deps": "fallout4_proton_deps.json",
+      "deck_rules": "fallout4_deck.json",
+      "load_order_rules": "fallout4_load_order.json",
+      "ini_presets": null,
+      "mod_managers": ["direct", "mo2"],
+      "remedies": [
+        "fallout4/f4se_not_loading",
+        "fallout4/proton_deps_missing",
+        "fallout4/archive_invalidation",
+        "fallout4/plugins_txt_sync",
+        "fallout4/ini_deck_preset",
+        "shared/proton_common"
+      ]
+    }
+  ]
+}

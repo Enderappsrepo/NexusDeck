@@ -1,0 +1,7 @@
+{
+  "id": "sync_plugins_txt",
+  "title": "Sync plugins.txt",
+  "description": "Refresh plugins.txt from your enabled mod list.",
+  "fix": { "type": "sync_plugins_txt", "backup": true, "confirm": false },
+  "deck_tip": "Run after load order changes."
+}

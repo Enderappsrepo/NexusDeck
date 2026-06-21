@@ -1,4 +1,5 @@
 import { GameRunningBanner } from "@/components/launch/GameRunningBanner";
+import { UpdateBanner } from "@/components/layout/UpdateBanner";
 import { Toaster } from "@/components/ui/toast";
 import { GAMEPAD_HINTS } from "@/hooks/useFocusNavigation";
 import { useGamepadRouterState } from "@/hooks/useGamepadRouter";
@@ -11,9 +12,13 @@ import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 export function AppShell({
   children,
   hideNav = false,
+  updateInfo = null,
+  onDismissUpdate,
 }: {
   children: React.ReactNode;
   hideNav?: boolean;
+  updateInfo?: import("@/lib/nexus/types").AppUpdateInfo | null;
+  onDismissUpdate?: () => void;
 }) {
   const toasts = useLaunchStore((s) => s.toasts);
   const dismissToast = useLaunchStore((s) => s.dismissToast);
@@ -23,6 +28,9 @@ export function AppShell({
   return (
     <div className="flex h-full min-h-screen flex-col">
       <GameRunningBanner />
+      {updateInfo && (
+        <UpdateBanner info={updateInfo} onDismiss={onDismissUpdate} />
+      )}
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[image:var(--gradient-surface)] px-6">
         <div className="flex min-w-0 items-center gap-3">
           <BackButton />

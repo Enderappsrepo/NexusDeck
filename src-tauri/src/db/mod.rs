@@ -12,6 +12,8 @@ pub struct Profile {
     pub game_path: String,
     pub staging_path: String,
     pub proton_prefix_path: Option<String>,
+    #[serde(default)]
+    pub mod_manager: Option<String>,
     pub created_at: i64,
 }
 
@@ -79,7 +81,24 @@ fn connection() -> Result<Connection> {
     conn.execute_batch(include_str!("schema.sql"))?;
     migrate_downloads_table(&conn)?;
     migrate_installed_mods_table(&conn)?;
+    migrate_profiles_table(&conn)?;
     Ok(conn)
+}
+
+fn migrate_profiles_table(conn: &Connection) -> Result<()> {
+    let columns: Vec<String> = conn
+        .prepare("PRAGMA table_info(profiles)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if !columns.iter().any(|c| c == "mod_manager") {
+        conn.execute(
+            "ALTER TABLE profiles ADD COLUMN mod_manager TEXT DEFAULT 'direct'",
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 fn migrate_installed_mods_table(conn: &Connection) -> Result<()> {
@@ -152,8 +171,8 @@ pub fn init_db() -> Result<()> {
 pub fn save_profile(profile: &Profile) -> Result<()> {
     let conn = connection()?;
     conn.execute(
-        "INSERT OR REPLACE INTO profiles (id, game_domain, name, game_path, staging_path, proton_prefix_path, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT OR REPLACE INTO profiles (id, game_domain, name, game_path, staging_path, proton_prefix_path, mod_manager, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             profile.id,
             profile.game_domain,
@@ -161,6 +180,7 @@ pub fn save_profile(profile: &Profile) -> Result<()> {
             profile.game_path,
             profile.staging_path,
             profile.proton_prefix_path,
+            profile.mod_manager.as_deref().unwrap_or("direct"),
             profile.created_at,
         ],
     )?;
@@ -170,20 +190,10 @@ pub fn save_profile(profile: &Profile) -> Result<()> {
 pub fn list_profiles() -> Result<Vec<Profile>> {
     let conn = connection()?;
     let mut stmt = conn.prepare(
-        "SELECT id, game_domain, name, game_path, staging_path, proton_prefix_path, created_at FROM profiles ORDER BY created_at DESC",
+        "SELECT id, game_domain, name, game_path, staging_path, proton_prefix_path, mod_manager, created_at FROM profiles ORDER BY created_at DESC",
     )?;
     let profiles = stmt
-        .query_map([], |row| {
-            Ok(Profile {
-                id: row.get(0)?,
-                game_domain: row.get(1)?,
-                name: row.get(2)?,
-                game_path: row.get(3)?,
-                staging_path: row.get(4)?,
-                proton_prefix_path: row.get(5)?,
-                created_at: row.get(6)?,
-            })
-        })?
+        .query_map([], map_profile_row)?
         .filter_map(|r| r.ok())
         .collect();
     Ok(profiles)
@@ -192,19 +202,11 @@ pub fn list_profiles() -> Result<Vec<Profile>> {
 pub fn get_profile(id: &str) -> Result<Option<Profile>> {
     let conn = connection()?;
     let mut stmt = conn.prepare(
-        "SELECT id, game_domain, name, game_path, staging_path, proton_prefix_path, created_at FROM profiles WHERE id = ?1",
+        "SELECT id, game_domain, name, game_path, staging_path, proton_prefix_path, mod_manager, created_at FROM profiles WHERE id = ?1",
     )?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
-        Ok(Some(Profile {
-            id: row.get(0)?,
-            game_domain: row.get(1)?,
-            name: row.get(2)?,
-            game_path: row.get(3)?,
-            staging_path: row.get(4)?,
-            proton_prefix_path: row.get(5)?,
-            created_at: row.get(6)?,
-        }))
+        Ok(Some(map_profile_row(&row)?))
     } else {
         Ok(None)
     }
@@ -213,22 +215,37 @@ pub fn get_profile(id: &str) -> Result<Option<Profile>> {
 pub fn get_profile_by_domain(domain: &str) -> Result<Option<Profile>> {
     let conn = connection()?;
     let mut stmt = conn.prepare(
-        "SELECT id, game_domain, name, game_path, staging_path, proton_prefix_path, created_at FROM profiles WHERE game_domain = ?1 LIMIT 1",
+        "SELECT id, game_domain, name, game_path, staging_path, proton_prefix_path, mod_manager, created_at FROM profiles WHERE game_domain = ?1 LIMIT 1",
     )?;
     let mut rows = stmt.query(params![domain])?;
     if let Some(row) = rows.next()? {
-        Ok(Some(Profile {
-            id: row.get(0)?,
-            game_domain: row.get(1)?,
-            name: row.get(2)?,
-            game_path: row.get(3)?,
-            staging_path: row.get(4)?,
-            proton_prefix_path: row.get(5)?,
-            created_at: row.get(6)?,
-        }))
+        Ok(Some(map_profile_row(&row)?))
     } else {
         Ok(None)
     }
+}
+
+pub fn set_profile_mod_manager(profile_id: &str, mod_manager: &str) -> Result<()> {
+    let conn = connection()?;
+    conn.execute(
+        "UPDATE profiles SET mod_manager = ?1 WHERE id = ?2",
+        params![mod_manager, profile_id],
+    )?;
+    Ok(())
+}
+
+fn map_profile_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Profile> {
+    let mod_manager: Option<String> = row.get(6)?;
+    Ok(Profile {
+        id: row.get(0)?,
+        game_domain: row.get(1)?,
+        name: row.get(2)?,
+        game_path: row.get(3)?,
+        staging_path: row.get(4)?,
+        proton_prefix_path: row.get(5)?,
+        mod_manager: mod_manager.filter(|s| !s.is_empty()),
+        created_at: row.get(7)?,
+    })
 }
 
 pub fn save_installed_mod(mod_record: &InstalledMod) -> Result<()> {

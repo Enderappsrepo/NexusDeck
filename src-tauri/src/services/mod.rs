@@ -30,5 +30,14 @@ pub mod install_options;
 pub mod mod_metadata;
 pub mod mod_uninstall;
 pub mod load_order;
+pub mod tools;
+pub mod proton_deps;
+pub mod prefix_manager;
+pub mod autofix;
+pub mod mo2;
+pub mod log_parser;
+pub mod game_manifest;
+pub mod profile_reset;
+pub mod app_update;
 
 pub use archive_options::MergeOptions;

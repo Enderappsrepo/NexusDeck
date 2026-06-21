@@ -454,6 +454,7 @@ body {
   border-radius: var(--radius-xl);
   background: var(--color-card);
   box-shadow: var(--shadow-md);
+  min-height: 180px;
 }
 
 .game-banner-art {

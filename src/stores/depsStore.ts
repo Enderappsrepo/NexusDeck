@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { DependencyGraph } from "@/lib/nexus/types";
 import { api } from "@/lib/commands";
 import { getUserMessage, logApiError } from "@/lib/apiError";
+import { useInstallQueueStore } from "@/stores/installQueueStore";
 
 interface DepsState {
   graph: DependencyGraph | null;
@@ -37,6 +38,11 @@ export const useDepsStore = create<DepsState>((set) => ({
     set({ queueing: true, error: null });
     try {
       const queued = await api.queueMissingDependencies(profileId, modId);
+      for (const downloadId of queued) {
+        useInstallQueueStore.getState().registerPendingInstall(downloadId, {
+          source: "dep",
+        });
+      }
       const graph = await api.resolveModDependencies(profileId, modId);
       set({ graph, queueing: false });
       return queued;

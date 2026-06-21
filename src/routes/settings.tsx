@@ -11,6 +11,7 @@ import { useAuthStore, useGamesStore, useSettingsStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { GAMEPAD_HINTS } from "@/hooks/useFocusNavigation";
 import { AddToSteamPanel } from "@/components/steam/AddToSteamPanel";
+import { ResetModsDialog } from "@/components/mod/ResetModsDialog";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -39,17 +40,27 @@ function SettingsPage() {
   const [autoSortAfterInstall, setAutoSortAfterInstall] = useState(
     () => localStorage.getItem("nexusdeck_auto_sort_after_install") === "true"
   );
+  const [autoInstallAfterDownload, setAutoInstallAfterDownload] = useState(
+    () => downloadSettings.auto_install_after_download ?? false
+  );
+  const [clearDownloadAfterInstall, setClearDownloadAfterInstall] = useState(
+    () => localStorage.getItem("nexusdeck_clear_download_after_install") !== "false"
+  );
+  const [resetProfile, setResetProfile] = useState<{ id: string; name: string } | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
 
   useEffect(() => {
     loadProfiles();
     loadSettings();
     loadLaunchSettings();
     api.getAppPaths().then(setPaths);
+    api.getPlatformInfo().then((p) => setAppVersion(p.app_version)).catch(() => {});
   }, [loadProfiles, loadSettings, loadLaunchSettings]);
 
   useEffect(() => {
     setMaxConcurrent(downloadSettings.max_concurrent);
     setSpeedLimit(downloadSettings.speed_limit_kbps);
+    setAutoInstallAfterDownload(downloadSettings.auto_install_after_download ?? false);
   }, [downloadSettings]);
 
   const exportDiag = async () => {
@@ -79,11 +90,12 @@ function SettingsPage() {
     await setDownloadSettings({
       max_concurrent: maxConcurrent,
       speed_limit_kbps: speedLimit,
+      auto_install_after_download: autoInstallAfterDownload,
     });
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="mx-auto max-w-2xl space-y-6" data-scroll-pane>
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
         <p className="mt-1 text-[var(--color-muted)]">
@@ -100,7 +112,7 @@ function SettingsPage() {
             <>
               <p>Signed in as <strong>{user.name}</strong></p>
               {user.is_premium && <p className="text-[var(--color-success)]">Premium member</p>}
-              <Button variant="danger" onClick={logout}>Sign Out</Button>
+              <Button variant="danger" onClick={logout} data-focusable="true">Sign Out</Button>
             </>
           ) : (
             <p className="text-[var(--color-muted)]">Not signed in</p>
@@ -134,7 +146,20 @@ function SettingsPage() {
               onChange={(e) => setSpeedLimit(Number(e.target.value))}
             />
           </label>
-          <Button onClick={saveDownloadSettings} disabled={settingsLoading}>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label>Auto-install after download</Label>
+              <p className="text-sm text-[var(--color-muted)]">
+                Skip the install prompt and open the install wizard automatically when a download finishes.
+              </p>
+            </div>
+            <Switch
+              checked={autoInstallAfterDownload}
+              onCheckedChange={setAutoInstallAfterDownload}
+              data-focusable="true"
+            />
+          </div>
+          <Button onClick={saveDownloadSettings} disabled={settingsLoading} data-focusable="true">
             Save download settings
           </Button>
         </CardContent>
@@ -145,6 +170,22 @@ function SettingsPage() {
           <CardTitle>Mod library</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label>Clear completed downloads after install</Label>
+              <p className="text-sm text-[var(--color-muted)]">
+                Remove download rows from the queue once a mod finishes installing.
+              </p>
+            </div>
+            <Switch
+              checked={clearDownloadAfterInstall}
+              onCheckedChange={(checked) => {
+                localStorage.setItem("nexusdeck_clear_download_after_install", String(checked));
+                setClearDownloadAfterInstall(checked);
+              }}
+              data-focusable="true"
+            />
+          </div>
           <div className="flex items-center justify-between gap-4">
             <div>
               <Label>Auto-sort load order after install</Label>
@@ -176,7 +217,7 @@ function SettingsPage() {
                 Prefer lighter downloads and disable heavy visual mods on battery.
               </p>
             </div>
-            <Switch checked={batteryMode} onCheckedChange={setBatteryMode} />
+            <Switch checked={batteryMode} onCheckedChange={setBatteryMode} data-focusable="true" />
           </div>
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -230,6 +271,7 @@ function SettingsPage() {
               onCheckedChange={(checked) =>
                 saveLaunchSettings({ ...launchSettings, always_ask_before_launch: checked })
               }
+              data-focusable="true"
             />
           </div>
           <div className="flex items-center justify-between gap-4">
@@ -244,6 +286,7 @@ function SettingsPage() {
               onCheckedChange={(checked) =>
                 saveLaunchSettings({ ...launchSettings, safe_launch_default: checked })
               }
+              data-focusable="true"
             />
           </div>
           <div className="flex items-center justify-between gap-4">
@@ -258,6 +301,7 @@ function SettingsPage() {
               onCheckedChange={(checked) =>
                 saveLaunchSettings({ ...launchSettings, close_app_after_launch: checked })
               }
+              data-focusable="true"
             />
           </div>
           <p className="text-sm text-[var(--color-muted)]">
@@ -286,14 +330,23 @@ function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           {profiles.map((p) => (
-            <Button key={p.id} variant="secondary" onClick={() => backup(p.id)}>
-              Backup {p.name}
-            </Button>
+            <div key={p.id} className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => backup(p.id)} data-focusable="true">
+                Backup {p.name}
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => setResetProfile({ id: p.id, name: p.name })}
+                data-focusable="true"
+              >
+                Reset mods — {p.name}
+              </Button>
+            </div>
           ))}
-          <Button variant="secondary" onClick={restore}>
+          <Button variant="secondary" onClick={restore} data-focusable="true">
             Restore profile from backup
           </Button>
-          <Button variant="outline" onClick={exportDiag}>Export Diagnostics</Button>
+          <Button variant="outline" onClick={exportDiag} data-focusable="true">Export Diagnostics</Button>
           {diagnostics && (
             <pre className="max-h-48 overflow-auto rounded-xl bg-[var(--color-secondary)] p-4 text-xs">
               {diagnostics}
@@ -308,11 +361,21 @@ function SettingsPage() {
         </CardHeader>
         <CardContent>
           <p className="text-[var(--color-muted)]">
-            NexusDeck v0.1.0 — Lightweight Nexus Mods client for Steam Deck and Windows.
+            NexusDeck {appVersion ?? "…"} — Lightweight Nexus Mods client for Steam Deck and Windows.
             Register with Nexus Mods before public distribution.
           </p>
         </CardContent>
       </Card>
+
+      {resetProfile && (
+        <ResetModsDialog
+          profileId={resetProfile.id}
+          profileName={resetProfile.name}
+          open
+          onOpenChange={(open) => !open && setResetProfile(null)}
+          onComplete={() => void loadProfiles()}
+        />
+      )}
     </div>
   );
 }

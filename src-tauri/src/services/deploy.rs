@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
@@ -210,6 +212,69 @@ pub fn resolve_install_overwrite(
     planned.is_empty()
 }
 
+/// Deploy one file into the game folder, preferring a hard link (instant, no
+/// extra disk) and falling back to a copy when linking isn't possible — e.g.
+/// staging and the game live on different drives (SSD vs SD card), or the
+/// filesystem doesn't support links. Returns true when a hard link was used.
+///
+/// The destination is removed first so overwriting a file that is itself a hard
+/// link to another mod's asset can't corrupt the shared inode.
+pub fn deploy_file(src: &Path, dest: &Path) -> Result<bool> {
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    if dest.exists() {
+        std::fs::remove_file(dest)?;
+    }
+    match std::fs::hard_link(src, dest) {
+        Ok(()) => Ok(true),
+        Err(_) => {
+            std::fs::copy(src, dest)?;
+            Ok(false)
+        }
+    }
+}
+
+/// Cache of directory listings (lowercased name -> real on-disk name) so a
+/// single deploy doesn't re-`read_dir` the same folder for every file.
+pub type CaseCache = HashMap<PathBuf, HashMap<String, OsString>>;
+
+fn read_dir_casing(dir: &Path) -> HashMap<String, OsString> {
+    let mut map = HashMap::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            map.insert(name.to_string_lossy().to_lowercase(), name);
+        }
+    }
+    map
+}
+
+/// Resolve `rel` under `base` to a path that reuses any directory/file casing
+/// already on disk, so we never create case-variant sibling folders (e.g.
+/// `Textures/` next to `textures/`). Those siblings split loose assets across two
+/// trees and are the #1 cause of missing / purple textures on case-sensitive
+/// filesystems (Steam Deck / Linux). On case-insensitive filesystems this lands
+/// in the same place a plain join would.
+pub fn resolve_deploy_target(base: &Path, rel: &Path, cache: &mut CaseCache) -> PathBuf {
+    let mut current = base.to_path_buf();
+    for comp in rel.components() {
+        let name = comp.as_os_str();
+        let lower = name.to_string_lossy().to_lowercase();
+        let listing = cache
+            .entry(current.clone())
+            .or_insert_with(|| read_dir_casing(&current));
+        if let Some(existing) = listing.get(&lower) {
+            current = current.join(existing);
+        } else {
+            // Register the new name so later files in this deploy match its casing.
+            listing.insert(lower, name.to_os_string());
+            current = current.join(name);
+        }
+    }
+    current
+}
+
 pub fn merge_game_data_directory(
     src: &Path,
     dest: &Path,
@@ -231,10 +296,16 @@ pub fn merge_game_data_directory(
         })
         .collect();
     let total = file_entries.len();
+    let resolve_case = std::env::consts::OS == "linux";
+    let mut case_cache = CaseCache::new();
 
     for (index, entry) in file_entries.iter().enumerate() {
         let rel = entry.path().strip_prefix(src).unwrap();
-        let target = dest.join(rel);
+        let target = if resolve_case {
+            resolve_deploy_target(dest, rel, &mut case_cache)
+        } else {
+            dest.join(rel)
+        };
         if target.exists() && !options.overwrite {
             continue;
         }
@@ -242,10 +313,7 @@ pub fn merge_game_data_directory(
         if options.dry_run {
             deployed.push(target.display().to_string());
         } else {
-            if let Some(parent) = target.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::copy(entry.path(), &target)?;
+            deploy_file(entry.path(), &target)?;
             deployed.push(target.display().to_string());
         }
 
@@ -355,5 +423,49 @@ mod tests {
         ));
 
         let _ = fs::remove_dir_all(&game);
+    }
+
+    #[test]
+    fn deploy_file_links_and_overwrites() {
+        let base =
+            std::env::temp_dir().join(format!("nexusdeck-deploy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let src = base.join("src").join("a.esp");
+        let dest = base.join("game").join("Data").join("a.esp");
+        fs::create_dir_all(src.parent().unwrap()).unwrap();
+        fs::write(&src, b"v1").unwrap();
+
+        deploy_file(&src, &dest).unwrap();
+        assert!(dest.exists());
+        assert_eq!(fs::read(&dest).unwrap(), b"v1");
+
+        // Re-deploying over an existing destination replaces it cleanly.
+        let src2 = base.join("src").join("b.esp");
+        fs::write(&src2, b"v2").unwrap();
+        deploy_file(&src2, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"v2");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_deploy_target_reuses_existing_casing() {
+        let base = std::env::temp_dir().join(format!("nexusdeck-case-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(base.join("Textures").join("Armor")).unwrap();
+
+        let mut cache = CaseCache::new();
+        // A mod referencing the lowercase variant lands in the existing dirs,
+        // not a new `textures/armor` sibling.
+        let target =
+            resolve_deploy_target(&base, Path::new("textures/armor/skin.dds"), &mut cache);
+        assert_eq!(target, base.join("Textures").join("Armor").join("skin.dds"));
+
+        // New folders created mid-deploy stay consistent for later files.
+        let a = resolve_deploy_target(&base, Path::new("Meshes/Weapon/sword.nif"), &mut cache);
+        let b = resolve_deploy_target(&base, Path::new("meshes/weapon/axe.nif"), &mut cache);
+        assert_eq!(a.parent().unwrap(), b.parent().unwrap());
+
+        let _ = fs::remove_dir_all(&base);
     }
 }
