@@ -399,7 +399,7 @@ pub fn validate_fomod_selection_deploy(
     }
 
     Err(NexusDeckError::Other(format!(
-        "FOMOD selections did not match any files to deploy: {}. Try different options or check the archive layout.",
+        "FOMOD selections did not match any files to deploy: {}. Try different options or check the archive layout. [FOMOD_SELECTION_EMPTY]",
         missing_labels.join(", ")
     )))
 }
@@ -674,7 +674,7 @@ pub fn wizard_structure_hash(wizard: &InstallWizard) -> String {
 
 fn condition_matches(condition: &FomodCondition, flags: &HashMap<String, String>) -> bool {
     if condition.flags.is_empty() {
-        return false;
+        return true;
     }
     let is_or = condition.operator.eq_ignore_ascii_case("or");
     if is_or {

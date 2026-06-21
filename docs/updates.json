@@ -1,6 +1,6 @@
 {
   "minimum_version": "0.6.0",
-  "latest_version": "0.6.1",
-  "message": "NexusDeck 0.6.1 fixes the in-app updater manifest URL, adds deployment repair, and improves Steam Deck scroll performance. Please update for the best experience.",
+  "latest_version": "0.6.2",
+  "message": "NexusDeck 0.6.2 overhauls mod installation with structured logging, atomic deploy rollback, improved FOMOD handling, and Fallout 4 deployment rules. Export install logs from Settings or the error screen when something fails.",
   "release_url": "https://github.com/Enderappsrepo/NexusDeck/releases/latest"
 }

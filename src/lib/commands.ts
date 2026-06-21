@@ -687,6 +687,38 @@ export const api = {
     }),
 
   checkAppUpdate: () => invoke<import("@/lib/nexus/types").AppUpdateInfo>("check_app_update"),
+
+  getLogsDir: () => invoke<string>("get_logs_dir"),
+
+  listRecentInstallLogs: (limit?: number) =>
+    invoke<import("@/lib/nexus/types").LogFileInfo[]>("list_recent_install_logs", {
+      limit: limit ?? null,
+    }),
+
+  readInstallLog: (path: string, maxBytes?: number) =>
+    invoke<string>("read_install_log", { path, maxBytes: maxBytes ?? null }),
+
+  getVerboseLogging: () => invoke<boolean>("get_verbose_logging"),
+
+  setVerboseLogging: (enabled: boolean) =>
+    invoke<void>("set_verbose_logging", { enabled }),
+
+  exportInstallLogs: (params?: { lastN?: number; includeArchive?: string | null }) =>
+    invoke<{ zip_path: string; files_included: number }>("export_install_logs", {
+      lastN: params?.lastN ?? null,
+      includeArchive: params?.includeArchive ?? null,
+    }),
+
+  exportInstallLogsTo: (params: {
+    destPath: string;
+    lastN?: number;
+    includeArchive?: string | null;
+  }) =>
+    invoke<string>("export_install_logs_to", {
+      destPath: params.destPath,
+      lastN: params.lastN ?? null,
+      includeArchive: params.includeArchive ?? null,
+    }),
 };
 
 export const logStartupEvent = api.logStartupEvent;

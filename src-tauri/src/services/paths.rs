@@ -59,3 +59,14 @@ pub fn install_work_dir() -> crate::error::Result<PathBuf> {
     ensure_dir(&dir)?;
     Ok(dir)
 }
+
+/// User-visible logs folder: ~/NexusDeck/Logs or Documents/NexusDeck/Logs.
+pub fn logs_dir() -> crate::error::Result<PathBuf> {
+    let dir = default_staging_root().join("Logs");
+    ensure_dir(&dir)?;
+    Ok(dir)
+}
+
+pub fn session_log_path() -> crate::error::Result<PathBuf> {
+    Ok(logs_dir()?.join("session.log"))
+}

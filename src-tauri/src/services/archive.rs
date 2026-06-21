@@ -1057,6 +1057,48 @@ fn extract_rar(archive_path: &Path, dest: &Path) -> Result<Vec<String>> {
     Ok(extracted)
 }
 
+/// Extract nested .zip/.7z/.rar archives found inside an extract directory (depth-limited).
+pub fn extract_nested_archives(extract_dir: &Path, max_depth: u32) -> Result<u32> {
+    let mut extracted_count = 0u32;
+    extract_nested_inner(extract_dir, 0, max_depth, &mut extracted_count)?;
+    Ok(extracted_count)
+}
+
+fn extract_nested_inner(
+    dir: &Path,
+    depth: u32,
+    max_depth: u32,
+    count: &mut u32,
+) -> Result<()> {
+    if depth >= max_depth {
+        return Ok(());
+    }
+
+    let nested: Vec<PathBuf> = WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter(|e| is_supported_archive(e.path()))
+        .map(|e| e.path().to_path_buf())
+        .collect();
+
+    for archive in nested {
+        let parent = archive.parent().unwrap_or(dir);
+        let stem = archive
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("nested");
+        let dest = parent.join(format!("{stem}_nested"));
+        std::fs::create_dir_all(&dest)?;
+        extract_archive_fast(&archive, &dest)?;
+        let _ = std::fs::remove_file(&archive);
+        *count += 1;
+        extract_nested_inner(dir, depth + 1, max_depth, count)?;
+    }
+
+    Ok(())
+}
+
 use crate::services::archive_options::{MergeOptions, MergeProgressEvent};
 
 pub fn merge_directory(

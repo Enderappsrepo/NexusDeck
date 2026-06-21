@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -50,6 +50,9 @@ function SettingsPage() {
   );
   const [resetProfile, setResetProfile] = useState<{ id: string; name: string } | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [logsDir, setLogsDir] = useState<string | null>(null);
+  const [verboseLogging, setVerboseLogging] = useState(false);
+  const [exportingLogs, setExportingLogs] = useState(false);
 
   useEffect(() => {
     loadProfiles();
@@ -57,6 +60,8 @@ function SettingsPage() {
     loadLaunchSettings();
     api.getAppPaths().then(setPaths);
     api.getPlatformInfo().then((p) => setAppVersion(p.app_version)).catch(() => {});
+    api.getLogsDir().then(setLogsDir).catch(() => {});
+    api.getVerboseLogging().then(setVerboseLogging).catch(() => {});
   }, [loadProfiles, loadSettings, loadLaunchSettings]);
 
   useEffect(() => {
@@ -68,6 +73,27 @@ function SettingsPage() {
   const exportDiag = async () => {
     const d = await api.exportDiagnostics();
     setDiagnostics(d);
+  };
+
+  const exportLogs = async () => {
+    setExportingLogs(true);
+    try {
+      const dest = await save({
+        defaultPath: "nexusdeck-logs.zip",
+        filters: [{ name: "Zip archive", extensions: ["zip"] }],
+      });
+      if (dest) {
+        await api.exportInstallLogsTo({ destPath: dest, lastN: 10 });
+        alert(`Logs exported to ${dest}`);
+      }
+    } finally {
+      setExportingLogs(false);
+    }
+  };
+
+  const toggleVerboseLogging = async (enabled: boolean) => {
+    setVerboseLogging(enabled);
+    await api.setVerboseLogging(enabled);
   };
 
   const backup = async (profileId: string) => {
@@ -335,6 +361,34 @@ function SettingsPage() {
               <p>Data: {paths.data_dir}</p>
             </>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Logging & Diagnostics</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label>Verbose install logging</Label>
+              <p className="text-sm text-[var(--color-muted)]">
+                Writes JSONL logs with extra detail for debugging installs
+              </p>
+            </div>
+            <Switch
+              checked={verboseLogging}
+              onCheckedChange={(v) => void toggleVerboseLogging(v)}
+            />
+          </div>
+          {logsDir && (
+            <p className="text-sm text-[var(--color-muted)]">
+              Logs folder: <span className="font-mono text-xs">{logsDir}</span>
+            </p>
+          )}
+          <Button variant="outline" onClick={() => void exportLogs()} disabled={exportingLogs} data-focusable="true">
+            {exportingLogs ? "Exporting…" : "Export install logs (zip)"}
+          </Button>
         </CardContent>
       </Card>
 

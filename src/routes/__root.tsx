@@ -81,6 +81,7 @@ function RootLayout() {
   const dismissInstallPrompt = useInstallQueueStore((s) => s.dismissInstallPrompt);
   const enqueueFromDownload = useInstallQueueStore((s) => s.enqueueFromDownload);
   const completeActive = useInstallQueueStore((s) => s.completeActive);
+  const failActive = useInstallQueueStore((s) => s.failActive);
   const cancelActive = useInstallQueueStore((s) => s.cancelActive);
 
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
@@ -320,6 +321,7 @@ function RootLayout() {
             archivePathOverride={activeJob.archivePath}
             replaceModId={activeJob.replaceModId}
             onInstalled={() => void handleInstallComplete(activeJob.downloadId)}
+            onInstallFailed={(err) => failActive(err)}
           />
         )}
       </div>

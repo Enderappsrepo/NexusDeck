@@ -7,7 +7,8 @@ use crate::games::{
 };
 use crate::services::archive::{merge_directory, ArchiveEntry};
 use crate::services::deploy::{
-    archive_has_data_folder, has_loose_fallout4_data_folders, merge_game_data_directory,
+    archive_has_data_folder, has_f4se_root_files, has_loose_fallout4_data_folders,
+    has_nested_data_folder, merge_game_data_directory,
     normalized_relative_paths, resolve_extract_root,
 };
 use crate::services::MergeOptions;
@@ -85,7 +86,7 @@ impl GamePlugin for Fallout4Plugin {
         let rel_paths: Vec<String> = normalized_relative_paths(entries);
         let data_target = game_root.join("Data").display().to_string();
 
-        if archive_has_data_folder(entries) {
+        if archive_has_data_folder(entries) || has_nested_data_folder(entries) {
             DeployPlan {
                 strategy: "merge_data".to_string(),
                 source_subpath: Some("Data".to_string()),
@@ -116,6 +117,16 @@ impl GamePlugin for Fallout4Plugin {
                 requires_confirmation: false,
                 description:
                     "Plugin files detected (.esp/.esm). They will be installed into your Data folder."
+                        .to_string(),
+            }
+        } else if has_f4se_root_files(&rel_paths) {
+            DeployPlan {
+                strategy: "merge_root".to_string(),
+                source_subpath: None,
+                target: game_root.display().to_string(),
+                requires_confirmation: true,
+                description:
+                    "F4SE or loader files detected at archive root. These will be installed to the game folder."
                         .to_string(),
             }
         } else {

@@ -270,6 +270,14 @@ pub fn run() {
             launch_sseedit,
             reset_profile_mods,
             check_app_update,
+            get_logs_dir,
+            list_recent_install_logs,
+            read_install_log,
+            get_verbose_logging,
+            set_verbose_logging,
+            export_install_logs,
+            export_install_logs_to,
+            get_install_log_path_for_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

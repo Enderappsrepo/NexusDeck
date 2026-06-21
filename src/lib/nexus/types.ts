@@ -84,6 +84,23 @@ export interface InstallOptions {
   selected_options?: SelectedInstallOption[];
   prepared_extract_dir?: string | null;
   wizard_hash?: string | null;
+  dry_run?: boolean;
+}
+
+export interface InstallLogEvent {
+  session_id: string;
+  ts: string;
+  level: "DEBUG" | "INFO" | "WARN" | "ERROR";
+  phase: string;
+  message: string;
+}
+
+export interface LogFileInfo {
+  path: string;
+  name: string;
+  size_bytes: number;
+  modified_at: string;
+  kind: string;
 }
 
 export interface FomodWizardState {
@@ -523,10 +540,15 @@ export interface SupportedGameInfo {
 }
 
 export interface InstallResult {
-  mod: InstalledMod;
+  mod?: InstalledMod;
   plan: DeployPlan;
   conflicts: FileConflict[];
   files_installed: number;
+  log_path?: string;
+  session_id?: string;
+  dry_run?: boolean;
+  files_planned?: number;
+  archive_invalidation?: boolean;
 }
 
 export interface LaunchConfig {

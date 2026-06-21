@@ -25,7 +25,9 @@ import { InstallWizardStepper } from "@/components/mod/InstallWizardStepper";
 import { api } from "@/lib/commands";
 import { useGamepadBackHandler } from "@/hooks/useGamepadRouter";
 import { loadFomodAssetUrl, releaseFomodAssetUrls } from "@/lib/fomodAssets";
-import { useUiLockStore } from "@/stores/uiLockStore";
+import { InstallLogPanel } from "@/components/install/InstallLogPanel";
+import { InstallErrorPanel } from "@/components/install/InstallErrorPanel";
+import { useInstallLogger } from "@/hooks/useInstallLogger";
 import type {
   InstallOptions,
   InstallPreview,
@@ -37,7 +39,7 @@ import type {
 } from "@/lib/nexus/types";
 import { modFileDownloadName } from "@/lib/nexus/types";
 
-type InstallPhase = "welcome" | "wizard" | "options" | "review" | "installing";
+type InstallPhase = "welcome" | "wizard" | "options" | "review" | "installing" | "error";
 
 interface ModInstallDialogProps {
   open: boolean;
@@ -51,6 +53,7 @@ interface ModInstallDialogProps {
   category?: string;
   tags?: string[];
   onInstalled?: () => void;
+  onInstallFailed?: (error: string) => void;
 }
 
 function displayInstallPath(fullPath: string, gamePath: string) {
@@ -88,6 +91,7 @@ export function ModInstallDialog({
   category,
   tags,
   onInstalled,
+  onInstallFailed,
 }: ModInstallDialogProps) {
   const [archivePath, setArchivePath] = useState("");
   const [preview, setPreview] = useState<InstallPreview | null>(null);
@@ -107,7 +111,24 @@ export function ModInstallDialog({
   const [locatingArchive, setLocatingArchive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extractElapsedSec, setExtractElapsedSec] = useState(0);
+  const [dryRun, setDryRun] = useState(false);
+  const [installLogPath, setInstallLogPath] = useState<string | null>(null);
+  const { lines: installLogLines, clear: clearInstallLog } = useInstallLogger(
+    extracting || installing
+  );
   const [reviewImage, setReviewImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!preparedExtractDir || !archivePath || phase !== "wizard") return;
+    void api
+      .getFomodWizardState({
+        extractDir: preparedExtractDir,
+        archivePath,
+        selections,
+      })
+      .then((state) => setInstallWizard(state.wizard))
+      .catch(() => {});
+  }, [selections, preparedExtractDir, archivePath, phase]);
 
   useEffect(() => {
     if (!extracting) {
@@ -388,6 +409,8 @@ export function ModInstallDialog({
     setPhase("installing");
     setInstallProgress(null);
     setError(null);
+    setInstallLogPath(null);
+    clearInstallLog();
     try {
       const options: InstallOptions = {
         strategy,
@@ -395,8 +418,9 @@ export function ModInstallDialog({
         overwrite_files: overwriteFiles,
         selected_options: selections,
         prepared_extract_dir: preparedExtractDir,
+        dry_run: dryRun,
       };
-      await api.installModFromArchive({
+      const result = await api.installModFromArchive({
         profileId: profile.id,
         modName,
         nexusModId: modId,
@@ -408,14 +432,24 @@ export function ModInstallDialog({
         fileVersion: file.version ?? null,
         replaceModId: replaceModId ?? null,
       });
+      if (result.log_path) setInstallLogPath(result.log_path);
+      if (result.dry_run) {
+        setError(null);
+        setPhase("review");
+        return;
+      }
       if (localStorage.getItem("nexusdeck_auto_sort_after_install") === "true") {
         await api.autoSortLoadOrder(profile.id).catch(() => {});
       }
       onInstalled?.();
       onOpenChange(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setPhase("review");
+      const message = e instanceof Error ? e.message : String(e);
+      const logMatch = message.match(/Full log: (.+)$/m);
+      if (logMatch) setInstallLogPath(logMatch[1].trim());
+      setError(message);
+      setPhase("error");
+      onInstallFailed?.(message);
     } finally {
       setInstalling(false);
     }
@@ -515,7 +549,8 @@ export function ModInstallDialog({
     !preview ||
     !archivePath ||
     (phase === "wizard" && !wizardCanAdvance) ||
-    (phase === "welcome" && loading);
+    (phase === "welcome" && loading) ||
+    phase === "error";
 
   const displayTitle = installWizard?.module_name ?? modName;
 
@@ -675,7 +710,7 @@ export function ModInstallDialog({
               </select>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--color-border)] p-4">
                 <input
                   type="checkbox"
@@ -701,6 +736,21 @@ export function ModInstallDialog({
                   <p className="font-medium">Overwrite existing files</p>
                   <p className="text-sm text-[var(--color-muted)]">
                     Replace files that already exist at the target path
+                  </p>
+                </div>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--color-border)] p-4">
+                <input
+                  type="checkbox"
+                  checked={dryRun}
+                  onChange={(e) => setDryRun(e.target.checked)}
+                  className="mt-1 h-5 w-5 accent-[var(--color-primary)]"
+                  disabled={loading || installing}
+                />
+                <div>
+                  <p className="font-medium">Dry run</p>
+                  <p className="text-sm text-[var(--color-muted)]">
+                    Simulate install and write a log without changing game files
                   </p>
                 </div>
               </label>
@@ -747,11 +797,26 @@ export function ModInstallDialog({
           </div>
         )}
 
-        {error && (
+        {phase === "error" && error && (
+          <InstallErrorPanel
+            error={error}
+            logPath={installLogPath}
+            archivePath={archivePath}
+            onRetry={() => {
+              setError(null);
+              setPhase("review");
+            }}
+            onDismiss={() => onOpenChange(false)}
+          />
+        )}
+
+        {error && phase !== "error" && (
           <p className="rounded-xl bg-[var(--color-danger)]/10 p-3 text-sm text-[var(--color-danger)]">
             {error}
           </p>
         )}
+
+        <InstallLogPanel lines={installLogLines} defaultOpen={phase === "installing"} />
 
         {(extracting || phase === "installing") && (
           <div className="rounded-xl border border-[var(--color-border)] p-5">
@@ -838,27 +903,29 @@ export function ModInstallDialog({
               Back
             </Button>
           )}
-          <Button
-            size="lg"
-            className="flex-[1.4]"
-            onClick={() => void goNext()}
-            disabled={primaryDisabled}
-            data-focusable="true"
-          >
-            {loading && phase === "review" ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {primaryLabel}
-              </>
-            ) : (
-              <>
-                {primaryLabel}
-                {phase !== "review" && phase !== "installing" && (
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                )}
-              </>
-            )}
-          </Button>
+          {phase !== "error" && (
+            <Button
+              size="lg"
+              className="flex-[1.4]"
+              onClick={() => void goNext()}
+              disabled={primaryDisabled}
+              data-focusable="true"
+            >
+              {loading && phase === "review" ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {primaryLabel}
+                </>
+              ) : (
+                <>
+                  {primaryLabel}
+                  {phase !== "review" && phase !== "installing" && (
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  )}
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
     </AppDialog>

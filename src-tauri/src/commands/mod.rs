@@ -21,6 +21,7 @@ mod prefix;
 mod mo2;
 mod reset;
 mod app_update;
+mod logs;
 
 pub use auth::*;
 pub use nexus::*;
@@ -45,3 +46,4 @@ pub use prefix::*;
 pub use mo2::*;
 pub use reset::*;
 pub use app_update::*;
+pub use logs::*;

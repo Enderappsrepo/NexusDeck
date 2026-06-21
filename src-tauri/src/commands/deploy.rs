@@ -29,6 +29,8 @@ pub struct InstallOptions {
     pub prepared_extract_dir: Option<String>,
     #[serde(default)]
     pub wizard_hash: Option<String>,
+    #[serde(default)]
+    pub dry_run: bool,
 }
 
 impl Default for InstallOptions {
@@ -40,6 +42,7 @@ impl Default for InstallOptions {
             selected_options: Vec::new(),
             prepared_extract_dir: None,
             wizard_hash: None,
+            dry_run: false,
         }
     }
 }
@@ -739,7 +742,10 @@ pub async fn install_mod_from_archive(
 ) -> Result<serde_json::Value> {
     use uuid::Uuid;
 
-    use crate::services::archive::{extract_archive_fast_with_progress, list_extracted_entries};
+    use crate::services::archive::{extract_archive_fast_with_progress, extract_nested_archives, list_extracted_entries};
+    use crate::services::install_rollback::{deploy_with_rollback, ensure_deploy_not_empty};
+    use crate::services::install_session::InstallSession;
+    use crate::services::install_validate::validate_fallout4_install;
     use crate::services::paths::install_work_dir;
     use crate::services::MergeOptions;
 
@@ -754,7 +760,18 @@ pub async fn install_mod_from_archive(
     let profile = db::get_profile(&profile_id)?
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
 
+    let archive = PathBuf::from(&archive_path);
+    let mut session = InstallSession::new(
+        Some(app.clone()),
+        mod_name.clone(),
+        nexus_mod_id,
+        nexus_file_id,
+        archive.clone(),
+        profile.clone(),
+    )?;
+
     let mut options = options;
+    session.info("preparing", "Resolving install options…");
 
     let explicit_replace = replace_mod_id.clone();
     let matching_mods: Vec<_> = db::list_installed_mods(&profile_id)?
@@ -779,7 +796,6 @@ pub async fn install_mod_from_archive(
         }
     }
 
-    let archive = PathBuf::from(&archive_path);
     let using_prepared = options.prepared_extract_dir.is_some();
     let temp_extract = if let Some(ref prepared) = options.prepared_extract_dir {
         PathBuf::from(prepared)
@@ -787,7 +803,7 @@ pub async fn install_mod_from_archive(
         install_work_dir()?.join(format!("nexusdeck-install-{}", Uuid::new_v4()))
     };
 
-    let all_entries = if using_prepared {
+    let mut all_entries = if using_prepared {
         let extract_dir = temp_extract.clone();
         tokio::task::spawn_blocking(move || list_extracted_entries(&extract_dir))
             .await
@@ -901,6 +917,27 @@ pub async fn install_mod_from_archive(
         .map_err(|e| crate::error::NexusDeckError::Other(format!("Extract failed: {e}")))??;
     }
 
+    let extract_dir_for_nested = temp_extract.clone();
+    let nested_count = tokio::task::spawn_blocking(move || {
+        extract_nested_archives(&extract_dir_for_nested, 2)
+    })
+    .await
+    .map_err(|e| crate::error::NexusDeckError::Other(format!("Nested extract failed: {e}")))??;
+    if nested_count > 0 {
+        session.info(
+            "extract",
+            &format!("Extracted {nested_count} nested archive(s)"),
+        );
+        let extract_dir_refresh = temp_extract.clone();
+        all_entries = tokio::task::spawn_blocking(move || {
+            list_extracted_entries(&extract_dir_refresh)
+        })
+        .await
+        .map_err(|e| {
+            crate::error::NexusDeckError::Other(format!("Extract analysis failed: {e}"))
+        })??;
+    }
+
     crate::services::install_options::prune_extract_dir(&temp_extract, &all_entries, &entries)?;
 
     install_progress(
@@ -920,9 +957,25 @@ pub async fn install_mod_from_archive(
         game_path.as_path(),
     );
 
+    session.set_phase("deploy");
+    session.info(
+        "plan",
+        &format!(
+            "Deploy strategy: {} — {}",
+            plan.strategy, plan.description
+        ),
+    );
+
+    let mod_id = replace_mod_id
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+    let deploy_paths = compute_deploy_paths(&plan, &entries, game_path.as_path());
+    let (planned_paths, _) = filter_deploy_paths(&deploy_paths, overwrite);
+
     let merge_options = MergeOptions {
         overwrite,
-        dry_run: false,
+        dry_run: options.dry_run,
         on_progress: Some(merge_progress_reporter(
             app.clone(),
             profile_id.clone(),
@@ -930,29 +983,67 @@ pub async fn install_mod_from_archive(
         )),
     };
 
-    let (manifest, plan, conflicts) = games::deploy_mod(
-        &profile.game_domain,
-        &profile,
-        &temp_extract,
-        &entries,
-        Some(&plan),
-        merge_options,
-        &mod_name,
-    )?;
+    let domain = profile.game_domain.clone();
+    let profile_for_deploy = profile.clone();
+    let temp_extract_deploy = temp_extract.clone();
+    let entries_deploy = entries.clone();
+    let plan_for_deploy = plan.clone();
+    let merge_options_deploy = merge_options.clone();
+    let mod_name_deploy = mod_name.clone();
 
-    if manifest.files.is_empty() {
+    let deploy_result = deploy_with_rollback(
+        &mut session,
+        &profile,
+        &mod_id,
+        &planned_paths,
+        || {
+            games::deploy_mod(
+                &domain,
+                &profile_for_deploy,
+                &temp_extract_deploy,
+                &entries_deploy,
+                Some(&plan_for_deploy),
+                merge_options_deploy,
+                &mod_name_deploy,
+            )
+        },
+    );
+
+    let (manifest_files, plan, conflicts) = match deploy_result {
+        Ok(result) => result,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&temp_extract);
+            session.log_error_with_path("deploy", &e);
+            return Err(crate::error::NexusDeckError::Other(format!(
+                "{e}\n\nFull log: {}",
+                session.log_path.display()
+            )));
+        }
+    };
+
+    if let Err(e) = ensure_deploy_not_empty(
+        &manifest_files,
+        option_groups.len(),
+        fomod_wizard.is_some(),
+    ) {
         let _ = std::fs::remove_dir_all(&temp_extract);
-        let deploy_paths = compute_deploy_paths(&plan, &entries, game_path.as_path());
-        let message = if deploy_paths.is_empty() {
-            if !option_groups.is_empty() || fomod_wizard.is_some() {
-                "FOMOD selections did not match any files to install. Review your install options and try again.".into()
-            } else {
-                "No files were found to install from this archive.".into()
-            }
-        } else {
-            "No files were installed. The archive could not be deployed with the current strategy.".into()
-        };
-        return Err(crate::error::NexusDeckError::Other(message));
+        session.error("deploy", &e.to_string());
+        return Err(crate::error::NexusDeckError::Other(format!(
+            "{e}\n\nFull log: {}",
+            session.log_path.display()
+        )));
+    }
+
+    if options.dry_run {
+        session.info("deploy", "Dry-run complete — no files written");
+        let _ = std::fs::remove_dir_all(&temp_extract);
+        return Ok(serde_json::json!({
+            "dry_run": true,
+            "files_planned": manifest_files.len(),
+            "plan": plan,
+            "conflicts": conflicts,
+            "log_path": session.log_path.display().to_string(),
+        }));
     }
 
     install_progress(
@@ -960,13 +1051,10 @@ pub async fn install_mod_from_archive(
         &profile_id,
         &mod_name,
         "backing_up",
-        "Backing up replaced files…",
+        "Backing up installed files…",
     );
 
-    let mod_id = replace_mod_id
-        .clone()
-        .unwrap_or_else(|| Uuid::new_v4().to_string());
-    backup_installed_files(&profile, &mod_id, &manifest.files)?;
+    backup_installed_files(&profile, &mod_id, &manifest_files)?;
 
     install_progress(
         &app,
@@ -1027,11 +1115,11 @@ pub async fn install_mod_from_archive(
         version: file_version,
         enabled: true,
         sort_order,
-        installed_files_json: serde_json::to_string(&manifest.files)?,
+        installed_files_json: serde_json::to_string(&manifest_files)?,
         installed_at,
         category,
         tags_json,
-        plugins_json: plugins_json_from_manifest(&manifest.files),
+        plugins_json: plugins_json_from_manifest(&manifest_files),
         install_options_json,
     };
 
@@ -1042,12 +1130,46 @@ pub async fn install_mod_from_archive(
 
     db::save_installed_mod(&mod_record)?;
 
-    // Ensure loose-file assets actually load (Creation Engine archive
-    // invalidation). Best-effort: never fail an install over it.
-    let archive_invalidation = crate::services::game_settings::ensure_archive_invalidation(&profile)
-        .unwrap_or(false);
+    if profile.game_domain == "fallout4" {
+        let _report = validate_fallout4_install(
+            &manifest_files,
+            game_path.as_path(),
+            &session,
+        );
+    }
+
+    session.set_phase("proton");
+    let archive_invalidation = match crate::services::game_settings::ensure_archive_invalidation(&profile) {
+        Ok(true) => {
+            session.info("proton", "Archive invalidation enabled in prefix INI");
+            true
+        }
+        Ok(false) => {
+            session.warn("proton", "Archive invalidation not applied");
+            false
+        }
+        Err(e) => {
+            session.warn(
+                "proton",
+                &format!("Archive invalidation skipped: {e}"),
+            );
+            false
+        }
+    };
+
+    if profile.proton_prefix_path.as_deref().unwrap_or("").is_empty() {
+        session.warn(
+            "proton",
+            "No Proton prefix configured — plugins.txt and INI changes may require a vanilla launch first",
+        );
+    }
 
     let _ = std::fs::remove_dir_all(&temp_extract);
+
+    session.info(
+        "finalize",
+        &format!("Install complete: {} file(s)", manifest_files.len()),
+    );
 
     emit_install_progress(
         &app,
@@ -1056,9 +1178,9 @@ pub async fn install_mod_from_archive(
             mod_name: mod_name.clone(),
             phase: "install".into(),
             stage: "complete".into(),
-            message: format!("Installed {} file(s)", manifest.files.len()),
-            files_done: manifest.files.len() as u32,
-            files_total: manifest.files.len() as u32,
+            message: format!("Installed {} file(s)", manifest_files.len()),
+            files_done: manifest_files.len() as u32,
+            files_total: manifest_files.len() as u32,
             current_file: None,
         },
     );
@@ -1067,8 +1189,10 @@ pub async fn install_mod_from_archive(
         "mod": mod_record,
         "plan": plan,
         "conflicts": conflicts,
-        "files_installed": manifest.files.len(),
+        "files_installed": manifest_files.len(),
         "archive_invalidation": archive_invalidation,
+        "log_path": session.log_path.display().to_string(),
+        "session_id": session.id,
     }))
 }
 

@@ -19,15 +19,31 @@ pub fn infer_content_prefix(entries: &[ArchiveEntry]) -> Option<String> {
         return None;
     }
 
-    let root = files[0].path.split('/').next()?.to_string();
-    if files
+    let mut prefix = files[0].path.split('/').next()?.to_string();
+    if !files
         .iter()
-        .all(|e| e.path.starts_with(&format!("{root}/")))
+        .all(|e| e.path.starts_with(&format!("{prefix}/")))
     {
-        return Some(format!("{root}/"));
+        return None;
     }
 
-    None
+    // Strip a second identical or common wrapper (ModName/ModName/...).
+    let inner_paths: Vec<String> = files
+        .iter()
+        .filter_map(|e| e.path.strip_prefix(&format!("{prefix}/")).map(|s| s.to_string()))
+        .collect();
+    if inner_paths.iter().all(|p| p.contains('/')) {
+        if let Some(second) = inner_paths[0].split('/').next() {
+            if inner_paths
+                .iter()
+                .all(|p| p.starts_with(&format!("{second}/")))
+            {
+                prefix = format!("{prefix}/{second}");
+            }
+        }
+    }
+
+    Some(format!("{prefix}/"))
 }
 
 pub fn strip_archive_prefix(path: &str, prefix: Option<&str>) -> String {
@@ -62,6 +78,24 @@ pub fn archive_has_data_folder(entries: &[ArchiveEntry]) -> bool {
     entries.iter().any(|e| {
         let lower = e.path.replace('\\', "/").to_lowercase();
         lower.starts_with("data/") || lower.contains("/data/")
+    })
+}
+
+pub fn has_nested_data_folder(entries: &[ArchiveEntry]) -> bool {
+    entries.iter().any(|e| {
+        let lower = e.path.replace('\\', "/").to_lowercase();
+        lower.contains("/data/data/") || lower.starts_with("data/data/")
+    })
+}
+
+pub fn has_f4se_root_files(paths: &[String]) -> bool {
+    paths.iter().any(|p| {
+        let lower = p.replace('\\', "/").to_lowercase();
+        let name = lower.rsplit('/').next().unwrap_or(&lower);
+        name == "f4se_loader.exe"
+            || name.starts_with("f4se_")
+            || name == "d3d11.dll"
+            || name == "f4se_loader.dll"
     })
 }
 
