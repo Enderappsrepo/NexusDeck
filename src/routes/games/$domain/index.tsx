@@ -18,7 +18,7 @@ import { GameModDiscovery } from "@/components/game/GameModDiscovery";
 import { GameSettingsPanel } from "@/components/game/GameSettingsPanel";
 import { GameArt } from "@/components/game/GameArt";
 import { GameStatStrip } from "@/components/game/GameStatStrip";
-import { BodySlidePanel } from "@/components/game/BodySlidePanel";
+import { BodySlideSetupPanel } from "@/components/game/BodySlideSetupPanel";
 import { ModSearchBar } from "@/components/mod/ModSearchBar";
 import { LaunchButton } from "@/components/launch/LaunchButton";
 import { useLaunchStore } from "@/stores/launchStore";
@@ -236,7 +236,7 @@ function GameDashboard() {
 
         <TabsContent value="play" className="space-y-5">
           <DeckAdvisorPanel profileId={profile.id} />
-          <BodySlidePanel profileId={profile.id} />
+          <BodySlideSetupPanel profileId={profile.id} />
           <GameModDiscovery domain={domain} signedIn={!!user} sections="hero" />
         </TabsContent>
 
