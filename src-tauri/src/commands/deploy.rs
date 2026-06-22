@@ -1257,6 +1257,21 @@ pub async fn install_mod_from_archive(
         },
     );
 
+    if let Ok(sync) = plugins_txt::sync_plugins_txt(&profile) {
+        session.info(
+            "finalize",
+            &format!(
+                "plugins.txt synced ({} plugin(s))",
+                sync.plugin_count
+            ),
+        );
+    } else {
+        session.warn(
+            "finalize",
+            "plugins.txt not synced — configure Proton prefix in Setup, then use Load Order → Sync",
+        );
+    }
+
     Ok(serde_json::json!({
         "mod": mod_record,
         "plan": plan,
@@ -1420,12 +1435,18 @@ pub fn set_mod_enabled(mod_id: String, enabled: bool) -> Result<()> {
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
 
     apply_mod_enabled_state(&profile, &mod_record, enabled)?;
-    db::set_mod_enabled(&mod_id, enabled)
+    db::set_mod_enabled(&mod_id, enabled)?;
+    plugins_txt::sync_plugins_txt(&profile)?;
+    Ok(())
 }
 
 #[tauri::command]
 pub fn reorder_mod(profile_id: String, mod_id: String, direction: String) -> Result<Vec<InstalledMod>> {
-    db::reorder_mod(&profile_id, &mod_id, &direction)
+    let updated = db::reorder_mod(&profile_id, &mod_id, &direction)?;
+    if let Some(profile) = db::get_profile(&profile_id)? {
+        let _ = plugins_txt::sync_plugins_txt(&profile);
+    }
+    Ok(updated)
 }
 
 #[tauri::command]

@@ -90,7 +90,11 @@ pub fn launch_game(
 
     if options.sync_plugins || pre_actions.iter().any(|a| a == "sync_plugins") {
         emit_progress(app, profile_id, "syncing_plugins");
-        let _ = sync_plugins_txt(&profile);
+        sync_plugins_txt(&profile).map_err(|e| {
+            NexusDeckError::LaunchFailed(format!(
+                "Could not sync plugins.txt: {e}. Open Load Order and tap Sync, or set your Proton prefix in Setup."
+            ))
+        })?;
     }
 
     if pre_actions.iter().any(|a| a == "ensure_archive_invalidation")

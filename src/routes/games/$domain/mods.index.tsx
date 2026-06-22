@@ -104,36 +104,39 @@ function ModBrowserPage() {
 
   useGamepadContextAction(
     GP.X,
-    async () => {
+    () => {
       const modIdNum = focusedBrowseModId();
       if (!modIdNum || !profile) return;
-      try {
-        const modFiles = await api.getModFiles(domain, modIdNum);
-        const primary = modFiles.find((f) => f.is_primary) ?? modFiles[0];
-        if (!primary) {
+      void (async () => {
+        try {
+          const modFiles = await api.getModFiles(domain, modIdNum);
+          const primary = modFiles.find((f) => f.is_primary) ?? modFiles[0];
+          if (!primary) {
+            navigate({
+              to: "/games/$domain/mods/$modId",
+              params: { domain, modId: String(modIdNum) },
+            });
+            return;
+          }
+          const progress = await api.startModDownload({
+            gameDomain: domain,
+            modId: modIdNum,
+            fileId: primary.file_id,
+            fileName: modFileDownloadName(primary),
+            stagingPath: profile.staging_path,
+            expectedSizeKb: primary.size_kb,
+            modName: mods.find((m) => m.mod_id === modIdNum)?.name,
+            profileId: profile.id,
+          });
+          setProgress(progress);
+        } catch {
           navigate({
             to: "/games/$domain/mods/$modId",
             params: { domain, modId: String(modIdNum) },
           });
-          return;
         }
-        const progress = await api.startModDownload({
-          gameDomain: domain,
-          modId: modIdNum,
-          fileId: primary.file_id,
-          fileName: modFileDownloadName(primary),
-          stagingPath: profile.staging_path,
-          expectedSizeKb: primary.size_kb,
-          modName: mods.find((m) => m.mod_id === modIdNum)?.name,
-          profileId: profile.id,
-        });
-        setProgress(progress);
-      } catch {
-        navigate({
-          to: "/games/$domain/mods/$modId",
-          params: { domain, modId: String(modIdNum) },
-        });
-      }
+      })();
+      return true;
     },
     "browse"
   );

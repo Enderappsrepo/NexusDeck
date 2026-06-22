@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ArrowDownAZ, Download, GitCompare, Loader2, Package, Search, Trash2, Wrench } from "lucide-react";
+import { ArrowDownAZ, Download, GitCompare, ListOrdered, Loader2, Package, Search, Trash2, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -166,7 +166,9 @@ function LibraryPage() {
     () => {
       const modId = focusedLibraryModId() ?? focusedModId;
       const mod = mods.find((m) => m.id === modId);
-      if (mod && !compareMode) void toggleMod(mod);
+      if (!mod || compareMode) return;
+      void toggleMod(mod);
+      return true;
     },
     "library"
   );
@@ -390,13 +392,26 @@ function LibraryPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Installed Mods</h1>
           <p className="mt-1 text-sm text-[var(--color-muted)]">
-            {mods.length} installed · {mods.filter((m) => m.enabled).length} enabled · L2/R2 reorder
+            {mods.length} installed · {mods.filter((m) => m.enabled).length} enabled ·{" "}
+            <Link
+              to="/games/$domain/load-order"
+              params={{ domain }}
+              className="text-[var(--color-primary)] underline-offset-2 hover:underline"
+            >
+              Load order & plugins
+            </Link>
           </p>
           {repairNote && (
             <p className="mt-1 text-sm text-[var(--color-success)]">{repairNote}</p>
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link to="/games/$domain/load-order" params={{ domain }}>
+            <Button variant="secondary" data-focusable="true">
+              <ListOrdered className="h-4 w-4" />
+              Load order
+            </Button>
+          </Link>
           <Button
             variant="outline"
             disabled={sorting || mods.length === 0}

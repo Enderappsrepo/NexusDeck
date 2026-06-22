@@ -18,6 +18,7 @@ import { Route as GamesDomainTroubleshootRouteImport } from './routes/games/$dom
 import { Route as GamesDomainSetupRouteImport } from './routes/games/$domain/setup'
 import { Route as GamesDomainModsRouteImport } from './routes/games/$domain/mods'
 import { Route as GamesDomainMo2RouteImport } from './routes/games/$domain/mo2'
+import { Route as GamesDomainLoadOrderRouteImport } from './routes/games/$domain/load-order'
 import { Route as GamesDomainLibraryRouteImport } from './routes/games/$domain/library'
 import { Route as GamesDomainCompareRouteImport } from './routes/games/$domain/compare'
 import { Route as GamesDomainModsIndexRouteImport } from './routes/games/$domain/mods.index'
@@ -71,6 +72,11 @@ const GamesDomainMo2Route = GamesDomainMo2RouteImport.update({
   path: '/games/$domain/mo2',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GamesDomainLoadOrderRoute = GamesDomainLoadOrderRouteImport.update({
+  id: '/games/$domain/load-order',
+  path: '/games/$domain/load-order',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GamesDomainLibraryRoute = GamesDomainLibraryRouteImport.update({
   id: '/games/$domain/library',
   path: '/games/$domain/library',
@@ -116,6 +122,7 @@ export interface FileRoutesByFullPath {
   '/games/': typeof GamesIndexRoute
   '/games/$domain/compare': typeof GamesDomainCompareRoute
   '/games/$domain/library': typeof GamesDomainLibraryRoute
+  '/games/$domain/load-order': typeof GamesDomainLoadOrderRoute
   '/games/$domain/mo2': typeof GamesDomainMo2Route
   '/games/$domain/mods': typeof GamesDomainModsRouteWithChildren
   '/games/$domain/setup': typeof GamesDomainSetupRoute
@@ -134,6 +141,7 @@ export interface FileRoutesByTo {
   '/games': typeof GamesIndexRoute
   '/games/$domain/compare': typeof GamesDomainCompareRoute
   '/games/$domain/library': typeof GamesDomainLibraryRoute
+  '/games/$domain/load-order': typeof GamesDomainLoadOrderRoute
   '/games/$domain/mo2': typeof GamesDomainMo2Route
   '/games/$domain/setup': typeof GamesDomainSetupRoute
   '/games/$domain/troubleshoot': typeof GamesDomainTroubleshootRoute
@@ -152,6 +160,7 @@ export interface FileRoutesById {
   '/games/': typeof GamesIndexRoute
   '/games/$domain/compare': typeof GamesDomainCompareRoute
   '/games/$domain/library': typeof GamesDomainLibraryRoute
+  '/games/$domain/load-order': typeof GamesDomainLoadOrderRoute
   '/games/$domain/mo2': typeof GamesDomainMo2Route
   '/games/$domain/mods': typeof GamesDomainModsRouteWithChildren
   '/games/$domain/setup': typeof GamesDomainSetupRoute
@@ -172,6 +181,7 @@ export interface FileRouteTypes {
     | '/games/'
     | '/games/$domain/compare'
     | '/games/$domain/library'
+    | '/games/$domain/load-order'
     | '/games/$domain/mo2'
     | '/games/$domain/mods'
     | '/games/$domain/setup'
@@ -190,6 +200,7 @@ export interface FileRouteTypes {
     | '/games'
     | '/games/$domain/compare'
     | '/games/$domain/library'
+    | '/games/$domain/load-order'
     | '/games/$domain/mo2'
     | '/games/$domain/setup'
     | '/games/$domain/troubleshoot'
@@ -207,6 +218,7 @@ export interface FileRouteTypes {
     | '/games/'
     | '/games/$domain/compare'
     | '/games/$domain/library'
+    | '/games/$domain/load-order'
     | '/games/$domain/mo2'
     | '/games/$domain/mods'
     | '/games/$domain/setup'
@@ -226,6 +238,7 @@ export interface RootRouteChildren {
   GamesIndexRoute: typeof GamesIndexRoute
   GamesDomainCompareRoute: typeof GamesDomainCompareRoute
   GamesDomainLibraryRoute: typeof GamesDomainLibraryRoute
+  GamesDomainLoadOrderRoute: typeof GamesDomainLoadOrderRoute
   GamesDomainMo2Route: typeof GamesDomainMo2Route
   GamesDomainModsRoute: typeof GamesDomainModsRouteWithChildren
   GamesDomainSetupRoute: typeof GamesDomainSetupRoute
@@ -301,6 +314,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GamesDomainMo2RouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/games/$domain/load-order': {
+      id: '/games/$domain/load-order'
+      path: '/games/$domain/load-order'
+      fullPath: '/games/$domain/load-order'
+      preLoaderRoute: typeof GamesDomainLoadOrderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/games/$domain/library': {
       id: '/games/$domain/library'
       path: '/games/$domain/library'
@@ -374,6 +394,7 @@ const rootRouteChildren: RootRouteChildren = {
   GamesIndexRoute: GamesIndexRoute,
   GamesDomainCompareRoute: GamesDomainCompareRoute,
   GamesDomainLibraryRoute: GamesDomainLibraryRoute,
+  GamesDomainLoadOrderRoute: GamesDomainLoadOrderRoute,
   GamesDomainMo2Route: GamesDomainMo2Route,
   GamesDomainModsRoute: GamesDomainModsRouteWithChildren,
   GamesDomainSetupRoute: GamesDomainSetupRoute,

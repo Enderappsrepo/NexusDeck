@@ -206,6 +206,7 @@ pub fn run() {
             complete_mod_update,
             uninstall_mod,
             auto_sort_load_order,
+            get_load_order_state,
             refresh_mod_metadata,
             get_updated_mods_feed,
             endorse_mod,

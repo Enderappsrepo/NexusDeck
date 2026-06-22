@@ -11,10 +11,20 @@ export function isTypingElement(el: Element | null): boolean {
   );
 }
 
+function isFocusableVisible(el: HTMLElement): boolean {
+  const style = getComputedStyle(el);
+  return (
+    (el.offsetParent !== null || el === document.activeElement) &&
+    style.display !== "none" &&
+    style.visibility !== "hidden" &&
+    style.pointerEvents !== "none"
+  );
+}
+
 export function getFocusableElements(root: HTMLElement | Document = document): HTMLElement[] {
   const container = root instanceof Document ? root.body : root;
   return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-    (el) => el.offsetParent !== null || el === document.activeElement
+    isFocusableVisible
   );
 }
 
@@ -24,11 +34,12 @@ export function moveFocus(
   direction: "next" | "prev" | "up" | "down",
   container?: HTMLElement | null
 ): void {
-  const root = container ?? document.body;
+  const current = document.activeElement as HTMLElement;
+  const group = current?.closest<HTMLElement>("[data-focus-group]");
+  const root = container ?? group ?? document.body;
   const items = getFocusableElements(root);
   if (items.length === 0) return;
 
-  const current = document.activeElement as HTMLElement;
   let idx = items.indexOf(current);
   if (idx === -1) idx = focusIndex;
 

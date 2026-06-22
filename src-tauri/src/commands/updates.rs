@@ -87,6 +87,11 @@ pub fn uninstall_mod(mod_id: String) -> Result<mod_uninstall::UninstallResult> {
 }
 
 #[tauri::command]
+pub fn get_load_order_state(profile_id: String) -> Result<load_order::LoadOrderState> {
+    load_order::get_load_order_state(&profile_id)
+}
+
+#[tauri::command]
 pub fn auto_sort_load_order(profile_id: String) -> Result<Vec<db::InstalledMod>> {
     load_order::auto_sort_load_order(&profile_id)
 }

@@ -78,7 +78,8 @@ export function Sidebar() {
       } else {
         navigate({ to: tabId as "/" | "/games" | "/settings" });
       }
-    }
+    },
+    "sidebar"
   );
 
   return (

@@ -94,11 +94,14 @@ fn apply_plugins_sync(
     backup_path: Option<String>,
 ) -> FixResult {
     match plugins_txt::sync_plugins_txt(profile) {
-        Ok(path) => FixResult {
+        Ok(result) => FixResult {
             remedy_id: remedy_id.to_string(),
             applied: true,
             skipped: false,
-            message: format!("plugins.txt synced to {path}"),
+            message: format!(
+                "plugins.txt synced ({} plugins) to {}",
+                result.plugin_count, result.path
+            ),
             backup_path,
         },
         Err(e) => FixResult {

@@ -167,13 +167,22 @@ function ModDetailPage() {
     return () => window.removeEventListener("nexusdeck-gallery-scroll", onGalleryScroll);
   }, [galleryLength]);
 
-  useGamepadContextAction(GP.X, () => setActiveTab("files"), "modDetail");
+  useGamepadContextAction(GP.X, () => {
+    setActiveTab("files");
+    return true;
+  }, "modDetail");
 
   useGamepadContextAction(
     GP.Y,
     () => {
-      if (detail && !detail.viewer_endorsed) void toggleEndorse();
-      else if (detail && !detail.viewer_tracked) void toggleTrack();
+      if (detail && !detail.viewer_endorsed) {
+        void toggleEndorse();
+        return true;
+      }
+      if (detail && !detail.viewer_tracked) {
+        void toggleTrack();
+        return true;
+      }
     },
     "modDetail"
   );

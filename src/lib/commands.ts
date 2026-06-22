@@ -20,6 +20,8 @@ import type {
   InstallPrepareResult,
   InstallResult,
   InstalledMod,
+  LoadOrderState,
+  PluginsSyncResult,
   ModUpdateInfo,
   UninstallResult,
   UpdateBatchResult,
@@ -285,6 +287,9 @@ export const api = {
   autoSortLoadOrder: (profileId: string) =>
     invoke<InstalledMod[]>("auto_sort_load_order", { profileId }),
 
+  getLoadOrderState: (profileId: string) =>
+    invoke<LoadOrderState>("get_load_order_state", { profileId }),
+
   refreshModMetadata: (profileId: string) =>
     invoke<InstalledMod[]>("refresh_mod_metadata", { profileId }),
 
@@ -529,7 +534,7 @@ export const api = {
     invoke<void>("stop_game", { profileId, graceful }),
 
   syncPluginsTxt: (profileId: string) =>
-    invoke<string>("sync_plugins_txt", { profileId }),
+    invoke<PluginsSyncResult>("sync_plugins_txt", { profileId }),
 
   createSafeLaunchBackup: (profileId: string) =>
     invoke<string[]>("create_safe_launch_backup", { profileId }),

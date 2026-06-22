@@ -548,6 +548,37 @@ export interface SupportedGameInfo {
   script_extender_label?: string | null;
 }
 
+export interface LoadOrderModEntry {
+  id: string;
+  name: string;
+  enabled: boolean;
+  sort_order: number;
+  plugins: string[];
+}
+
+export interface LoadOrderPluginEntry {
+  name: string;
+  kind: string;
+  enabled: boolean;
+  mod_id?: string | null;
+  mod_name?: string | null;
+}
+
+export interface LoadOrderState {
+  mods: LoadOrderModEntry[];
+  plugins: LoadOrderPluginEntry[];
+  plugins_txt_path?: string | null;
+  plugins_txt_ready: boolean;
+  active_plugin_count: number;
+  message: string;
+}
+
+export interface PluginsSyncResult {
+  path: string;
+  plugin_count: number;
+  plugins: string[];
+}
+
 export interface InstallResult {
   mod?: InstalledMod;
   plan: DeployPlan;

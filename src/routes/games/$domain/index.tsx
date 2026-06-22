@@ -1,8 +1,10 @@
 import { createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
+  ArrowDownAZ,
   FolderOpen,
   Layers,
+  ListOrdered,
   Search,
   Settings2,
   Wrench,
@@ -45,6 +47,7 @@ type DashboardTab = (typeof DASHBOARD_TABS)[number];
 const NAV_LINKS = [
   { to: "/games/$domain/mods" as const, label: "Browse", icon: Search, withModSearch: true },
   { to: "/games/$domain/library" as const, label: "Library", icon: FolderOpen, withModSearch: false },
+  { to: "/games/$domain/load-order" as const, label: "Load Order", icon: ListOrdered, withModSearch: false },
   { to: "/games/$domain/collections" as const, label: "Collections", icon: Layers, withModSearch: false },
   { to: "/games/$domain/troubleshoot" as const, label: "Fix", icon: Wrench, withModSearch: false },
   { to: "/games/$domain/setup" as const, label: "Setup", icon: Settings2, withModSearch: false },
@@ -74,7 +77,7 @@ function GameDashboard() {
   useGamepadTabs([...DASHBOARD_TABS], activeTab, (tab) => setActiveTab(tab as DashboardTab));
 
   useEffect(() => {
-    gamepadRouter.setContext(activeTab === "discover" ? "discover" : "gameHub");
+    gamepadRouter.setRouteContext(activeTab === "discover" ? "discover" : "gameHub");
   }, [activeTab]);
 
   useGamepadContextAction(
@@ -182,7 +185,7 @@ function GameDashboard() {
           </div>
 
           <div className="mt-5">
-            <GameStatStrip profileId={profile.id} playtime={playtime} />
+            <GameStatStrip profileId={profile.id} gameDomain={domain} playtime={playtime} />
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">

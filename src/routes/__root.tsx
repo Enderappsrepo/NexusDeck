@@ -179,7 +179,7 @@ function RootLayout() {
   useGamepadBack();
 
   useEffect(() => {
-    gamepadRouter.setContext(resolveContextFromPath(pathname));
+    gamepadRouter.setRouteContext(resolveContextFromPath(pathname));
   }, [pathname]);
 
   useEffect(() => {

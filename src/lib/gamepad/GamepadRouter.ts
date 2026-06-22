@@ -11,11 +11,14 @@ import { focusedDownloadId, isDownloadRowComplete } from "./domHelpers";
 
 export type ButtonHandler = (button: number) => void;
 export type AxisHandler = (axis: number, value: number) => void;
+export type ContextActionHandler = (ctx: InputContext) => boolean | void;
+export type TabHandlerScope = "sidebar" | "page";
 
-interface TabHandler {
+export interface TabHandler {
   tabIds: string[];
   activeTab: string;
   onTabChange: (tabId: string) => void;
+  scope?: TabHandlerScope;
 }
 
 interface RepeatState {
@@ -52,15 +55,11 @@ class GamepadRouterImpl {
   private contextStack: InputContext[] = ["global"];
 
   private buttonHandlers = new Set<ButtonHandler>();
-  // Stacks, not single slots: multiple components (sidebar, game hub, discover,
-  // dialogs) register tab/back handlers. The most recently mounted wins, and on
-  // unmount we pop back to the previous one instead of clearing it for everyone.
+  // Tab/back stacks: multiple components register handlers. Page-scoped tab
+  // handlers beat sidebar; within the same scope the most recent mount wins.
   private tabHandlers: TabHandler[] = [];
   private backHandlers: Array<() => void> = [];
-  private contextActionHandlers = new Map<
-    number,
-    Set<(ctx: InputContext) => void>
-  >();
+  private contextActionHandlers = new Map<number, Set<ContextActionHandler>>();
 
   private listeners = new Set<Listener>();
 
@@ -135,6 +134,18 @@ class GamepadRouterImpl {
     this.notify();
   }
 
+  /** Update the route-level context (contextStack[0]) without disturbing overlays. */
+  setRouteContext(ctx: InputContext): void {
+    if (this.contextStack[0] === ctx && (this.contextStack.length === 1 || this.context === ctx)) {
+      return;
+    }
+    this.contextStack[0] = ctx;
+    if (this.contextStack.length === 1) {
+      this.context = ctx;
+    }
+    this.notify();
+  }
+
   pushContext(ctx: InputContext): void {
     this.contextStack.push(ctx);
     this.context = ctx;
@@ -154,7 +165,7 @@ class GamepadRouterImpl {
     return () => this.buttonHandlers.delete(handler);
   }
 
-  onContextAction(button: number, handler: (ctx: InputContext) => void): () => void {
+  onContextAction(button: number, handler: ContextActionHandler): () => void {
     if (!this.contextActionHandlers.has(button)) {
       this.contextActionHandlers.set(button, new Set());
     }
@@ -235,19 +246,26 @@ class GamepadRouterImpl {
     });
   }
 
+  private resolveTabHandler(): TabHandler | undefined {
+    for (let i = this.tabHandlers.length - 1; i >= 0; i--) {
+      if (this.tabHandlers[i].scope !== "sidebar") return this.tabHandlers[i];
+    }
+    return this.tabHandlers[this.tabHandlers.length - 1];
+  }
+
   private handleButtonPress(button: number): void {
-    // Let registered handlers run first (tabs, back, context actions)
     for (const handler of this.buttonHandlers) {
       handler(button);
     }
 
+    // B and L1/R1 run before the typing guard so users can back out while focused in a field.
     const backHandler = this.backHandlers[this.backHandlers.length - 1];
     if (button === GP.B && backHandler) {
       backHandler();
       return;
     }
 
-    const tabHandler = this.tabHandlers[this.tabHandlers.length - 1];
+    const tabHandler = this.resolveTabHandler();
     if ((button === GP.L1 || button === GP.R1) && tabHandler) {
       const { tabIds, activeTab, onTabChange } = tabHandler;
       const idx = tabIds.indexOf(activeTab);
@@ -261,12 +279,15 @@ class GamepadRouterImpl {
       return;
     }
 
+    let handled = false;
     const contextHandlers = this.contextActionHandlers.get(button);
     if (contextHandlers) {
       for (const h of contextHandlers) {
-        h(this.context);
+        if (h(this.context) === true) handled = true;
       }
     }
+
+    if (handled) return;
 
     if (isTypingElement(document.activeElement)) {
       return;
@@ -305,7 +326,6 @@ class GamepadRouterImpl {
             break;
           }
         }
-        window.dispatchEvent(new CustomEvent("nexusdeck-secondary-action"));
         break;
       case GP.SELECT:
         this.toggleHintBar();

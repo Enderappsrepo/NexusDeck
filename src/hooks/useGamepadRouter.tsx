@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
+import type { TabHandlerScope } from "@/lib/gamepad/GamepadRouter";
 import type { InputContext } from "@/lib/gamepad/contexts";
 
 interface GamepadRouterContextValue {
@@ -73,24 +74,16 @@ export function useGamepadRouterState() {
   return useContext(GamepadRouterContext);
 }
 
-export function useGamepadContext(ctx: InputContext) {
-  useEffect(() => {
-    gamepadRouter.setContext(ctx);
-    return () => {
-      gamepadRouter.setContext("global");
-    };
-  }, [ctx]);
-}
-
 export function useGamepadTabs(
   tabIds: string[],
   activeTab: string,
-  onTabChange: (tabId: string) => void
+  onTabChange: (tabId: string) => void,
+  scope: TabHandlerScope = "page"
 ) {
   // Keep the latest props in a ref so we register the handler exactly once per
   // mount (a stable stack position) rather than push/pop on every render.
-  const latest = useRef({ tabIds, activeTab, onTabChange });
-  latest.current = { tabIds, activeTab, onTabChange };
+  const latest = useRef({ tabIds, activeTab, onTabChange, scope });
+  latest.current = { tabIds, activeTab, onTabChange, scope };
 
   const hasTabs = tabIds.length > 0;
   useEffect(() => {
@@ -101,6 +94,9 @@ export function useGamepadTabs(
       },
       get activeTab() {
         return latest.current.activeTab;
+      },
+      get scope() {
+        return latest.current.scope;
       },
       onTabChange: (id) => latest.current.onTabChange(id),
     });
@@ -118,18 +114,21 @@ export function useGamepadBackHandler(onBack: () => void) {
 
 export function useGamepadContextAction(
   button: number,
-  handler: (ctx: InputContext) => void,
+  handler: (ctx: InputContext) => boolean | void,
   contexts?: InputContext | InputContext[]
 ) {
+  const latest = useRef(handler);
+  latest.current = handler;
+
   useEffect(() => {
     return gamepadRouter.onContextAction(button, (ctx) => {
       if (contexts) {
         const allowed = Array.isArray(contexts) ? contexts : [contexts];
         if (!allowed.includes(ctx)) return;
       }
-      handler(ctx);
+      return latest.current(ctx);
     });
-  }, [button, handler, contexts]);
+  }, [button, contexts]);
 }
 
 export { gamepadRouter };

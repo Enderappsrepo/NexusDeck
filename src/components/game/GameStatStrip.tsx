@@ -1,3 +1,4 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { CalendarClock, Package, ShieldCheck, Timer } from "lucide-react";
 import { StatTile, type StatTone } from "@/components/ui/StatTile";
@@ -7,6 +8,7 @@ import type { PlaytimeStats } from "@/lib/nexus/types";
 
 interface GameStatStripProps {
   profileId: string;
+  gameDomain: string;
   playtime?: PlaytimeStats;
 }
 
@@ -14,7 +16,7 @@ interface GameStatStripProps {
  * At-a-glance hub stats. Uses only fast local data (installed-mod DB + recorded
  * playtime) so the hero never blocks on a Nexus round-trip.
  */
-export function GameStatStrip({ profileId, playtime }: GameStatStripProps) {
+export function GameStatStrip({ profileId, gameDomain, playtime }: GameStatStripProps) {
   const [installed, setInstalled] = useState<number | null>(null);
   const [enabled, setEnabled] = useState(0);
 
@@ -60,13 +62,15 @@ export function GameStatStrip({ profileId, playtime }: GameStatStripProps) {
   return (
     <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
       <StatTile icon={Package} label="Mods installed" value={total} />
-      <StatTile
-        icon={ShieldCheck}
-        label="Load order"
-        tone={loadOrderTone}
-        value={total === 0 ? "Empty" : `${total} in order`}
-        bar={total === 0 ? 0 : (enabled / total) * 100}
-      />
+      <Link to="/games/$domain/load-order" params={{ domain: gameDomain }} className="block">
+        <StatTile
+          icon={ShieldCheck}
+          label="Load order"
+          tone={loadOrderTone}
+          value={total === 0 ? "Empty" : `${enabled}/${total} active`}
+          bar={total === 0 ? 0 : (enabled / total) * 100}
+        />
+      </Link>
       <StatTile icon={Timer} label="Playtime" value={hours > 0 ? `${hours}h` : "—"} />
       <StatTile icon={CalendarClock} label="Last played" value={lastPlayed} />
     </div>

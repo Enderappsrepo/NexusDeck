@@ -1,14 +1,43 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use libloot::GameType;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::db::{self, InstalledMod, Profile};
 use crate::error::{NexusDeckError, Result};
 use crate::services::mod_metadata::{earliest_plugin_sort_key, extract_plugins_from_paths};
 use crate::services::mod_state::installed_file_paths;
-use crate::services::plugins_txt;
+use crate::services::plugins_txt::{self, base_game_plugins};
+use crate::games::GameRegistry;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadOrderModEntry {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+    pub sort_order: i32,
+    pub plugins: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadOrderPluginEntry {
+    pub name: String,
+    pub kind: String,
+    pub enabled: bool,
+    pub mod_id: Option<String>,
+    pub mod_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadOrderState {
+    pub mods: Vec<LoadOrderModEntry>,
+    pub plugins: Vec<LoadOrderPluginEntry>,
+    pub plugins_txt_path: Option<String>,
+    pub plugins_txt_ready: bool,
+    pub active_plugin_count: usize,
+    pub message: String,
+}
 
 #[derive(Debug, Deserialize)]
 struct LoadOrderRules {
@@ -69,8 +98,191 @@ pub fn auto_sort_load_order(profile_id: &str) -> Result<Vec<InstalledMod>> {
 
     let ordered_ids: Vec<String> = sorted.iter().map(|k| k.mod_id.clone()).collect();
     let updated = db::set_mod_sort_orders(profile_id, &ordered_ids)?;
-    let _ = plugins_txt::sync_plugins_txt(&profile);
+    plugins_txt::sync_plugins_txt(&profile)?;
     Ok(updated)
+}
+
+pub fn get_load_order_state(profile_id: &str) -> Result<LoadOrderState> {
+    let profile = db::get_profile(profile_id)?
+        .ok_or_else(|| NexusDeckError::NotFound("Profile not found".into()))?;
+    let plugin = GameRegistry::get(&profile.game_domain)?;
+    let plugins_txt_path = plugin.plugins_txt_path(&profile).map(|p| p.display().to_string());
+    let plugins_txt_ready = plugins_txt_path.is_some();
+
+    let mods = db::list_installed_mods(profile_id)?;
+    let plugin_to_mod = build_plugin_mod_map(&mods)?;
+
+    let mut mod_entries = Vec::new();
+    for (idx, m) in mods.iter().enumerate() {
+        let plugins: Vec<String> = serde_json::from_str(&m.plugins_json).unwrap_or_default();
+        mod_entries.push(LoadOrderModEntry {
+            id: m.id.clone(),
+            name: m.name.clone(),
+            enabled: m.enabled,
+            sort_order: idx as i32,
+            plugins,
+        });
+    }
+
+    let launch_plugins = plugins_txt::collect_plugins_for_launch(&profile).unwrap_or_default();
+    let active_set: HashMap<String, bool> = launch_plugins
+        .iter()
+        .map(|p| (p.to_lowercase(), true))
+        .collect();
+
+    let mut plugin_entries = Vec::new();
+    for name in base_game_plugins(&profile.game_domain, &profile.game_path) {
+        plugin_entries.push(LoadOrderPluginEntry {
+            name: name.clone(),
+            kind: if name.to_lowercase().starts_with("dlc") || name.contains("Update") {
+                "dlc".into()
+            } else {
+                "vanilla".into()
+            },
+            enabled: active_set.contains_key(&name.to_lowercase()),
+            mod_id: None,
+            mod_name: None,
+        });
+    }
+
+    let data_dir = Path::new(&profile.game_path).join("Data");
+    if data_dir.is_dir() {
+        for entry in std::fs::read_dir(&data_dir)?.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let lower = name.to_lowercase();
+            if (lower.starts_with("cc") || lower.starts_with("creationclub"))
+                && (lower.ends_with(".esl") || lower.ends_with(".esp") || lower.ends_with(".esm"))
+                && !plugin_entries.iter().any(|p| p.name.eq_ignore_ascii_case(&name))
+            {
+                plugin_entries.push(LoadOrderPluginEntry {
+                    name: name.clone(),
+                    kind: "creation_club".into(),
+                    enabled: active_set.contains_key(&lower),
+                    mod_id: None,
+                    mod_name: None,
+                });
+            }
+        }
+    }
+
+    for name in &launch_plugins {
+        if plugin_entries.iter().any(|p| p.name.eq_ignore_ascii_case(name)) {
+            continue;
+        }
+        let meta = plugin_to_mod.get(&name.to_lowercase());
+        plugin_entries.push(LoadOrderPluginEntry {
+            name: name.clone(),
+            kind: "mod".into(),
+            enabled: true,
+            mod_id: meta.map(|(id, _)| id.clone()),
+            mod_name: meta.map(|(_, n)| n.clone()),
+        });
+    }
+
+    for m in mods.iter().filter(|m| m.enabled) {
+        let plugins: Vec<String> = serde_json::from_str(&m.plugins_json).unwrap_or_default();
+        for name in plugins {
+            if plugin_entries.iter().any(|p| p.name.eq_ignore_ascii_case(&name)) {
+                continue;
+            }
+            plugin_entries.push(LoadOrderPluginEntry {
+                name: name.clone(),
+                kind: "mod".into(),
+                enabled: false,
+                mod_id: Some(m.id.clone()),
+                mod_name: Some(m.name.clone()),
+            });
+        }
+    }
+
+    let active_plugin_count = plugin_entries.iter().filter(|p| p.enabled).count();
+    let message = if !plugins_txt_ready {
+        "Proton prefix not configured — plugins.txt cannot be written until Setup is complete.".into()
+    } else if active_plugin_count == 0 {
+        "No plugins active. Enable mods and sync before launching.".into()
+    } else {
+        format!(
+            "{active_plugin_count} plugin(s) will load at launch (vanilla, Creation Club, and enabled mods)."
+        )
+    };
+
+    Ok(LoadOrderState {
+        mods: mod_entries,
+        plugins: plugin_entries,
+        plugins_txt_path,
+        plugins_txt_ready,
+        active_plugin_count,
+        message,
+    })
+}
+
+fn build_plugin_mod_map(mods: &[InstalledMod]) -> Result<HashMap<String, (String, String)>> {
+    let mut map = HashMap::new();
+    for m in mods {
+        for file in installed_file_paths(m)? {
+            let path = Path::new(&file);
+            if !path.is_file() {
+                continue;
+            }
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if !is_plugin_ext(&ext) {
+                continue;
+            }
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                map.insert(name.to_lowercase(), (m.id.clone(), m.name.clone()));
+            }
+        }
+    }
+    Ok(map)
+}
+
+fn is_plugin_ext(ext: &str) -> bool {
+    ext == "esp" || ext == "esm" || ext == "esl"
+}
+
+/// LOOT-sorted plugin names from enabled mods only (excludes vanilla/CC).
+pub fn loot_sorted_mod_plugins(profile: &Profile) -> Result<Vec<String>> {
+    let mods = db::list_installed_mods(&profile.id)?;
+    let loot_ranks = loot_plugin_ranks(profile, &mods)?;
+    let mut plugins: Vec<(String, usize)> = Vec::new();
+    let mut seen = HashSet::new();
+
+    for mod_record in mods.iter().filter(|m| m.enabled) {
+        for file in installed_file_paths(mod_record)? {
+            let path = PathBuf::from(&file);
+            if !path.is_file() {
+                continue;
+            }
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if !is_plugin_ext(&ext) {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+            if !seen.insert(name.to_lowercase()) {
+                continue;
+            }
+            let rank = loot_ranks
+                .get(&name.to_lowercase())
+                .copied()
+                .unwrap_or(usize::MAX / 2);
+            plugins.push((name, rank));
+        }
+    }
+
+    plugins.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.to_lowercase().cmp(&b.0.to_lowercase())));
+    Ok(plugins.into_iter().map(|(n, _)| n).collect())
 }
 
 fn load_rules(game_domain: &str) -> LoadOrderRules {

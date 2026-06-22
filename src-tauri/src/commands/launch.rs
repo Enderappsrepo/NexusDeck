@@ -125,7 +125,7 @@ pub async fn stop_game(
 }
 
 #[tauri::command]
-pub async fn sync_plugins_txt(profile_id: String) -> Result<String> {
+pub async fn sync_plugins_txt(profile_id: String) -> Result<crate::services::plugins_txt::PluginsSyncResult> {
     let profile = db::get_profile(&profile_id)?
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
     tokio::task::spawn_blocking(move || run_sync_plugins(&profile))

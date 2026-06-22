@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Download, Eye, GitCompare, Power } from "lucide-react";
 import { AppDialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,9 @@ export function useControllerContextMenu(
   useGamepadContextAction(
     GP.Y,
     () => {
-      if (actions.length > 0) setOpen(true);
+      if (actions.length === 0) return;
+      setOpen(true);
+      return true;
     },
     context
   );
