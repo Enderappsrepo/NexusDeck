@@ -253,7 +253,7 @@ fn ensure_steam_common_symlink(profile: &Profile, prefix: &Path) -> Result<()> {
     let link_parent = prefix.join(STEAM_COMMON_REL);
     std::fs::create_dir_all(&link_parent)?;
 
-    let link_path = link_parent.join(game_name.as_ref());
+    let link_path = link_parent.join(game_name);
     if link_path.exists() {
         if link_path.join("Data").is_dir() {
             return Ok(());
