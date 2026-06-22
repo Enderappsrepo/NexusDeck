@@ -41,7 +41,7 @@ modules:
   - name: sevenzip
     buildsystem: simple
     build-commands:
-      - install -Dm755 7zz /app/bin/7z
+      - install -Dm755 7z2601-linux-x64/7zz /app/bin/7z
     sources:
       - type: archive
         url: https://www.7-zip.org/a/7z2601-linux-x64.tar.xz
