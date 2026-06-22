@@ -40,6 +40,8 @@ finish-args:
 modules:
   - name: sevenzip
     buildsystem: simple
+    build-options:
+      network: true
     build-commands:
       - |
         curl -fsSL -o 7z.tar.xz https://www.7-zip.org/a/7z2601-linux-x64.tar.xz
@@ -48,7 +50,7 @@ modules:
         install -Dm755 7zz /app/bin/7z
     sources:
       - type: inline
-        dest: .keep
+        dest-filename: .keep
         contents: keep
 
   - name: nexusdeck
