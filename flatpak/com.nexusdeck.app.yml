@@ -42,15 +42,14 @@ modules:
     buildsystem: simple
     build-commands:
       - |
-        BIN=$(find . -name '7zz' -type f | head -1)
-        if [ -z "$BIN" ]; then echo "7zz not found in $(pwd):"; ls -laR .; exit 1; fi
-        install -Dm755 "$BIN" /app/bin/7z
+        curl -fsSL -o 7z.tar.xz https://www.7-zip.org/a/7z2601-linux-x64.tar.xz
+        echo "8ea0fc8a135e7b848e80a4116fe22dff56c8c4518dde1f43cce67f4e340b437a  7z.tar.xz" | sha256sum -c -
+        tar -xJf 7z.tar.xz
+        install -Dm755 7zz /app/bin/7z
     sources:
-      - type: archive
-        url: https://www.7-zip.org/a/7z2601-linux-x64.tar.xz
-        sha256: 8ea0fc8a135e7b848e80a4116fe22dff56c8c4518dde1f43cce67f4e340b437a
-        only-arches:
-          - x86_64
+      - type: inline
+        dest: .keep
+        contents: keep
 
   - name: nexusdeck
     buildsystem: simple
