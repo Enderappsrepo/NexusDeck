@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/commands";
 import { useDownloadsStore, useInstallQueueStore } from "@/stores";
+import { useCollectionInstallStore } from "@/stores/collectionInstallStore";
 import type { CollectionDetail, Profile } from "@/lib/nexus/types";
 import { modFileDownloadName } from "@/lib/nexus/types";
 
@@ -27,6 +28,8 @@ export function CollectionInstallDialog({
   const [error, setError] = useState<string | null>(null);
   const setProgress = useDownloadsStore((s) => s.setProgress);
   const registerPendingInstall = useInstallQueueStore((s) => s.registerPendingInstall);
+  const startBatch = useCollectionInstallStore((s) => s.startBatch);
+  const bindDownload = useCollectionInstallStore((s) => s.bindDownload);
 
   const requiredMods = collection.mods.filter((m) => !m.optional);
 
@@ -34,6 +37,18 @@ export function CollectionInstallDialog({
     setInstalling(true);
     setError(null);
     try {
+      startBatch({
+        slug: collection.slug,
+        name: collection.name,
+        gameDomain,
+        profileId: profile.id,
+        mods: requiredMods.map((m) => ({
+          modId: m.mod_id,
+          name: m.name,
+          status: "pending" as const,
+        })),
+      });
+
       for (const entry of requiredMods) {
         if (!entry.file_id) continue;
         const files = await api.getModFiles(gameDomain, entry.mod_id);
@@ -49,7 +64,14 @@ export function CollectionInstallDialog({
           modName: entry.name,
           profileId: profile.id,
         });
-        registerPendingInstall(progress.id, { source: "collection" });
+        registerPendingInstall(progress.id, {
+          source: "collection",
+          collectionSlug: collection.slug,
+          collectionName: collection.name,
+          modId: entry.mod_id,
+          modName: entry.name,
+        });
+        bindDownload(entry.mod_id, progress.id);
         setProgress(progress);
       }
       onOpenChange(false);
@@ -63,7 +85,8 @@ export function CollectionInstallDialog({
   return (
     <AppDialog open={open} onOpenChange={onOpenChange} title={`Install ${collection.name}`}>
       <p className="mb-4 text-sm text-[var(--color-muted)]">
-        Download and auto-install {requiredMods.length} required mods from this collection.
+        Download and auto-install {requiredMods.length} required mods. Progress appears in a panel
+        at the bottom of the screen.
       </p>
 
       <div className="mb-4 max-h-48 space-y-2 overflow-y-auto scrollbar-thin" data-scroll-pane>

@@ -6,6 +6,7 @@ use crate::db::{self, Profile};
 use crate::error::Result;
 use crate::games::{self, GameRegistry};
 use crate::services::game_settings::{is_archive_invalidation_enabled, resolve_my_games_dir};
+use crate::services::load_order;
 use crate::services::mod_state::installed_file_paths;
 use crate::services::process_monitor::ProcessMonitor;
 use crate::services::steam::detect_steam;
@@ -218,10 +219,98 @@ pub fn validate_launch(
         }
     }
 
+    append_plugin_launch_checks(profile, &mut blockers, &mut warnings);
+
     Ok(LaunchValidationResult {
         blockers,
         warnings,
     })
+}
+
+fn append_plugin_launch_checks(
+    profile: &Profile,
+    blockers: &mut Vec<LaunchCheckItem>,
+    warnings: &mut Vec<LaunchCheckItem>,
+) {
+    let Ok(state) = load_order::get_load_order_state(&profile.id) else {
+        return;
+    };
+
+    let has_plugin_mods = state
+        .mods
+        .iter()
+        .any(|m| m.enabled && !m.plugins.is_empty());
+
+    if !state.plugins_txt_ready && (state.active_plugin_count > 0 || has_plugin_mods) {
+        warnings.push(item(
+            "plugins_txt_unavailable",
+            "Load order cannot be synced — Proton prefix or plugins.txt path is missing. \
+             Your plugin list may be stale when the game starts.",
+            "warning",
+        ));
+    }
+
+    let inactive_mod_plugins: Vec<_> = state
+        .plugins
+        .iter()
+        .filter(|p| p.kind == "mod" && !p.enabled)
+        .collect();
+
+    if !inactive_mod_plugins.is_empty() {
+        let sample: Vec<&str> = inactive_mod_plugins
+            .iter()
+            .take(3)
+            .map(|p| p.name.as_str())
+            .collect();
+        let suffix = if inactive_mod_plugins.len() > 3 {
+            format!(" and {} more", inactive_mod_plugins.len() - 3)
+        } else {
+            String::new()
+        };
+        warnings.push(item(
+            "plugins_not_synced",
+            format!(
+                "{} mod plugin(s) are not active in plugins.txt (e.g. {}{}). \
+                 Open Load Order and tap Sync before launch.",
+                inactive_mod_plugins.len(),
+                sample.join(", "),
+                suffix
+            ),
+            "warning",
+        ));
+    }
+
+    if state.active_plugin_count == 0 && has_plugin_mods {
+        blockers.push(item(
+            "no_active_plugins",
+            "No plugins will load, but enabled mods contain plugins. Sync load order before launching.",
+            "error",
+        ));
+    } else if state.active_plugin_count > 250 {
+        warnings.push(item(
+            "plugin_limit_near",
+            format!(
+                "{} plugins active — Bethesda games cap around 255. Disable unused plugins in Load Order.",
+                state.active_plugin_count
+            ),
+            "warning",
+        ));
+    }
+
+    let disabled_with_plugins = state
+        .mods
+        .iter()
+        .filter(|m| !m.enabled && !m.plugins.is_empty())
+        .count();
+    if disabled_with_plugins > 0 {
+        warnings.push(item(
+            "disabled_mod_plugins",
+            format!(
+                "{disabled_with_plugins} disabled mod(s) still have plugins on disk — they will not load."
+            ),
+            "info",
+        ));
+    }
 }
 
 /// True when any enabled mod deploys loose assets under Data/ (textures, meshes, etc.).

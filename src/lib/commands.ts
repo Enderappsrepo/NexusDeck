@@ -596,6 +596,15 @@ export const api = {
   launchBodyslide: (profileId: string) =>
     invoke<string>("launch_bodyslide", { profileId }),
 
+  launchOutfitStudio: (profileId: string) =>
+    invoke<string>("launch_outfit_studio", { profileId }),
+
+  queueBodyslideInstall: (profileId: string) =>
+    invoke<DownloadProgress>("queue_bodyslide_install", { profileId }),
+
+  queueCbbeInstall: (profileId: string) =>
+    invoke<DownloadProgress>("queue_cbbe_install", { profileId }),
+
   logStartupEvent: (step: string, detail?: string) =>
     invoke<void>("log_startup_event", { step, detail: detail ?? null }),
 

@@ -20,10 +20,13 @@ use crate::services::steam_shortcut::{
     write_shortcut_to_steam_vdf, NexusDeckSteamShortcutResult, SteamShortcutInfo,
 };
 use crate::services::tools::{
-    detect_bodyslide as run_detect_bodyslide, detect_sseedit as run_detect_sseedit,
-    launch_bodyslide as run_launch_bodyslide, launch_sseedit as run_launch_sseedit,
-    BodySlideInfo, SseEditInfo,
+    bodyslide_catalog, cbbe_catalog, detect_bodyslide as run_detect_bodyslide,
+    detect_sseedit as run_detect_sseedit, launch_bodyslide as run_launch_bodyslide,
+    launch_outfit_studio as run_launch_outfit_studio, launch_sseedit as run_launch_sseedit,
+    profile_has_body_mod, BodySlideInfo, SseEditInfo,
 };
+use crate::services::download_manager::{DownloadManager, DownloadProgress};
+use crate::services::nexus_client::NexusClient;
 
 #[tauri::command]
 pub fn list_launch_configs(profile_id: String) -> Result<Vec<LaunchConfig>> {
@@ -237,6 +240,120 @@ pub async fn launch_bodyslide(profile_id: String) -> Result<String> {
     tokio::task::spawn_blocking(move || run_launch_bodyslide(&profile_id))
         .await
         .map_err(|e| crate::error::NexusDeckError::Other(format!("BodySlide launch failed: {e}")))?
+}
+
+#[tauri::command]
+pub async fn launch_outfit_studio(profile_id: String) -> Result<String> {
+    tokio::task::spawn_blocking(move || run_launch_outfit_studio(&profile_id))
+        .await
+        .map_err(|e| {
+            crate::error::NexusDeckError::Other(format!("Outfit Studio launch failed: {e}"))
+        })?
+}
+
+#[tauri::command]
+pub async fn queue_bodyslide_install(
+    app: AppHandle,
+    profile_id: String,
+    nexus: State<'_, Arc<NexusClient>>,
+    downloads: State<'_, Arc<DownloadManager>>,
+) -> Result<DownloadProgress> {
+    use std::path::PathBuf;
+
+    use crate::error::NexusDeckError;
+
+    let profile = db::get_profile(&profile_id)?
+        .ok_or_else(|| NexusDeckError::NotFound("Profile not found".into()))?;
+
+    if run_detect_bodyslide(&profile_id)?.installed {
+        return Err(NexusDeckError::Other("BodySlide is already installed.".into()));
+    }
+
+    let entry = bodyslide_catalog(&profile.game_domain).ok_or_else(|| {
+        NexusDeckError::Other(format!(
+            "One-click BodySlide install is not configured for {}.",
+            profile.game_domain
+        ))
+    })?;
+
+    let files = nexus.get_mod_files(&profile.game_domain, entry.mod_id).await?;
+    let file = files
+        .iter()
+        .find(|f| f.is_primary)
+        .or_else(|| files.first())
+        .ok_or_else(|| NexusDeckError::NotFound("No BodySlide download files found.".into()))?;
+
+    let progress = downloads
+        .enqueue_download(
+            app,
+            Arc::clone(&*nexus),
+            &profile.game_domain,
+            entry.mod_id,
+            file.file_id,
+            &file.file_name,
+            PathBuf::from(&profile.staging_path).as_path(),
+            file.size_kb,
+            entry.mod_name,
+            &profile_id,
+            None,
+            0,
+        )
+        .await?;
+    downloads.mark_auto_install(&progress.id);
+    Ok(progress)
+}
+
+#[tauri::command]
+pub async fn queue_cbbe_install(
+    app: AppHandle,
+    profile_id: String,
+    nexus: State<'_, Arc<NexusClient>>,
+    downloads: State<'_, Arc<DownloadManager>>,
+) -> Result<DownloadProgress> {
+    use std::path::PathBuf;
+
+    use crate::error::NexusDeckError;
+
+    let profile = db::get_profile(&profile_id)?
+        .ok_or_else(|| NexusDeckError::NotFound("Profile not found".into()))?;
+
+    if profile_has_body_mod(&profile_id)? {
+        return Err(NexusDeckError::Other(
+            "A body mod (CBBE or similar) is already installed.".into(),
+        ));
+    }
+
+    let entry = cbbe_catalog(&profile.game_domain).ok_or_else(|| {
+        NexusDeckError::Other(format!(
+            "One-click CBBE install is not configured for {}.",
+            profile.game_domain
+        ))
+    })?;
+
+    let files = nexus.get_mod_files(&profile.game_domain, entry.mod_id).await?;
+    let file = files
+        .iter()
+        .find(|f| f.is_primary)
+        .or_else(|| files.first())
+        .ok_or_else(|| NexusDeckError::NotFound("No CBBE download files found.".into()))?;
+
+    let progress = downloads
+        .enqueue_download(
+            app,
+            Arc::clone(&*nexus),
+            &profile.game_domain,
+            entry.mod_id,
+            file.file_id,
+            &file.file_name,
+            PathBuf::from(&profile.staging_path).as_path(),
+            file.size_kb,
+            entry.mod_name,
+            &profile_id,
+            None,
+            0,
+        )
+        .await?;
+    Ok(progress)
 }
 
 #[tauri::command]

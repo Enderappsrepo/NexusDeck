@@ -675,6 +675,19 @@ export interface BodySetupStatus {
   presets_built: boolean;
   steps: BodySetupStep[];
   nexus_bodyslide_url?: string | null;
+  nexus_mod_id?: number | null;
+  mod_name?: string | null;
+  can_one_click_install?: boolean;
+  outfit_studio_available?: boolean;
+  nexus_cbbe_url?: string | null;
+  cbbe_mod_id?: number | null;
+  cbbe_mod_name?: string | null;
+  can_one_click_cbbe?: boolean;
+}
+
+export interface InstallPreset {
+  strategy: string;
+  autoConfirm?: boolean;
 }
 
 export interface RepairResult {

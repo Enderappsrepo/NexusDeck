@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { api } from "@/lib/commands";
-import type { DownloadProgress, ModFileInfo, Profile } from "@/lib/nexus/types";
+import type { DownloadProgress, ModFileInfo, Profile, InstallPreset } from "@/lib/nexus/types";
 
-export type InstallJobSource = "manual" | "update" | "dep" | "collection";
+export type InstallJobSource = "manual" | "update" | "dep" | "collection" | "bodyslide" | "cbbe";
 export type InstallJobStatus = "queued" | "active" | "done" | "failed";
 
 export interface InstallJob {
@@ -17,11 +17,16 @@ export interface InstallJob {
   source: InstallJobSource;
   status: InstallJobStatus;
   error?: string;
+  installPreset?: InstallPreset;
 }
 
 export interface PendingInstallMeta {
   source: InstallJobSource;
   replaceModId?: string;
+  collectionSlug?: string;
+  collectionName?: string;
+  modId?: number;
+  modName?: string;
 }
 
 interface InstallQueueState {
@@ -38,7 +43,7 @@ interface InstallQueueState {
     download: DownloadProgress,
     source: InstallJobSource,
     profiles: Profile[],
-    options?: { front?: boolean; replaceModId?: string }
+    options?: { front?: boolean; replaceModId?: string; installPreset?: InstallPreset }
   ) => Promise<boolean>;
 
   prioritizeDownload: (downloadId: string) => void;
@@ -130,6 +135,7 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
       replaceModId: options?.replaceModId ?? download.update_target_mod_id,
       source,
       status: "queued",
+      installPreset: options?.installPreset,
     };
 
     set((s) => {

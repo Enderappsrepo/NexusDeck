@@ -5,6 +5,7 @@ import { useLaunchStore } from "@/stores/launchStore";
 import { LaunchConfirmDialog } from "./LaunchConfirmDialog";
 import { QuickLaunchMenu } from "./QuickLaunchMenu";
 import { LaunchOptionsDialog } from "./LaunchOptionsDialog";
+import type { LaunchCheckItem } from "@/lib/nexus/types";
 
 interface LaunchButtonProps {
   profileId: string;
@@ -34,7 +35,7 @@ export function LaunchButton({
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingConfigId, setPendingConfigId] = useState<string | undefined>();
-  const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
+  const [validationChecks, setValidationChecks] = useState<LaunchCheckItem[]>([]);
 
   const running = runningByProfile[profileId]?.running;
   const busy = validating || launching;
@@ -67,7 +68,7 @@ export function LaunchButton({
       }
       if (settings.always_ask_before_launch || validation.warnings.length > 0) {
         setPendingConfigId(configId);
-        setValidationWarnings(validation.warnings.map((w) => w.message));
+        setValidationChecks(validation.warnings);
         setConfirmOpen(true);
         return;
       }
@@ -117,7 +118,8 @@ export function LaunchButton({
         <LaunchConfirmDialog
           open={confirmOpen}
           onOpenChange={setConfirmOpen}
-          warnings={validationWarnings}
+          checks={validationChecks}
+          gameDomain={gameDomain}
           onConfirm={handleConfirm}
         />
       </>
@@ -190,7 +192,8 @@ export function LaunchButton({
       <LaunchConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        warnings={validationWarnings}
+        checks={validationChecks}
+        gameDomain={gameDomain}
         onConfirm={handleConfirm}
       />
     </>

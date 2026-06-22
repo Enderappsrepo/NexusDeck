@@ -14,7 +14,62 @@ use crate::services::steam_launch::{launch_direct_executable, launch_through_pro
 pub const FO4_BODYSLIDE_NEXUS_URL: &str =
     "https://www.nexusmods.com/fallout4/mods/25";
 
+pub struct BodySlideCatalogEntry {
+    pub game_domain: &'static str,
+    pub mod_id: u64,
+    pub mod_name: &'static str,
+    pub nexus_url: &'static str,
+}
+
+const BODYSLIDE_CATALOG: &[BodySlideCatalogEntry] = &[
+    BodySlideCatalogEntry {
+        game_domain: "fallout4",
+        mod_id: 25,
+        mod_name: "BodySlide and Outfit Studio -",
+        nexus_url: FO4_BODYSLIDE_NEXUS_URL,
+    },
+    BodySlideCatalogEntry {
+        game_domain: "skyrimspecialedition",
+        mod_id: 201,
+        mod_name: "BodySlide and Outfit Studio -",
+        nexus_url: "https://www.nexusmods.com/skyrimspecialedition/mods/201",
+    },
+];
+
+pub struct CbbeCatalogEntry {
+    pub game_domain: &'static str,
+    pub mod_id: u64,
+    pub mod_name: &'static str,
+    pub nexus_url: &'static str,
+}
+
+const CBBE_CATALOG: &[CbbeCatalogEntry] = &[
+    CbbeCatalogEntry {
+        game_domain: "fallout4",
+        mod_id: 111,
+        mod_name: "Caliente's Beautiful Bodies Enhancer -CBBE-",
+        nexus_url: "https://www.nexusmods.com/fallout4/mods/111",
+    },
+    CbbeCatalogEntry {
+        game_domain: "skyrimspecialedition",
+        mod_id: 198,
+        mod_name: "Caliente's Beautiful Bodies Enhancer - CBBE",
+        nexus_url: "https://www.nexusmods.com/skyrimspecialedition/mods/198",
+    },
+];
+
+pub fn bodyslide_catalog(game_domain: &str) -> Option<&'static BodySlideCatalogEntry> {
+    BODYSLIDE_CATALOG
+        .iter()
+        .find(|e| e.game_domain == game_domain)
+}
+
+pub fn cbbe_catalog(game_domain: &str) -> Option<&'static CbbeCatalogEntry> {
+    CBBE_CATALOG.iter().find(|e| e.game_domain == game_domain)
+}
+
 const BODYSLIDE_EXES: [&str; 2] = ["BodySlide x64.exe", "BodySlide.exe"];
+const OUTFIT_STUDIO_EXES: [&str; 2] = ["Outfit Studio x64.exe", "OutfitStudio.exe"];
 
 const BODY_MOD_KEYWORDS: [&str; 6] = ["cbbe", "caliente", "bodyslide", "body", "3ba", "unp"];
 
@@ -43,6 +98,14 @@ pub struct BodySetupStatus {
     pub presets_built: bool,
     pub steps: Vec<BodySetupStep>,
     pub nexus_bodyslide_url: Option<String>,
+    pub nexus_mod_id: Option<u64>,
+    pub mod_name: Option<String>,
+    pub can_one_click_install: bool,
+    pub outfit_studio_available: bool,
+    pub nexus_cbbe_url: Option<String>,
+    pub cbbe_mod_id: Option<u64>,
+    pub cbbe_mod_name: Option<String>,
+    pub can_one_click_cbbe: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,6 +180,23 @@ fn find_bodyslide_exe(game_root: &Path) -> Option<(PathBuf, PathBuf)> {
     None
 }
 
+fn find_tool_exe(game_root: &Path, exe_names: &[&str]) -> Option<(PathBuf, PathBuf)> {
+    if let Some((exe, dir)) = find_bodyslide_exe(game_root) {
+        for name in exe_names {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some((candidate, dir.clone()));
+            }
+        }
+    }
+    None
+}
+
+fn outfit_studio_available(profile_id: &str) -> Result<bool> {
+    let profile = load_profile(profile_id)?;
+    Ok(find_tool_exe(Path::new(&profile.game_path), &OUTFIT_STUDIO_EXES).is_some())
+}
+
 fn presets_built(profile: &Profile) -> bool {
     let body_mesh = PathBuf::from(&profile.game_path)
         .join("Data")
@@ -174,12 +254,18 @@ pub fn get_body_setup_status(profile_id: &str) -> Result<BodySetupStatus> {
     let cbbe_installed = profile_has_body_mod(profile_id)?;
     let bodyslide = detect_bodyslide(profile_id)?;
     let presets_built = presets_built(&profile);
+    let catalog = bodyslide_catalog(&profile.game_domain);
+    let cbbe = cbbe_catalog(&profile.game_domain);
+    let outfit_studio = outfit_studio_available(profile_id).unwrap_or(false);
 
-    let nexus_url = if profile.game_domain == "fallout4" {
-        Some(FO4_BODYSLIDE_NEXUS_URL.to_string())
-    } else {
-        None
-    };
+    let nexus_url = catalog.map(|c| c.nexus_url.to_string());
+    let nexus_mod_id = catalog.map(|c| c.mod_id);
+    let mod_name = catalog.map(|c| c.mod_name.to_string());
+    let can_one_click_install = catalog.is_some() && !bodyslide.installed;
+    let nexus_cbbe_url = cbbe.map(|c| c.nexus_url.to_string());
+    let cbbe_mod_id = cbbe.map(|c| c.mod_id);
+    let cbbe_mod_name = cbbe.map(|c| c.mod_name.to_string());
+    let can_one_click_cbbe = cbbe.is_some() && !cbbe_installed;
 
     let step1_status = if cbbe_installed { "done" } else { "pending" };
     let step2_status = if bodyslide.installed {
@@ -240,6 +326,14 @@ pub fn get_body_setup_status(profile_id: &str) -> Result<BodySetupStatus> {
         presets_built,
         steps,
         nexus_bodyslide_url: nexus_url,
+        nexus_mod_id,
+        mod_name,
+        can_one_click_install,
+        outfit_studio_available: outfit_studio,
+        nexus_cbbe_url,
+        cbbe_mod_id,
+        cbbe_mod_name,
+        can_one_click_cbbe,
     })
 }
 
@@ -311,4 +405,22 @@ pub fn launch_bodyslide(profile_id: &str) -> Result<String> {
     let profile = load_profile(profile_id)?;
     launch_through_proton(&profile, Path::new(&exe), Path::new(&cwd), &[])?;
     Ok("Launched BodySlide through Proton. Batch Build your presets, then verify meshes in Data/meshes/.".into())
+}
+
+pub fn launch_outfit_studio(profile_id: &str) -> Result<String> {
+    let profile = load_profile(profile_id)?;
+    let game_root = PathBuf::from(&profile.game_path);
+    let (exe, cwd) = find_tool_exe(&game_root, &OUTFIT_STUDIO_EXES).ok_or_else(|| {
+        NexusDeckError::NotFound(
+            "Outfit Studio not found. Install BodySlide first — it includes Outfit Studio.".into(),
+        )
+    })?;
+
+    if std::env::consts::OS == "windows" {
+        launch_direct_executable(&exe, &cwd, &[])?;
+        return Ok("Launched Outfit Studio.".into());
+    }
+
+    launch_through_proton(&profile, &exe, &cwd, &[])?;
+    Ok("Launched Outfit Studio through Proton.".into())
 }

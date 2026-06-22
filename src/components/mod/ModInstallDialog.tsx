@@ -36,6 +36,7 @@ import type {
   ModFileInfo,
   Profile,
   SelectedInstallOption,
+  InstallPreset,
 } from "@/lib/nexus/types";
 import { modFileDownloadName } from "@/lib/nexus/types";
 
@@ -52,6 +53,7 @@ interface ModInstallDialogProps {
   replaceModId?: string;
   category?: string;
   tags?: string[];
+  installPreset?: InstallPreset;
   onInstalled?: () => void;
   onInstallFailed?: (error: string) => void;
 }
@@ -90,6 +92,7 @@ export function ModInstallDialog({
   replaceModId,
   category,
   tags,
+  installPreset,
   onInstalled,
   onInstallFailed,
 }: ModInstallDialogProps) {
@@ -119,18 +122,6 @@ export function ModInstallDialog({
   const [reviewImage, setReviewImage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!preparedExtractDir || !archivePath || phase !== "wizard") return;
-    void api
-      .getFomodWizardState({
-        extractDir: preparedExtractDir,
-        archivePath,
-        selections,
-      })
-      .then((state) => setInstallWizard(state.wizard))
-      .catch(() => {});
-  }, [selections, preparedExtractDir, archivePath, phase]);
-
-  useEffect(() => {
     if (!extracting) {
       setExtractElapsedSec(0);
       return;
@@ -147,14 +138,16 @@ export function ModInstallDialog({
 
   useEffect(() => {
     if (!open || !archivePath || !preview) return;
-    if (phase !== "wizard" && phase !== "options") return;
+    // Wizard steps filter client-side; a full preview on every pick re-scans the
+    // archive and freezes the UI. Refresh only on the flat options phase.
+    if (phase !== "options") return;
 
     if (previewDebounceRef.current) {
       window.clearTimeout(previewDebounceRef.current);
     }
     previewDebounceRef.current = window.setTimeout(() => {
-      void loadPreview(strategy, archivePath, selections, preparedExtractDir);
-    }, 300);
+      void loadPreview(strategy, archivePath, selections, preparedExtractDir, true);
+    }, 400);
 
     return () => {
       if (previewDebounceRef.current) {
@@ -198,9 +191,10 @@ export function ModInstallDialog({
     nextStrategy: string,
     resolvedPath: string,
     nextSelections?: SelectedInstallOption[],
-    extractDir?: string | null
+    extractDir?: string | null,
+    silent = false
   ) => {
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const result = await api.previewModInstall({
@@ -225,7 +219,7 @@ export function ModInstallDialog({
       setPreview(null);
       return null;
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -239,7 +233,8 @@ export function ModInstallDialog({
   useEffect(() => {
     if (!open) return;
 
-    setStrategy("auto");
+    const presetStrategy = installPreset?.strategy ?? "auto";
+    setStrategy(presetStrategy);
     setEnableMod(true);
     setOverwriteFiles(false);
     setSelections([]);
@@ -266,9 +261,57 @@ export function ModInstallDialog({
           setLocatingArchive(false);
         }
         setArchivePath(resolved);
-        const result = await loadPreview("auto", resolved, undefined, null);
+        const result = await loadPreview(presetStrategy, resolved, undefined, null);
         if (!result) return;
         const nextPhase = resolveInitialPhase(result);
+
+        if (
+          installPreset?.autoConfirm &&
+          !result.install_wizard_required &&
+          nextPhase === "review" &&
+          result.option_groups.length === 0
+        ) {
+          setPhase("installing");
+          setInstalling(true);
+          setPreview(result);
+          setStrategy(presetStrategy);
+          setSelections(result.default_selections);
+          try {
+            const installResult = await api.installModFromArchive({
+              profileId: profile.id,
+              modName,
+              nexusModId: modId,
+              nexusFileId: file.file_id,
+              archivePath: resolved,
+              options: {
+                strategy: presetStrategy,
+                enable_mod: true,
+                overwrite_files: false,
+                selected_options: result.default_selections,
+                prepared_extract_dir: null,
+                dry_run: false,
+              },
+              fileVersion: file.version ?? null,
+              replaceModId: replaceModId ?? null,
+            });
+            if (installResult.log_path) setInstallLogPath(installResult.log_path);
+            onInstalled?.();
+            window.dispatchEvent(
+              new CustomEvent("nexusdeck-mod-installed", { detail: { modName } })
+            );
+            onOpenChange(false);
+          } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            setError(message);
+            setPhase("error");
+            onInstallFailed?.(message);
+          } finally {
+            setInstalling(false);
+            setLoading(false);
+          }
+          return;
+        }
+
         if (nextPhase === "wizard" && !result.install_wizard_required) {
           setPhase("welcome");
           await extractAndConfigure();
@@ -285,7 +328,18 @@ export function ModInstallDialog({
     };
 
     prepare();
-  }, [open, archivePathOverride, file.file_id, file.file_name, file.name, modName, profile.id, profile.staging_path]);
+  }, [
+    open,
+    archivePathOverride,
+    file.file_id,
+    file.file_name,
+    file.name,
+    modName,
+    profile.id,
+    profile.staging_path,
+    installPreset?.strategy,
+    installPreset?.autoConfirm,
+  ]);
 
   useEffect(() => {
     if (open) return;

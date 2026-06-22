@@ -5,6 +5,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { DownloadQueuePanel } from "@/components/download/DownloadQueuePanel";
 import { InstallPromptDialog } from "@/components/install/InstallPromptDialog";
 import { InstallQueuePanel } from "@/components/install/InstallQueuePanel";
+import { CollectionInstallProgressPanel } from "@/components/collections/CollectionInstallProgressPanel";
 import { ModInstallDialog } from "@/components/mod/ModInstallDialog";
 import {
   useAuthStore,
@@ -21,6 +22,7 @@ import { GamepadRouterProvider } from "@/hooks/useGamepadRouter";
 import { resolveContextFromPath } from "@/lib/gamepad/contexts";
 import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
 import { useLaunchStore } from "@/stores/launchStore";
+import { useCollectionInstallStore } from "@/stores/collectionInstallStore";
 import { api } from "@/lib/commands";
 import { ensureGamepadPolyfill } from "@/lib/gamepadPolyfill";
 import { applyPerfAttribute } from "@/lib/platform";
@@ -83,6 +85,11 @@ function RootLayout() {
   const completeActive = useInstallQueueStore((s) => s.completeActive);
   const failActive = useInstallQueueStore((s) => s.failActive);
   const cancelActive = useInstallQueueStore((s) => s.cancelActive);
+  const installJobs = useInstallQueueStore((s) => s.jobs);
+  const syncCollectionDownload = useCollectionInstallStore((s) => s.syncFromDownload);
+  const syncCollectionInstall = useCollectionInstallStore((s) => s.syncFromInstallJob);
+  const collectionActive = useCollectionInstallStore((s) => s.active);
+  const downloadErrors = useDownloadsStore((s) => s.errors);
 
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
 
@@ -143,12 +150,19 @@ function RootLayout() {
         download.auto_install ||
         pending?.source === "collection" ||
         pending?.source === "dep" ||
+        pending?.source === "bodyslide" ||
+        pending?.source === "cbbe" ||
         downloadSettings.auto_install_after_download;
 
       if (autoInstall) {
         const source = pending?.source ?? "manual";
+        const installPreset =
+          source === "bodyslide"
+            ? { strategy: "merge_loose_to_data", autoConfirm: true }
+            : undefined;
         await enqueueFromDownload(download, source, profiles, {
           replaceModId: pending?.replaceModId,
+          installPreset,
         });
       } else {
         showInstallPrompt(download);
@@ -268,6 +282,20 @@ function RootLayout() {
     return () => window.removeEventListener("nexusdeck-install-download", onInstall);
   }, [active, handleInstallNowFromDownload, prioritizeDownload]);
 
+  useEffect(() => {
+    if (!collectionActive) return;
+    for (const download of Object.values(active)) {
+      syncCollectionDownload(download, downloadErrors[download.id]);
+    }
+  }, [active, collectionActive, downloadErrors, syncCollectionDownload]);
+
+  useEffect(() => {
+    if (!collectionActive) return;
+    for (const job of installJobs) {
+      syncCollectionInstall(job);
+    }
+  }, [installJobs, collectionActive, syncCollectionInstall]);
+
   const promptProfile = installPrompt
     ? resolveProfile(profiles, installPrompt)
     : undefined;
@@ -296,6 +324,7 @@ function RootLayout() {
         </AppShell>
         {!isOnboarding && <DownloadQueuePanel />}
         {!isOnboarding && <InstallQueuePanel />}
+        {!isOnboarding && <CollectionInstallProgressPanel />}
         {!isOnboarding && <ControllerHintBar />}
         <CommandPalette />
 
@@ -320,6 +349,7 @@ function RootLayout() {
             file={activeJob.file}
             archivePathOverride={activeJob.archivePath}
             replaceModId={activeJob.replaceModId}
+            installPreset={activeJob.installPreset}
             onInstalled={() => void handleInstallComplete(activeJob.downloadId)}
             onInstallFailed={(err) => failActive(err)}
           />
