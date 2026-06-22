@@ -24,6 +24,8 @@ pub mod pre_launch;
 pub mod process_monitor;
 pub mod steam_launch;
 pub mod script_extender;
+pub mod script_extender_version;
+pub mod game_executable_version;
 pub mod steam_shortcut;
 pub mod game_settings;
 pub mod install_log;

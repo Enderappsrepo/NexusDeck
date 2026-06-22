@@ -142,6 +142,10 @@ impl CreationEnginePlugin {
             version: None,
             loader_path: None,
             message: format!("{label} is not configured for this game."),
+            game_version: None,
+            extender_game_version: None,
+            recommended_extender_version: None,
+            version_compatible: None,
         }
     }
 

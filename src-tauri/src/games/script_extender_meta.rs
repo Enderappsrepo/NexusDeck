@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ScriptExtenderMeta {
@@ -143,18 +144,46 @@ pub struct ScriptExtenderInstallInfo {
     pub notes: String,
     pub supports_auto_download: bool,
     pub supports_steam_launcher_patch: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended_extender_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed_extender_game_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_compatible: Option<bool>,
 }
 
-pub fn install_info(domain: &str) -> Option<ScriptExtenderInstallInfo> {
+pub fn install_info(domain: &str, game_root: Option<&Path>) -> Option<ScriptExtenderInstallInfo> {
     let meta = ScriptExtenderMeta::get(domain)?;
+    let version_report = game_root
+        .and_then(|root| {
+            crate::services::script_extender_version::resolve_build_for_game(domain, root).ok()
+        });
+
+    let recommended = version_report.as_ref().and_then(|r| r.recommended.as_ref());
+    let download_url = recommended
+        .map(|b| b.download_url.clone())
+        .or_else(|| meta.download_url.map(|s| s.to_string()));
+
+    let runtime = recommended
+        .map(|b| format!("{} game {}", meta.label, b.game_version))
+        .unwrap_or_else(|| meta.runtime.to_string());
+
     Some(ScriptExtenderInstallInfo {
         domain: meta.domain.to_string(),
         label: meta.label.to_string(),
-        download_url: meta.download_url.map(|s| s.to_string()),
+        download_url,
         website_url: meta.website_url.to_string(),
-        runtime: meta.runtime.to_string(),
+        runtime,
         notes: meta.notes.to_string(),
-        supports_auto_download: meta.supports_auto_download(),
+        supports_auto_download: meta.supports_auto_download() || recommended.is_some(),
         supports_steam_launcher_patch: meta.launcher_exe.is_some(),
+        game_version: version_report.as_ref().and_then(|r| r.game_version.clone()),
+        recommended_extender_version: recommended.map(|b| b.extender_version.clone()),
+        installed_extender_game_version: version_report
+            .as_ref()
+            .and_then(|r| r.installed_extender_game_version.clone()),
+        version_compatible: version_report.as_ref().and_then(|r| r.compatible),
     })
 }

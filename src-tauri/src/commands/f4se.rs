@@ -63,12 +63,16 @@ pub fn install_script_extender_from_archive(
 }
 
 #[tauri::command]
-pub fn get_f4se_install_info() -> Result<ScriptExtenderInstallInfo> {
-    get_script_extender_install_info("fallout4".to_string())
+pub fn get_f4se_install_info(game_path: Option<String>) -> Result<ScriptExtenderInstallInfo> {
+    get_script_extender_install_info("fallout4".to_string(), game_path)
 }
 
 #[tauri::command]
-pub fn get_script_extender_install_info(domain: String) -> Result<ScriptExtenderInstallInfo> {
-    script_extender_install_info(&domain)
+pub fn get_script_extender_install_info(
+    domain: String,
+    game_path: Option<String>,
+) -> Result<ScriptExtenderInstallInfo> {
+    let root = game_path.as_deref().map(Path::new);
+    script_extender_install_info(&domain, root)
         .ok_or_else(|| crate::error::NexusDeckError::GameNotFound(domain))
 }

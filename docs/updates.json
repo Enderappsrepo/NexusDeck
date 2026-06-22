@@ -1,6 +1,6 @@
 {
   "minimum_version": "0.6.0",
-  "latest_version": "0.6.5",
-  "message": "NexusDeck 0.6.5 launches Fallout 4 through F4SE automatically (via Proton on Deck), enables archive invalidation for loose textures/meshes, and normalizes Linux file casing after installs. Also fixes CBBE FOMOD empty-destination paths and MCM $ placeholder issues when F4SE was not loading.",
+  "latest_version": "0.6.6",
+  "message": "NexusDeck 0.6.6 auto-detects your game version and installs the matching F4SE/SKSE build. Wrong-version script extenders are flagged at launch and can be re-installed from the game hub.",
   "release_url": "https://github.com/Enderappsrepo/NexusDeck/releases/latest"
 }

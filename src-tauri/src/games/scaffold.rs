@@ -51,6 +51,10 @@ impl GamePlugin for SkyrimSeScaffold {
             version: None,
             loader_path: None,
             message: "SKSE detection not implemented".into(),
+            game_version: None,
+            extender_game_version: None,
+            recommended_extender_version: None,
+            version_compatible: None,
         }
     }
 

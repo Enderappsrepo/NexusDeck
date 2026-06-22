@@ -1,0 +1,112 @@
+{
+  "fallout4": {
+    "executable": "Fallout4.exe",
+    "dll_prefix": "f4se_",
+    "archive_prefix": "f4se",
+    "builds": [
+      {
+        "game_version": "1.11.221",
+        "extender_version": "0.7.8",
+        "download_url": "https://f4se.silverlock.org/beta/f4se_0_07_08.7z"
+      },
+      {
+        "game_version": "1.11.191",
+        "extender_version": "0.7.7",
+        "download_url": "https://f4se.silverlock.org/beta/f4se_0_07_07.7z"
+      },
+      {
+        "game_version": "1.11.169",
+        "extender_version": "0.7.6",
+        "download_url": "https://f4se.silverlock.org/beta/f4se_0_07_06.7z"
+      },
+      {
+        "game_version": "1.11.159",
+        "extender_version": "0.7.5",
+        "download_url": "https://f4se.silverlock.org/beta/f4se_0_07_05.7z"
+      },
+      {
+        "game_version": "1.11.137",
+        "extender_version": "0.7.4",
+        "download_url": "https://f4se.silverlock.org/beta/f4se_0_07_04.7z"
+      },
+      {
+        "game_version": "1.10.984",
+        "extender_version": "0.7.2",
+        "download_url": "https://f4se.silverlock.org/beta/f4se_0_07_02.7z"
+      },
+      {
+        "game_version": "1.10.163",
+        "extender_version": "0.6.23",
+        "download_url": "https://f4se.silverlock.org/beta/f4se_0_06_23.7z"
+      }
+    ]
+  },
+  "skyrimspecialedition": {
+    "executable": "SkyrimSE.exe",
+    "dll_prefix": "skse64_",
+    "archive_prefix": "skse64",
+    "builds": [
+      {
+        "game_version": "1.6.1179",
+        "extender_version": "2.2.6",
+        "download_url": "https://skse.silverlock.org/beta/skse64_2_02_06_gog.7z"
+      },
+      {
+        "game_version": "1.6.1170",
+        "extender_version": "2.2.6",
+        "download_url": "https://skse.silverlock.org/beta/skse64_2_02_06.7z"
+      },
+      {
+        "game_version": "1.6.659",
+        "extender_version": "2.2.3",
+        "download_url": "https://skse.silverlock.org/beta/skse64_2_02_03_gog.7z"
+      },
+      {
+        "game_version": "1.6.640",
+        "extender_version": "2.2.3",
+        "download_url": "https://skse.silverlock.org/beta/skse64_2_02_03.7z"
+      },
+      {
+        "game_version": "1.5.97",
+        "extender_version": "2.0.20",
+        "download_url": "https://skse.silverlock.org/beta/skse64_2_00_20.7z"
+      }
+    ]
+  },
+  "skyrim": {
+    "executable": "TESV.exe",
+    "dll_prefix": "skse_",
+    "archive_prefix": "skse",
+    "builds": [
+      {
+        "game_version": "1.9.32",
+        "extender_version": "1.7.3",
+        "download_url": "https://skse.silverlock.org/beta/skse_1_07_03.7z"
+      }
+    ]
+  },
+  "fallout3": {
+    "executable": "Fallout3.exe",
+    "dll_prefix": "fose_",
+    "archive_prefix": "fose",
+    "builds": [
+      {
+        "game_version": "1.7.0",
+        "extender_version": "1.3",
+        "download_url": "http://fose.silverlock.org/beta/fose_v1_3_beta.7z"
+      }
+    ]
+  },
+  "oblivion": {
+    "executable": "Oblivion.exe",
+    "dll_prefix": "obse_",
+    "archive_prefix": "obse",
+    "builds": [
+      {
+        "game_version": "1.2.0",
+        "extender_version": "0.21",
+        "download_url": "http://obse.silverlock.org/download/obse_0021.zip"
+      }
+    ]
+  }
+}

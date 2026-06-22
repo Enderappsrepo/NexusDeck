@@ -33,6 +33,14 @@ pub struct ScriptExtenderStatus {
     pub version: Option<String>,
     pub loader_path: Option<String>,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extender_game_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended_extender_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_compatible: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -109,6 +109,17 @@ pub fn validate_launch(
                         "error",
                     ));
                 }
+            } else if status.version_compatible == Some(false) {
+                blockers.push(item(
+                    "script_extender_version_mismatch",
+                    format!(
+                        "{extender_label} does not match your game version (game {}, extender for {}). \
+                         Re-install {extender_label} from the game hub.",
+                        status.game_version.as_deref().unwrap_or("unknown"),
+                        status.extender_game_version.as_deref().unwrap_or("unknown"),
+                    ),
+                    "error",
+                ));
             }
         }
     } else if needs_extender {

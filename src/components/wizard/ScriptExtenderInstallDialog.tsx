@@ -36,7 +36,7 @@ export function ScriptExtenderInstallDialog({
     if (!open || !gamePath) return;
     setError(null);
     api.detectScriptExtender(domain, gamePath).then(setStatus);
-    api.getScriptExtenderInstallInfo(domain).then(setInfo).catch(() => setInfo(null));
+    api.getScriptExtenderInstallInfo(domain, gamePath).then(setInfo).catch(() => setInfo(null));
   }, [open, gamePath, domain]);
 
   const refresh = async () => {
@@ -86,6 +86,8 @@ export function ScriptExtenderInstallDialog({
 
   const canAutoInstall = info?.supports_auto_download ?? false;
   const canPatchLauncher = info?.supports_steam_launcher_patch ?? false;
+  const versionMismatch = status?.version_compatible === false;
+  const canInstall = !status?.installed || versionMismatch;
 
   return (
     <AppDialog
@@ -99,8 +101,12 @@ export function ScriptExtenderInstallDialog({
           <div className="rounded-xl bg-[var(--color-secondary)] p-4">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5" />
-              <Badge variant={status.installed ? "success" : "warning"}>
-                {status.installed ? "Installed" : "Not installed"}
+              <Badge variant={status.installed && !versionMismatch ? "success" : "warning"}>
+                {status.installed
+                  ? versionMismatch
+                    ? "Wrong version"
+                    : "Installed"
+                  : "Not installed"}
               </Badge>
             </div>
             <p className="mt-2 text-sm">{status.message}</p>
@@ -112,8 +118,36 @@ export function ScriptExtenderInstallDialog({
 
         {info && (
           <div className="text-sm text-[var(--color-muted)]">
-            <p>Runtime: {info.runtime}</p>
+            {info.game_version && (
+              <p>
+                Detected game version:{" "}
+                <span className="text-[var(--color-foreground)]">{info.game_version}</span>
+              </p>
+            )}
+            {info.recommended_extender_version && (
+              <p className="mt-1">
+                Recommended {label} build:{" "}
+                <span className="text-[var(--color-foreground)]">
+                  {info.recommended_extender_version}
+                </span>
+              </p>
+            )}
+            {info.installed_extender_game_version && (
+              <p className="mt-1">
+                Installed {label} targets game:{" "}
+                <span className="text-[var(--color-foreground)]">
+                  {info.installed_extender_game_version}
+                </span>
+              </p>
+            )}
+            <p className="mt-1">Runtime: {info.runtime}</p>
             <p className="mt-1">{info.notes}</p>
+            {versionMismatch && (
+              <p className="mt-2 text-[var(--color-warning)]">
+                Your {label} build does not match this game version. Re-install to fix MCM, plugins,
+                and launch issues.
+              </p>
+            )}
             {!canAutoInstall && (
               <p className="mt-2">
                 Auto-download is not available for {label}. Download the archive from the website
@@ -157,20 +191,22 @@ export function ScriptExtenderInstallDialog({
 
         <div className="flex flex-wrap gap-3">
           {canAutoInstall && (
-            <Button size="lg" onClick={install} disabled={loading || status?.installed} data-focusable="true">
+            <Button size="lg" onClick={install} disabled={loading || !canInstall} data-focusable="true">
               <Download className="h-5 w-5" />
               {loading
                 ? "Installing..."
-                : status?.installed
-                  ? "Already installed"
-                  : `Install ${label}`}
+                : versionMismatch
+                  ? `Re-install ${label}`
+                  : status?.installed
+                    ? "Already installed"
+                    : `Install ${label}`}
             </Button>
           )}
           <Button
             variant="secondary"
             size="lg"
             onClick={installFromFile}
-            disabled={loading || status?.installed}
+            disabled={loading || (status?.installed && !versionMismatch)}
             data-focusable="true"
           >
             <FolderOpen className="h-5 w-5" />

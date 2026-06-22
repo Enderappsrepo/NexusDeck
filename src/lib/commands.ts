@@ -422,8 +422,11 @@ export const api = {
       configureSteamLauncher,
     }),
 
-  getScriptExtenderInstallInfo: (domain: string) =>
-    invoke<ScriptExtenderInstallInfo>("get_script_extender_install_info", { domain }),
+  getScriptExtenderInstallInfo: (domain: string, gamePath?: string) =>
+    invoke<ScriptExtenderInstallInfo>("get_script_extender_install_info", {
+      domain,
+      gamePath,
+    }),
 
   installF4se: (gamePath: string, configureSteamLauncher: boolean) =>
     invoke<ScriptExtenderStatus>("install_f4se", {

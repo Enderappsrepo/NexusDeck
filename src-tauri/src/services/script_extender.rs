@@ -6,6 +6,9 @@ use crate::error::{NexusDeckError, Result};
 use crate::games::script_extender_meta::ScriptExtenderMeta;
 use crate::games::ScriptExtenderStatus;
 use crate::services::archive::merge_directory;
+use crate::services::script_extender_version::{
+    resolve_build_for_game, resolve_download_url_for_game,
+};
 use crate::services::MergeOptions;
 
 pub fn detect_status(meta: &ScriptExtenderMeta, game_root: &Path) -> ScriptExtenderStatus {
@@ -24,19 +27,59 @@ pub fn detect_status(meta: &ScriptExtenderMeta, game_root: &Path) -> ScriptExten
             })
     });
 
+    let version_report = resolve_build_for_game(meta.domain, game_root).ok();
+    let recommended_extender = version_report
+        .as_ref()
+        .and_then(|r| r.recommended.as_ref())
+        .map(|b| b.extender_version.clone());
+    let game_version = version_report.as_ref().and_then(|r| r.game_version.clone());
+    let extender_game_version = version_report
+        .as_ref()
+        .and_then(|r| r.installed_extender_game_version.clone());
+    let version_compatible = version_report.as_ref().and_then(|r| r.compatible);
+
     if loader.exists() || dll_found {
+        let mut message = format!("{} is installed and ready.", meta.label);
+        if version_compatible == Some(false) {
+            if let (Some(gv), Some(ev)) = (&game_version, &extender_game_version) {
+                message = format!(
+                    "{meta_label} is installed for game {ev}, but your game is {gv}. \
+                     Re-install {meta_label} to match your game version.",
+                    meta_label = meta.label
+                );
+            }
+        } else if let Some(rec) = &recommended_extender {
+            message = format!("{} {} installed for game {}.", meta.label, rec, game_version.as_deref().unwrap_or("?"));
+        }
+
         ScriptExtenderStatus {
             installed: true,
-            version: Some(format!("{} installed", meta.label)),
+            version: recommended_extender.clone().or_else(|| Some(format!("{} installed", meta.label))),
             loader_path: Some(loader.display().to_string()),
-            message: format!("{} is installed and ready.", meta.label),
+            message,
+            game_version,
+            extender_game_version,
+            recommended_extender_version: recommended_extender,
+            version_compatible,
         }
     } else {
+        let mut message = format!("{} not detected.", meta.label);
+        if let (Some(gv), Some(rec)) = (&game_version, &recommended_extender) {
+            message = format!(
+                "{meta_label} not detected. Your game is {gv} — install {meta_label} {rec}.",
+                meta_label = meta.label
+            );
+        }
+
         ScriptExtenderStatus {
             installed: false,
             version: None,
             loader_path: None,
-            message: format!("{} not detected.", meta.label),
+            message,
+            game_version,
+            extender_game_version,
+            recommended_extender_version: recommended_extender,
+            version_compatible,
         }
     }
 }
@@ -49,7 +92,7 @@ pub fn install(
     let meta = ScriptExtenderMeta::get(domain)
         .ok_or_else(|| NexusDeckError::GameNotFound(domain.to_string()))?;
 
-    let download_url = resolve_download_url(meta)?;
+    let download_url = resolve_download_url_for_game(meta, game_root)?;
 
     let temp_dir = std::env::temp_dir().join(format!(
         "nexusdeck-{}-{}",
@@ -121,22 +164,8 @@ fn install_from_archive_meta(
     Ok(detect_status(meta, game_root))
 }
 
-fn resolve_download_url(meta: &ScriptExtenderMeta) -> Result<String> {
-    if let Some(url) = meta.download_url {
-        return Ok(url.to_string());
-    }
 
-    if let (Some(repo), Some(prefix)) = (meta.github_repo, meta.github_asset_prefix) {
-        return fetch_github_release_asset(repo, prefix);
-    }
-
-    Err(NexusDeckError::Other(format!(
-        "{} must be installed manually. Download from {} and use Install from file.",
-        meta.label, meta.website_url
-    )))
-}
-
-fn fetch_github_release_asset(repo: &str, asset_prefix: &str) -> Result<String> {
+pub fn fetch_github_release_asset(repo: &str, asset_prefix: &str) -> Result<String> {
     let api_url = format!("https://api.github.com/repos/{repo}/releases/latest");
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(60))

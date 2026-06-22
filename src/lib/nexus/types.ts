@@ -168,6 +168,10 @@ export interface ScriptExtenderInstallInfo {
   notes: string;
   supports_auto_download: boolean;
   supports_steam_launcher_patch: boolean;
+  game_version?: string | null;
+  recommended_extender_version?: string | null;
+  installed_extender_game_version?: string | null;
+  version_compatible?: boolean | null;
 }
 
 /** @deprecated Use ScriptExtenderInstallInfo */
@@ -532,6 +536,10 @@ export interface ScriptExtenderStatus {
   version?: string | null;
   loader_path?: string | null;
   message: string;
+  game_version?: string | null;
+  extender_game_version?: string | null;
+  recommended_extender_version?: string | null;
+  version_compatible?: boolean | null;
 }
 
 export interface SupportedGameInfo {
