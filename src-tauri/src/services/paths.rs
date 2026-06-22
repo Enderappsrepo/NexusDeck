@@ -60,6 +60,22 @@ pub fn install_work_dir() -> crate::error::Result<PathBuf> {
     Ok(dir)
 }
 
+/// Extraction work dir on the SAME filesystem as the game, so deploy can hard
+/// link extracted files into `Data/` instead of copying them. On Steam Deck the
+/// game often lives on the SD card while the app data dir is on the internal
+/// SSD; extracting there forces a cross-device copy of every file. Falls back to
+/// the app data dir when a game-local work dir can't be created (e.g. a
+/// read-only library).
+pub fn game_work_dir(game_path: &str) -> crate::error::Result<PathBuf> {
+    let game = Path::new(game_path);
+    let base = game.parent().unwrap_or(game);
+    let dir = base.join(".nexusdeck-work");
+    match ensure_dir(&dir) {
+        Ok(()) => Ok(dir),
+        Err(_) => install_work_dir(),
+    }
+}
+
 /// User-visible logs folder: ~/NexusDeck/Logs or Documents/NexusDeck/Logs.
 pub fn logs_dir() -> crate::error::Result<PathBuf> {
     let dir = default_staging_root().join("Logs");

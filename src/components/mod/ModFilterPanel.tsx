@@ -1,11 +1,39 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
 import { useModsStore } from "@/stores";
 import type { ModSearchFilters } from "@/lib/nexus/types";
 import { DEFAULT_FILTERS } from "@/lib/nexus/filters";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { OptionCard } from "@/components/mod/OptionCard";
 import { cn } from "@/lib/utils";
+
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "focusable min-h-[44px] rounded-full border px-4 text-sm font-medium transition-colors",
+        active
+          ? "border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-[var(--color-primary)]"
+          : "border-[var(--color-border)] bg-[var(--color-secondary)] text-[var(--color-muted)] hover:text-[var(--color-foreground)]"
+      )}
+      data-focusable="true"
+    >
+      {children}
+    </button>
+  );
+}
 
 interface ModFilterPanelProps {
   onApply: () => void;
@@ -41,34 +69,28 @@ export function ModFilterPanel({ onApply, embedded = false }: ModFilterPanelProp
         </Button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="space-y-2">
-          <span className="text-sm font-medium text-[var(--color-muted)]">Category</span>
-          <select
-            value={filters.category ?? ""}
-            onChange={(e) => update({ category: e.target.value || null })}
-            className="focusable h-12 w-full rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-secondary)] px-3"
-            data-focusable="true"
-          >
-            <option value="">All categories</option>
-            {categoriesLoading && (
-              <option disabled value="">
-                Loading categories...
-              </option>
-            )}
-            {!categoriesLoading && categories.length === 0 && (
-              <option disabled value="">
-                No categories available
-              </option>
-            )}
-            {categories.map((c) => (
-              <option key={`${c.category_id}-${c.name}`} value={c.name}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="space-y-2">
+        <span className="text-sm font-medium text-[var(--color-muted)]">Category</span>
+        <div className="flex flex-wrap gap-2">
+          <FilterChip active={!filters.category} onClick={() => update({ category: null })}>
+            All
+          </FilterChip>
+          {categoriesLoading && (
+            <span className="self-center text-sm text-[var(--color-muted)]">Loading…</span>
+          )}
+          {categories.map((c) => (
+            <FilterChip
+              key={`${c.category_id}-${c.name}`}
+              active={filters.category === c.name}
+              onClick={() => update({ category: c.name })}
+            >
+              {c.name}
+            </FilterChip>
+          ))}
+        </div>
+      </div>
 
+      <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-2">
           <span className="text-sm font-medium text-[var(--color-muted)]">Min endorsements</span>
           <input
@@ -104,17 +126,14 @@ export function ModFilterPanel({ onApply, embedded = false }: ModFilterPanelProp
             placeholder="Any time"
           />
         </label>
-
-        <label className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-xl bg-[var(--color-secondary)] px-4">
-          <input
-            type="checkbox"
-            checked={filters.hide_adult}
-            onChange={(e) => update({ hide_adult: e.target.checked })}
-            className="h-5 w-5 accent-[var(--color-primary)]"
-          />
-          <span>Hide adult content</span>
-        </label>
       </div>
+
+      <OptionCard
+        control="checkbox"
+        checked={filters.hide_adult}
+        onToggle={() => update({ hide_adult: !filters.hide_adult })}
+        title="Hide adult content"
+      />
 
       {filters.tags.length > 0 && (
         <div className="flex flex-wrap gap-2">

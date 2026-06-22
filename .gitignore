@@ -28,3 +28,8 @@ dist-ssr
 test-results/
 playwright-report/
 playwright/.cache/
+
+# Bundled 7-Zip binaries (fetched by scripts/fetch-7zip.mjs)
+.cache/7zip/
+src-tauri/resources/7zip/*
+!src-tauri/resources/7zip/.gitkeep

@@ -35,6 +35,7 @@ interface InstallQueueState {
   pendingByDownloadId: Record<string, PendingInstallMeta>;
   installPrompt: DownloadProgress | null;
   profileError: string | null;
+  profileErrorDomain: string | null;
 
   registerPendingInstall: (downloadId: string, meta: PendingInstallMeta) => void;
   clearPendingInstall: (downloadId: string) => void;
@@ -51,6 +52,10 @@ interface InstallQueueState {
   completeActive: (downloadId?: string) => void;
   failActive: (error: string) => void;
   cancelActive: () => void;
+  retryJob: (jobId: string) => void;
+  removeJob: (jobId: string) => void;
+  clearFailedJobs: () => void;
+  clearDoneJobs: () => void;
 
   showInstallPrompt: (download: DownloadProgress) => void;
   dismissInstallPrompt: () => void;
@@ -96,6 +101,7 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
   pendingByDownloadId: {},
   installPrompt: null,
   profileError: null,
+  profileErrorDomain: null,
 
   registerPendingInstall: (downloadId, meta) =>
     set((s) => ({
@@ -114,7 +120,10 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
       : profiles.find((p) => p.game_domain === download.game_domain);
 
     if (!profile) {
-      set({ profileError: "No game profile found for this download. Set up the game first." });
+      set({
+        profileError: `No game profile found for ${download.game_domain}. Set up the game first.`,
+        profileErrorDomain: download.game_domain,
+      });
       return false;
     }
 
@@ -140,7 +149,7 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
 
     set((s) => {
       const jobs = options?.front ? [job, ...s.jobs] : [...s.jobs, job];
-      return { jobs, profileError: null };
+      return { jobs, profileError: null, profileErrorDomain: null };
     });
 
     get().clearPendingInstall(download.id);
@@ -206,6 +215,10 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
   cancelActive: () => {
     const { activeJobId, jobs } = get();
     if (!activeJobId) return;
+    const job = jobs.find((j) => j.id === activeJobId);
+    if (job) {
+      void api.cancelInstall(job.profile.id).catch(() => {});
+    }
     set({
       jobs: jobs.filter((j) => j.id !== activeJobId),
       activeJobId: null,
@@ -213,9 +226,36 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
     get().activateNext();
   },
 
-  showInstallPrompt: (download) => set({ installPrompt: download, profileError: null }),
+  retryJob: (jobId: string) => {
+    set((s) => ({
+      jobs: s.jobs.map((j) =>
+        j.id === jobId
+          ? { ...j, status: "queued" as const, error: undefined }
+          : j
+      ),
+    }));
+    if (!get().activeJobId) get().activateNext();
+  },
+
+  removeJob: (jobId: string) => {
+    const { activeJobId, jobs } = get();
+    set({
+      jobs: jobs.filter((j) => j.id !== jobId),
+      activeJobId: activeJobId === jobId ? null : activeJobId,
+    });
+    if (activeJobId === jobId || !get().activeJobId) get().activateNext();
+  },
+
+  clearFailedJobs: () =>
+    set((s) => ({ jobs: s.jobs.filter((j) => j.status !== "failed") })),
+
+  clearDoneJobs: () =>
+    set((s) => ({ jobs: s.jobs.filter((j) => j.status !== "done") })),
+
+  showInstallPrompt: (download) =>
+    set({ installPrompt: download, profileError: null, profileErrorDomain: null }),
   dismissInstallPrompt: () => set({ installPrompt: null }),
-  clearProfileError: () => set({ profileError: null }),
+  clearProfileError: () => set({ profileError: null, profileErrorDomain: null }),
 
   getActiveJob: () => {
     const { jobs, activeJobId } = get();

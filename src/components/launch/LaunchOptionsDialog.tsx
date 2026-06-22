@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { OptionCard } from "@/components/mod/OptionCard";
 import { useLaunchStore } from "@/stores/launchStore";
 import { api } from "@/lib/commands";
 import type { LaunchConfig } from "@/lib/nexus/types";
@@ -120,21 +121,17 @@ export function LaunchOptionsDialog({
         <div className="space-y-5">
           <div>
             <Label>Preset</Label>
-            <select
-              className="focusable mt-2 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-3"
-              value={selectedId}
-              onChange={(e) => {
-                const config = configs.find((c) => c.id === e.target.value);
-                if (config) applyConfig(config);
-              }}
-              data-focusable="true"
-            >
+            <div className="mt-2 space-y-2">
               {configs.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
+                <OptionCard
+                  key={c.id}
+                  control="radio"
+                  checked={selectedId === c.id}
+                  onToggle={() => applyConfig(c)}
+                  title={c.name}
+                />
               ))}
-            </select>
+            </div>
           </div>
 
           <div className="flex items-center justify-between">

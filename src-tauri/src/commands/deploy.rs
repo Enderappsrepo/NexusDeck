@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::db::{self, InstalledMod};
 use crate::error::Result;
@@ -221,7 +221,7 @@ fn extract_progress_message(
             return format!("Starting extraction… ({files_total} files in archive)");
         }
         return format!(
-            "Extracting with built-in decompressor ({files_total} files) — install 7-Zip for faster extraction"
+            "Extracting with built-in decompressor ({files_total} files) — slower for large solid archives"
         );
     }
     if files_total > 0 && percent == 0 && files_done > 0 {
@@ -277,9 +277,13 @@ fn merge_progress_reporter(
     app: AppHandle,
     profile_id: String,
     mod_name: String,
+    cancel_check: Option<crate::services::archive_options::CancelCheckFn>,
 ) -> crate::services::archive_options::MergeProgressFn {
     let last_emit = Arc::new(Mutex::new(Instant::now()));
     Arc::new(move |event| {
+        if let Some(ref check) = cancel_check {
+            let _ = check();
+        }
         let mut last = last_emit.lock().unwrap();
         let should_emit = event.files_done >= event.files_total
             || last.elapsed() >= Duration::from_millis(200);
@@ -632,21 +636,42 @@ pub async fn prepare_mod_install(
     profile_id: String,
     archive_path: String,
     mod_name: String,
+    installs: State<'_, Arc<crate::services::install_manager::InstallManager>>,
 ) -> Result<InstallPrepareResult> {
     use uuid::Uuid;
 
     use crate::services::archive::{extract_archive_fast_with_progress, list_archive_entries};
-    use crate::services::paths::install_work_dir;
+    use crate::services::install_manager::{InstallGuard, check_install_cancelled, install_cancel_check};
+    use crate::services::install_session::InstallSession;
+    use crate::services::paths::game_work_dir;
 
-    let _profile = db::get_profile(&profile_id)?
+    let manager = installs.inner().clone();
+    let cancel_rx = manager.begin(profile_id.clone());
+    let _guard = InstallGuard::new(manager, profile_id.clone());
+    let cancel_check = install_cancel_check(cancel_rx.clone());
+
+    let profile = db::get_profile(&profile_id)?
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
 
     let archive = PathBuf::from(&archive_path);
+    let mut session = InstallSession::new(
+        Some(app.clone()),
+        mod_name.clone(),
+        0,
+        0,
+        archive.clone(),
+        profile.clone(),
+    )?;
+    session.set_phase("prepare");
+    session.info("prepare", "Starting mod preparation…");
+
     let archive_for_count = archive.clone();
     let entry_count = tokio::task::spawn_blocking(move || list_archive_entries(&archive_for_count))
         .await
         .map_err(|e| crate::error::NexusDeckError::Other(format!("Archive analysis failed: {e}")))??
         .len() as u32;
+
+    check_install_cancelled(&cancel_rx)?;
 
     let using_native_7z = crate::services::archive::has_7z_executable();
     install_progress_detailed(
@@ -660,27 +685,33 @@ pub async fn prepare_mod_install(
         None,
     );
 
-    let temp_extract = install_work_dir()?.join(format!("nexusdeck-prepare-{}", Uuid::new_v4()));
+    let temp_extract =
+        game_work_dir(&profile.game_path)?.join(format!("nexusdeck-prepare-{}", Uuid::new_v4()));
     let archive_for_extract = archive.clone();
     let extract_dir = temp_extract.clone();
     let progress =
         extract_progress_reporter(app.clone(), profile_id.clone(), mod_name.clone(), using_native_7z);
+    let cancel_for_extract = cancel_check.clone();
     tokio::task::spawn_blocking(move || {
         extract_archive_fast_with_progress(
             &archive_for_extract,
             &extract_dir,
             entry_count,
             Some(progress),
+            Some(cancel_for_extract),
         )
     })
     .await
     .map_err(|e| crate::error::NexusDeckError::Other(format!("Extract failed: {e}")))??;
 
+    session.info("extract", &format!("Extracted {entry_count} archive entries"));
+    check_install_cancelled(&cancel_rx)?;
+
     install_progress_detailed(
         &app,
         &profile_id,
         &mod_name,
-        "extracting",
+        "reading_options",
         "Reading install options…",
         entry_count,
         entry_count,
@@ -694,6 +725,16 @@ pub async fn prepare_mod_install(
     .await
     .map_err(|e| crate::error::NexusDeckError::Other(format!("Extract analysis failed: {e}")))??;
 
+    check_install_cancelled(&cancel_rx)?;
+
+    install_progress(
+        &app,
+        &profile_id,
+        &mod_name,
+        "nested_extract",
+        "Checking for nested archives…",
+    );
+
     let extract_dir_nested = temp_extract.clone();
     let nested_count = tokio::task::spawn_blocking(move || {
         crate::services::archive::extract_nested_archives(&extract_dir_nested, 2)
@@ -701,6 +742,10 @@ pub async fn prepare_mod_install(
     .await
     .map_err(|e| crate::error::NexusDeckError::Other(format!("Nested extract failed: {e}")))??;
     if nested_count > 0 {
+        session.info(
+            "extract",
+            &format!("Extracted {nested_count} nested archive(s)"),
+        );
         let extract_dir_refresh = temp_extract.clone();
         entries = tokio::task::spawn_blocking(move || {
             crate::services::archive::list_extracted_entries(&extract_dir_refresh)
@@ -708,6 +753,8 @@ pub async fn prepare_mod_install(
         .await
         .map_err(|e| crate::error::NexusDeckError::Other(format!("Extract analysis failed: {e}")))??;
     }
+
+    check_install_cancelled(&cancel_rx)?;
 
     let archive_for_wizard = archive.clone();
     let extract_dir_for_options = temp_extract.clone();
@@ -734,6 +781,11 @@ pub async fn prepare_mod_install(
     let default_selections =
         crate::services::install_options::default_selections(&option_groups);
     let archive_folders = archive_top_level_folders(&entries);
+
+    session.info(
+        "prepare",
+        &format!("Ready — {} extracted file(s)", entries.len()),
+    );
 
     emit_install_progress(
         &app,
@@ -775,15 +827,52 @@ pub async fn install_mod_from_archive(
     tags: Option<Vec<String>>,
     file_version: Option<String>,
     replace_mod_id: Option<String>,
+    installs: State<'_, Arc<crate::services::install_manager::InstallManager>>,
+) -> Result<serde_json::Value> {
+    install_mod_from_archive_impl(
+        app,
+        profile_id,
+        mod_name,
+        nexus_mod_id,
+        nexus_file_id,
+        archive_path,
+        options,
+        category,
+        tags,
+        file_version,
+        replace_mod_id,
+        installs.inner().clone(),
+    )
+    .await
+}
+
+pub async fn install_mod_from_archive_impl(
+    app: AppHandle,
+    profile_id: String,
+    mod_name: String,
+    nexus_mod_id: i64,
+    nexus_file_id: i64,
+    archive_path: String,
+    options: InstallOptions,
+    category: Option<String>,
+    tags: Option<Vec<String>>,
+    file_version: Option<String>,
+    replace_mod_id: Option<String>,
+    installs: Arc<crate::services::install_manager::InstallManager>,
 ) -> Result<serde_json::Value> {
     use uuid::Uuid;
 
     use crate::services::archive::{extract_archive_fast_with_progress, extract_nested_archives, list_extracted_entries};
+    use crate::services::install_manager::{InstallGuard, check_install_cancelled, install_cancel_check};
     use crate::services::install_rollback::{deploy_with_rollback, ensure_deploy_not_empty};
     use crate::services::install_session::InstallSession;
     use crate::services::install_validate::validate_fallout4_install;
-    use crate::services::paths::install_work_dir;
+    use crate::services::paths::game_work_dir;
     use crate::services::MergeOptions;
+
+    let cancel_rx = installs.begin(profile_id.clone());
+    let _guard = InstallGuard::new(installs.clone(), profile_id.clone());
+    let cancel_check = install_cancel_check(cancel_rx.clone());
 
     install_progress(
         &app,
@@ -814,17 +903,17 @@ pub async fn install_mod_from_archive(
         .into_iter()
         .filter(|m| m.nexus_mod_id == nexus_mod_id)
         .collect();
-    let replace_mod_id = explicit_replace.clone().or_else(|| {
-        matching_mods.first().map(|m| m.id.clone())
-    });
+    let replace_mod_id = resolve_replace_mod_id(nexus_mod_id, explicit_replace.clone(), &matching_mods);
 
-    if let Some(ref target_id) = replace_mod_id {
-        for dup in matching_mods.iter().filter(|m| m.id != *target_id) {
-            let _ = db::delete_installed_mod(&dup.id);
+    if nexus_mod_id > 0 {
+        if let Some(ref target_id) = replace_mod_id {
+            for dup in matching_mods.iter().filter(|m| m.id != *target_id) {
+                let _ = db::delete_installed_mod(&dup.id);
+            }
         }
     }
 
-    if replace_mod_id.is_some() && explicit_replace.is_none() {
+    if replace_mod_id.is_some() && explicit_replace.is_none() && nexus_mod_id > 0 {
         if let Some(ref existing_id) = replace_mod_id {
             if let Some(existing) = db::get_installed_mod(existing_id)? {
                 crate::services::mod_uninstall::remove_mod_files_for_update(&profile, &existing)?;
@@ -836,7 +925,7 @@ pub async fn install_mod_from_archive(
     let temp_extract = if let Some(ref prepared) = options.prepared_extract_dir {
         PathBuf::from(prepared)
     } else {
-        install_work_dir()?.join(format!("nexusdeck-install-{}", Uuid::new_v4()))
+        game_work_dir(&profile.game_path)?.join(format!("nexusdeck-install-{}", Uuid::new_v4()))
     };
 
     let mut all_entries = if using_prepared {
@@ -919,17 +1008,21 @@ pub async fn install_mod_from_archive(
             mod_name.clone(),
             using_native_7z,
         );
+        let cancel_for_extract = cancel_check.clone();
         tokio::task::spawn_blocking(move || {
             extract_archive_fast_with_progress(
                 &archive_for_extract,
                 &extract_dir,
                 entry_count,
                 Some(progress),
+                Some(cancel_for_extract),
             )
         })
         .await
         .map_err(|e| crate::error::NexusDeckError::Other(format!("Extract failed: {e}")))??;
     }
+
+    check_install_cancelled(&cancel_rx)?;
 
     let extract_dir_for_nested = temp_extract.clone();
     let nested_count = tokio::task::spawn_blocking(move || {
@@ -983,6 +1076,8 @@ pub async fn install_mod_from_archive(
 
     crate::services::install_options::prune_extract_dir(&temp_extract, &all_entries, &disk_entries)?;
 
+    check_install_cancelled(&cancel_rx)?;
+
     install_progress(
         &app,
         &profile_id,
@@ -1033,7 +1128,9 @@ pub async fn install_mod_from_archive(
             app.clone(),
             profile_id.clone(),
             mod_name.clone(),
+            Some(cancel_check.clone()),
         )),
+        on_cancel: Some(cancel_check.clone()),
     };
 
     let domain = profile.game_domain.clone();
@@ -1287,6 +1384,7 @@ pub async fn finish_mod_update(
     app: &AppHandle,
     nexus: &crate::services::nexus_client::NexusClient,
     download_id: &str,
+    installs: Arc<crate::services::install_manager::InstallManager>,
 ) -> Result<InstalledMod> {
     let download = db::get_download(download_id)?
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Download not found".into()))?;
@@ -1341,7 +1439,7 @@ pub async fn finish_mod_update(
                 .map(|f| f.version.clone())
         });
 
-    let result = install_mod_from_archive(
+    let result = install_mod_from_archive_impl(
         app.clone(),
         download.profile_id.clone(),
         installed.name.clone(),
@@ -1353,6 +1451,7 @@ pub async fn finish_mod_update(
         None,
         file_version,
         Some(installed.id.clone()),
+        installs,
     )
     .await?;
 
@@ -1369,6 +1468,14 @@ pub async fn finish_mod_update(
     let _ = app.emit("mod-update-complete", &mod_record);
 
     Ok(mod_record)
+}
+
+#[tauri::command]
+pub fn cancel_install(
+    profile_id: String,
+    installs: State<'_, Arc<crate::services::install_manager::InstallManager>>,
+) -> Result<()> {
+    installs.cancel(&profile_id)
 }
 
 #[tauri::command]
@@ -1490,4 +1597,104 @@ pub async fn repair_deployment(
     tokio::task::spawn_blocking(move || crate::services::repair::repair_deployment(&profile_id))
         .await
         .map_err(|e| crate::error::NexusDeckError::Other(format!("Repair failed: {e}")))?
+}
+
+/// Imported/manual mods use `nexus_mod_id = 0`. Never auto-replace those — each install is a
+/// separate library entry unless the caller passes an explicit `replace_mod_id` (e.g. updates).
+fn resolve_replace_mod_id(
+    nexus_mod_id: i64,
+    explicit_replace: Option<String>,
+    matching_mods: &[InstalledMod],
+) -> Option<String> {
+    if let Some(id) = explicit_replace {
+        return Some(id);
+    }
+    if nexus_mod_id > 0 {
+        matching_mods.first().map(|m| m.id.clone())
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod replace_mod_tests {
+    use super::resolve_replace_mod_id;
+    use crate::db::InstalledMod;
+
+    fn sample_mod(id: &str, nexus_mod_id: i64) -> InstalledMod {
+        InstalledMod {
+            id: id.to_string(),
+            profile_id: "p1".to_string(),
+            nexus_mod_id,
+            nexus_file_id: None,
+            name: id.to_string(),
+            version: None,
+            enabled: true,
+            sort_order: 0,
+            installed_files_json: "[]".to_string(),
+            installed_at: 0,
+            category: String::new(),
+            tags_json: "[]".to_string(),
+            plugins_json: "[]".to_string(),
+            install_options_json: "{}".to_string(),
+        }
+    }
+
+    #[test]
+    fn imported_mods_do_not_auto_replace() {
+        let existing = vec![sample_mod("a", 0), sample_mod("b", 0)];
+        assert!(resolve_replace_mod_id(0, None, &existing).is_none());
+    }
+
+    #[test]
+    fn nexus_mods_auto_replace_first_match() {
+        let existing = vec![sample_mod("a", 123)];
+        assert_eq!(
+            resolve_replace_mod_id(123, None, &existing).as_deref(),
+            Some("a")
+        );
+    }
+
+    #[test]
+    fn explicit_replace_wins() {
+        let existing = vec![sample_mod("a", 123)];
+        assert_eq!(
+            resolve_replace_mod_id(123, Some("custom".into()), &existing).as_deref(),
+            Some("custom")
+        );
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeployMode {
+    /// True when mod files can be hard-linked into the game (instant, no extra
+    /// disk). False when they'll be copied — the game is on a different
+    /// filesystem than the extraction work dir, or the library is read-only.
+    pub hardlink: bool,
+    pub work_dir: String,
+}
+
+/// Probe whether deploy will hard-link or copy for this profile, by writing a
+/// throwaway file in the game-local work dir and trying to hard-link it next to
+/// the game. Lets the UI confirm the Steam Deck fast-path is actually engaged.
+#[tauri::command]
+pub async fn check_deploy_mode(profile_id: String) -> Result<DeployMode> {
+    tokio::task::spawn_blocking(move || -> Result<DeployMode> {
+        let profile = db::get_profile(&profile_id)?
+            .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
+        let work = crate::services::paths::game_work_dir(&profile.game_path)?;
+        let token = uuid::Uuid::new_v4();
+        let src = work.join(format!(".nd-probe-{token}"));
+        let dst = std::path::Path::new(&profile.game_path).join(format!(".nd-probe-{token}"));
+        let hardlink =
+            std::fs::write(&src, b"x").is_ok() && std::fs::hard_link(&src, &dst).is_ok();
+        let _ = std::fs::remove_file(&src);
+        let _ = std::fs::remove_file(&dst);
+        Ok(DeployMode {
+            hardlink,
+            work_dir: work.display().to_string(),
+        })
+    })
+    .await
+    .map_err(|e| crate::error::NexusDeckError::Other(format!("Deploy mode check failed: {e}")))?
 }

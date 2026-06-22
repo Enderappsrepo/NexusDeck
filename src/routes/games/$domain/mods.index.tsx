@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FlaskConical,
   FolderInput,
@@ -11,24 +11,35 @@ import { ModSearchBar } from "@/components/mod/ModSearchBar";
 import { ModFilterPanel } from "@/components/mod/ModFilterPanel";
 import { ModCard } from "@/components/mod/ModCard";
 import { ImportModDialog } from "@/components/mod/ImportModDialog";
+import { PostSetupBanner } from "@/components/game/PostSetupBanner";
+import { SetupRequiredState } from "@/components/game/SetupRequiredState";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { ModGridSkeleton } from "@/components/ui/LoadingSkeleton";
+import { CardSkeleton, ModGridSkeleton } from "@/components/ui/LoadingSkeleton";
 import { useModsStore, useGamesStore, useAuthStore, useDownloadsStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { DEFAULT_FILTERS } from "@/lib/nexus/filters";
 import { cn, gameGradient } from "@/lib/utils";
-import type { ModSearchFilters } from "@/lib/nexus/types";
+import type { ModSearchFilters, SupportedGameInfo } from "@/lib/nexus/types";
 import { modFileDownloadName } from "@/lib/nexus/types";
+import { getGameMeta, loadSupportedGames } from "@/lib/games";
 import { useGamepadContextAction, useGamepadTabs } from "@/hooks/useGamepadRouter";
 import { GP } from "@/lib/gamepad/buttons";
 import { focusedBrowseModId } from "@/lib/gamepad/domHelpers";
 import { useEndorseFocusedMod } from "@/hooks/useEndorseFocusedMod";
 
 const SORT_OPTIONS = ["endorsements", "downloads", "updated"] as const;
+type SortValue = (typeof SORT_OPTIONS)[number];
+
+const SORT_SEGMENTS: { value: SortValue; label: string }[] = [
+  { value: "endorsements", label: "Endorsed" },
+  { value: "downloads", label: "Downloaded" },
+  { value: "updated", label: "Updated" },
+];
 
 function parseFiltersFromSearch(search: Record<string, unknown>): ModSearchFilters {
   const tagsRaw = search.tags;
@@ -53,6 +64,7 @@ function parseFiltersFromSearch(search: Record<string, unknown>): ModSearchFilte
 export interface ModsSearch {
   q?: string;
   modId?: number;
+  welcome?: string;
   category?: string;
   tags?: string;
   minEndorsements?: number;
@@ -65,6 +77,7 @@ export const Route = createFileRoute("/games/$domain/mods/")({
   validateSearch: (s: Record<string, unknown>): ModsSearch => ({
     q: typeof s.q === "string" ? s.q : undefined,
     modId: typeof s.modId === "number" ? s.modId : undefined,
+    welcome: typeof s.welcome === "string" ? s.welcome : undefined,
     category: typeof s.category === "string" ? s.category : undefined,
     tags: typeof s.tags === "string" ? s.tags : undefined,
     minEndorsements:
@@ -100,6 +113,15 @@ function ModBrowserPage() {
   const profile = getProfile(domain);
   const [importOpen, setImportOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [supportedGames, setSupportedGames] = useState<SupportedGameInfo[]>([]);
+  const [welcomeDismissed, setWelcomeDismissed] = useState(
+    () => sessionStorage.getItem(`nexusdeck_welcome_${domain}`) === "1"
+  );
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    loadSupportedGames().then(setSupportedGames);
+  }, []);
 
   useGamepadTabs([...SORT_OPTIONS], sort, setSort);
 
@@ -164,6 +186,23 @@ function ModBrowserPage() {
     }
   }, [search.modId, domain, navigate]);
 
+  // Lazy/infinite loading: fetch the next page as the sentinel nears the
+  // viewport. Works for mouse scroll and controller focus alike (focusing a
+  // card near the end scrolls it — and the sentinel — into the margin). The
+  // store guards against overlapping fetches, so repeat fires are harmless.
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) void loadMore(domain);
+      },
+      { root: sentinel.closest("main"), rootMargin: "600px 0px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [domain, loadMore, hasMore, mods.length]);
+
   const applyFiltersToUrl = () => {
     const { filters, query: currentQuery } = useModsStore.getState();
     navigate({
@@ -199,24 +238,41 @@ function ModBrowserPage() {
 
   if (!profile) {
     return (
-      <div className="mx-auto max-w-xl py-16 text-center">
-        <p className="text-[var(--color-muted)]">
-          Set up this game before browsing mods.
-        </p>
-        <Link to="/games/$domain/setup" params={{ domain }}>
-          <Button size="lg" className="mt-6">
-            Set up game
-          </Button>
-        </Link>
-      </div>
+      <SetupRequiredState
+        domain={domain}
+        gameName={getGameMeta(domain, supportedGames)?.display_name}
+      />
     );
   }
+
+  const gameMeta = getGameMeta(domain, supportedGames);
+  const showWelcomeBanner = search.welcome === "1" && !welcomeDismissed;
 
   const isPremium = user?.is_premium ?? false;
   const resultLabel = query.trim() ? `Results for "${query.trim()}"` : "Popular mods";
 
   return (
     <div className="mx-auto max-w-6xl" data-scroll-pane>
+      {showWelcomeBanner && (
+        <div className="mb-6">
+          <PostSetupBanner
+          domain={domain}
+          gameName={gameMeta?.display_name ?? profile.name}
+          showDeckFix={domain === "skyrimspecialedition"}
+          onDismiss={() => {
+            sessionStorage.setItem(`nexusdeck_welcome_${domain}`, "1");
+            setWelcomeDismissed(true);
+            navigate({
+              to: "/games/$domain/mods",
+              params: { domain },
+              search: { ...search, welcome: undefined, modId: undefined },
+              replace: true,
+            });
+          }}
+          />
+        </div>
+      )}
+
       {/* Page header */}
       <header className="page-hero mb-6">
         <div className="relative p-6 sm:p-8">
@@ -286,17 +342,13 @@ function ModBrowserPage() {
               placeholder={`Search ${profile.name} mods...`}
               className="min-w-[200px] flex-1"
             />
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value)}
-              className="focusable h-14 rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-surface-1)] px-4 text-base transition-colors focus-visible:border-[var(--color-primary)] focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none"
-              data-focusable="true"
-              aria-label="Sort mods by"
-            >
-              <option value="endorsements">Most Endorsed</option>
-              <option value="downloads">Most Downloaded</option>
-              <option value="updated">Recently Updated</option>
-            </select>
+            <SegmentedControl
+              ariaLabel="Sort mods"
+              size="sm"
+              value={sort as SortValue}
+              onChange={(v) => setSort(v)}
+              options={SORT_SEGMENTS}
+            />
             <Button
               variant={filtersOpen ? "default" : "secondary"}
               size="lg"
@@ -321,7 +373,7 @@ function ModBrowserPage() {
           {!loading && (
             <p className="page-header-subtitle">
               {totalCount > 0
-                ? `${totalCount.toLocaleString()} mods found`
+                ? `Showing ${mods.length.toLocaleString()} of ${totalCount.toLocaleString()}`
                 : mods.length > 0
                   ? `${mods.length} mods`
                   : "No results"}
@@ -372,20 +424,28 @@ function ModBrowserPage() {
         {mods.map((mod) => (
           <ModCard key={mod.mod_id} mod={mod} domain={domain} />
         ))}
+        {loadingMore &&
+          Array.from({ length: 4 }).map((_, i) => (
+            <CardSkeleton key={`more-skeleton-${i}`} />
+          ))}
       </div>
 
       {hasMore && mods.length > 0 && (
-        <div className="mt-10 flex justify-center">
-          <Button
-            variant="secondary"
-            size="lg"
-            onClick={() => loadMore(domain)}
-            disabled={loadingMore}
-            className="min-w-[200px]"
-          >
-            {loadingMore ? "Loading more..." : "Load more mods"}
-          </Button>
-        </div>
+        <>
+          {/* Sentinel: auto-loads the next page as it nears the viewport. */}
+          <div ref={sentinelRef} aria-hidden className="h-px w-full" />
+          <div className="mt-8 flex justify-center">
+            <Button
+              variant="secondary"
+              onClick={() => loadMore(domain)}
+              disabled={loadingMore}
+              className="min-w-[200px]"
+              data-focusable="true"
+            >
+              {loadingMore ? "Loading…" : "Load more mods"}
+            </Button>
+          </div>
+        </>
       )}
 
       <ImportModDialog

@@ -20,7 +20,7 @@ function troubleshootingHint(error: string): string {
     return "Close the game and any tools using mod files, then retry. On Linux, check folder permissions.";
   }
   if (error.includes("Archive error") || error.includes("Extract failed")) {
-    return "Re-download the mod or install 7-Zip for better archive support. Check the log for format details.";
+    return "Re-download the mod and check the log for archive format details.";
   }
   if (error.includes("Proton prefix")) {
     return "Launch the game once through Steam to create a Proton prefix, then retry.";

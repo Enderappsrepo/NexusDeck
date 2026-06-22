@@ -1,7 +1,7 @@
 {
   "name": "nexusdeck",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,6 +14,7 @@
     "gh": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gh.ps1",
     "install:url": "node scripts/get-install-url.mjs",
     "install:sync-docs": "node scripts/sync-install-docs.mjs",
+    "fetch-7zip": "node scripts/fetch-7zip.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:router": "npx tsx scripts/test-gamepad-router.ts",

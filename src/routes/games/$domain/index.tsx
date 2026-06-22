@@ -21,6 +21,7 @@ import { GameSettingsPanel } from "@/components/game/GameSettingsPanel";
 import { GameArt } from "@/components/game/GameArt";
 import { GameStatStrip } from "@/components/game/GameStatStrip";
 import { BodySlideSetupPanel } from "@/components/game/BodySlideSetupPanel";
+import { VoiceAudioPanel } from "@/components/game/VoiceAudioPanel";
 import { LoadOrderBanner } from "@/components/game/LoadOrderBanner";
 import { ModUpdatesPanel } from "@/components/mod/ModUpdatesPanel";
 import { ProfileBackupPanel } from "@/components/game/ProfileBackupPanel";
@@ -256,6 +257,7 @@ function GameDashboard() {
 
         <TabsContent value="play" className="space-y-5">
           <LoadOrderBanner profileId={profile.id} gameDomain={domain} />
+          <VoiceAudioPanel profileId={profile.id} gameDomain={domain} />
           <ModUpdatesPanel profileId={profile.id} gameDomain={domain} compact />
           <DeckAdvisorPanel profileId={profile.id} />
           <BodySlideSetupPanel profileId={profile.id} />

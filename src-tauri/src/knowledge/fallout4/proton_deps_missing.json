@@ -1,7 +1,7 @@
 {
   "id": "install_proton_deps",
   "title": "Install Proton dependencies",
-  "description": "Install vcrun2019, .NET, and DirectX via protontricks for F4SE plugins.",
+  "description": "Install vcrun2019, .NET, DirectX, and XACT (voice/music audio) via protontricks for F4SE.",
   "fix": { "type": "install_proton_deps", "backup": false, "confirm": false },
   "deck_tip": "Run once per prefix on Steam Deck."
 }

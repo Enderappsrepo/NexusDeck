@@ -23,8 +23,10 @@ use crate::services::tools::{
     bodyslide_catalog, cbbe_catalog, detect_bodyslide as run_detect_bodyslide,
     detect_sseedit as run_detect_sseedit, launch_bodyslide as run_launch_bodyslide,
     launch_outfit_studio as run_launch_outfit_studio, launch_sseedit as run_launch_sseedit,
+    configure_bodyslide_paths as run_configure_bodyslide_paths,
     profile_has_body_mod, BodySlideInfo, SseEditInfo,
 };
+use crate::services::bodyslide_config::BodyslidePathInfo;
 use crate::services::download_manager::{DownloadManager, DownloadProgress};
 use crate::services::nexus_client::NexusClient;
 
@@ -240,6 +242,15 @@ pub async fn launch_bodyslide(profile_id: String) -> Result<String> {
     tokio::task::spawn_blocking(move || run_launch_bodyslide(&profile_id))
         .await
         .map_err(|e| crate::error::NexusDeckError::Other(format!("BodySlide launch failed: {e}")))?
+}
+
+#[tauri::command]
+pub async fn configure_bodyslide_paths(profile_id: String) -> Result<BodyslidePathInfo> {
+    tokio::task::spawn_blocking(move || run_configure_bodyslide_paths(&profile_id))
+        .await
+        .map_err(|e| {
+            crate::error::NexusDeckError::Other(format!("BodySlide configure failed: {e}"))
+        })?
 }
 
 #[tauri::command]

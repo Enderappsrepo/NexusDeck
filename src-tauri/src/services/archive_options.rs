@@ -19,11 +19,14 @@ pub struct ExtractProgressEvent {
 
 pub type ExtractProgressFn = Arc<dyn Fn(ExtractProgressEvent) + Send + Sync>;
 
+pub type CancelCheckFn = Arc<dyn Fn() -> crate::error::Result<()> + Send + Sync>;
+
 #[derive(Clone)]
 pub struct MergeOptions {
     pub overwrite: bool,
     pub dry_run: bool,
     pub on_progress: Option<MergeProgressFn>,
+    pub on_cancel: Option<CancelCheckFn>,
 }
 
 impl Default for MergeOptions {
@@ -32,6 +35,7 @@ impl Default for MergeOptions {
             overwrite: false,
             dry_run: false,
             on_progress: None,
+            on_cancel: None,
         }
     }
 }
@@ -42,6 +46,7 @@ impl std::fmt::Debug for MergeOptions {
             .field("overwrite", &self.overwrite)
             .field("dry_run", &self.dry_run)
             .field("on_progress", &self.on_progress.is_some())
+            .field("on_cancel", &self.on_cancel.is_some())
             .finish()
     }
 }

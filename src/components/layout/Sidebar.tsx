@@ -7,15 +7,19 @@ import {
   Home,
   Layers,
   LayoutDashboard,
+  ListOrdered,
   Search,
   Settings,
   Settings2,
+  Wrench,
 } from "lucide-react";
 import { usePathname, parseGameDomainFromPath } from "@/lib/routeParams";
 import { useGamesStore } from "@/stores";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { cn, gameGradient } from "@/lib/utils";
+import { useState } from "react";
 import { useGamepadTabs } from "@/hooks/useGamepadTabs";
+import { useGamepadRouterState } from "@/hooks/useGamepadRouter";
 
 const GLOBAL_NAV = [
   { to: "/", label: "Home", icon: Home },
@@ -27,7 +31,9 @@ const GAME_NAV = [
   { id: "dashboard", to: "/games/$domain" as const, label: "Dashboard" },
   { id: "browse", to: "/games/$domain/mods" as const, label: "Browse" },
   { id: "library", to: "/games/$domain/library" as const, label: "Library" },
+  { id: "load-order", to: "/games/$domain/load-order" as const, label: "Load Order" },
   { id: "collections", to: "/games/$domain/collections" as const, label: "Collections" },
+  { id: "fix", to: "/games/$domain/troubleshoot" as const, label: "Fix" },
   { id: "setup", to: "/games/$domain/setup" as const, label: "Setup" },
 ] as const;
 
@@ -48,9 +54,14 @@ function labelClass(collapsed: boolean) {
 export function Sidebar() {
   const pathname = usePathname();
   const navigate = useNavigate();
-  const collapsed = useSettingsStore((s) => s.sidebarCollapsed);
+  const collapsedPref = useSettingsStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
   const profiles = useGamesStore((s) => s.profiles);
+  const { controllerActive } = useGamepadRouterState();
+  const [focusWithin, setFocusWithin] = useState(false);
+  // With a controller the rail stays collapsed until focus moves into it (press
+  // a direction toward the nav to expand it); mouse users keep their preference.
+  const collapsed = controllerActive ? !focusWithin : collapsedPref;
 
   const domain = parseGameDomainFromPath(pathname);
   const profile = domain ? profiles.find((p) => p.game_domain === domain) : undefined;
@@ -84,6 +95,10 @@ export function Sidebar() {
 
   return (
     <nav
+      onFocusCapture={() => setFocusWithin(true)}
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setFocusWithin(false);
+      }}
       className={cn(
         "flex shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface-1)]/40 py-4 transition-[width]",
         collapsed
@@ -173,6 +188,24 @@ export function Sidebar() {
             >
               <Layers className="h-5 w-5 shrink-0" />
               <span className={labelClass(collapsed)}>Collections</span>
+            </Link>
+            <Link
+              to="/games/$domain/load-order"
+              params={{ domain }}
+              className={rowClass(pathname.startsWith(`/games/${domain}/load-order`), collapsed)}
+              data-focusable="true"
+            >
+              <ListOrdered className="h-5 w-5 shrink-0" />
+              <span className={labelClass(collapsed)}>Load Order</span>
+            </Link>
+            <Link
+              to="/games/$domain/troubleshoot"
+              params={{ domain }}
+              className={rowClass(pathname.startsWith(`/games/${domain}/troubleshoot`), collapsed)}
+              data-focusable="true"
+            >
+              <Wrench className="h-5 w-5 shrink-0" />
+              <span className={labelClass(collapsed)}>Fix</span>
             </Link>
             <Link
               to="/games/$domain/setup"

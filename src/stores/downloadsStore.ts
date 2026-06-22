@@ -72,7 +72,7 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
   hydrateFromRecords: (records) => {
     const active: Record<string, DownloadProgress> = {};
     for (const record of records) {
-      if (record.status === "complete" || record.status === "cancelled") continue;
+      if (record.status === "cancelled") continue;
       active[record.id] = downloadRecordToProgress(record);
     }
     set({ active, hydrated: true });

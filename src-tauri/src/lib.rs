@@ -6,11 +6,12 @@ mod services;
 
 use std::sync::Arc;
 
-use tauri::{async_runtime::spawn, Emitter};
+use tauri::{async_runtime::spawn, Emitter, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 use commands::*;
 use services::download_manager::DownloadManager;
+use services::install_manager::InstallManager;
 use services::nexus_client::NexusClient;
 use services::process_monitor::ProcessMonitor;
 use services::startup_log;
@@ -66,6 +67,7 @@ pub fn run() {
 
     let nexus_client = Arc::new(NexusClient::new());
     let download_manager = Arc::new(DownloadManager::new());
+    let install_manager = Arc::new(InstallManager::new());
     let process_monitor = Arc::new(ProcessMonitor::new());
 
     tauri::Builder::default()
@@ -80,12 +82,24 @@ pub fn run() {
         }))
         .manage(nexus_client.clone())
         .manage(download_manager.clone())
+        .manage(install_manager.clone())
         .manage(process_monitor.clone())
         .setup(move |app| {
             let log_path = startup_log::init()?;
             startup_log::log_step("setup", &format!("log at {}", log_path.display()));
 
             db::init_db()?;
+
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                let bundled =
+                    crate::services::sevenzip::discover_bundled_in_resource_dir(&resource_dir);
+                crate::services::sevenzip::init_bundled_path(bundled);
+            }
+            crate::services::sevenzip::probe_host_7z();
+            startup_log::log_step(
+                "sevenzip",
+                &crate::services::sevenzip::get_info().message,
+            );
 
             #[cfg(target_os = "linux")]
             {
@@ -141,7 +155,9 @@ pub fn run() {
             get_profile,
             is_onboarding_complete,
             complete_onboarding,
+            restart_onboarding,
             get_platform_info,
+            get_sevenzip_info,
             search_mods,
             get_mod_detail,
             get_mod_files,
@@ -150,6 +166,7 @@ pub fn run() {
             start_mod_download,
             list_downloads,
             install_mod_from_archive,
+            cancel_install,
             list_installed_mods,
             set_mod_enabled,
             reorder_mod,
@@ -158,6 +175,7 @@ pub fn run() {
             preview_mod_install,
             prepare_mod_install,
             repair_deployment,
+            check_deploy_mode,
             read_fomod_asset,
             get_fomod_wizard_state,
             cleanup_prepare_dir,
@@ -244,6 +262,7 @@ pub fn run() {
             detect_bodyslide,
             get_body_setup_status,
             launch_bodyslide,
+            configure_bodyslide_paths,
             launch_outfit_studio,
             queue_bodyslide_install,
             queue_cbbe_install,
@@ -265,6 +284,8 @@ pub fn run() {
             restore_proton_prefix,
             detect_protontricks,
             install_proton_deps,
+            get_bethesda_audio_status,
+            fix_bethesda_audio,
             backup_profile_prefix,
             restore_profile_prefix,
             detect_mo2,
@@ -275,6 +296,7 @@ pub fn run() {
             detect_sseedit,
             launch_sseedit,
             reset_profile_mods,
+            reset_app,
             check_app_update,
             get_logs_dir,
             list_recent_install_logs,

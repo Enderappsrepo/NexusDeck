@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ModInstallDialog } from "@/components/mod/ModInstallDialog";
+import { InstallSuccessDialog } from "@/components/install/InstallSuccessDialog";
+import { SetupRequiredState } from "@/components/game/SetupRequiredState";
 import { FreeDownloadDialog } from "@/components/mod/FreeDownloadDialog";
 import {
   MOD_DETAIL_TABS,
@@ -46,6 +48,7 @@ function ModDetailPage() {
   const [freeDownloadFile, setFreeDownloadFile] = useState<ModFileInfo | null>(null);
   const [endorsing, setEndorsing] = useState(false);
   const [tracking, setTracking] = useState(false);
+  const [installSuccessOpen, setInstallSuccessOpen] = useState(false);
 
   const isPremium = user?.is_premium ?? false;
 
@@ -188,7 +191,7 @@ function ModDetailPage() {
   );
 
   if (!profile) {
-    return <p className="text-[var(--color-muted)]">Set up this game before browsing mods.</p>;
+    return <SetupRequiredState domain={domain} />;
   }
 
   if (loading) {
@@ -283,12 +286,20 @@ function ModDetailPage() {
           tags={detail.tags}
           onInstalled={() => {
             setInstallFile(null);
+            setInstallSuccessOpen(true);
             api
               .listInstalledMods(profile.id)
               .then((mods) => setInstalledMod(mods.find((m) => m.nexus_mod_id === modId) ?? null));
           }}
         />
       )}
+
+      <InstallSuccessDialog
+        open={installSuccessOpen}
+        onOpenChange={setInstallSuccessOpen}
+        profile={profile}
+        modName={detail.name}
+      />
 
       {freeDownloadFile && (
         <FreeDownloadDialog

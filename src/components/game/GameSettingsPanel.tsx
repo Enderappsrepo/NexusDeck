@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { api } from "@/lib/commands";
 import { getUserMessage } from "@/lib/apiError";
@@ -365,19 +366,17 @@ function SettingField({
     return (
       <div className="sm:col-span-2">
         <FieldLabel id={setting.id} label={setting.label} dirty={dirty} />
-        <select
-          id={setting.id}
+        <SegmentedControl
+          ariaLabel={setting.label}
+          size="sm"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="focusable mt-2 h-11 w-full rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 text-sm transition-colors hover:border-[var(--color-primary)]/40"
-          data-focusable="true"
-        >
-          {setting.options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          onChange={onChange}
+          options={setting.options.map((option) => ({
+            value: option.value,
+            label: option.label,
+          }))}
+          className="mt-2 flex-wrap"
+        />
       </div>
     );
   }

@@ -38,6 +38,7 @@
       "remedies": [
         "fallout4/f4se_not_loading",
         "fallout4/proton_deps_missing",
+        "fallout4/voice_dialogue_missing",
         "fallout4/archive_invalidation",
         "fallout4/plugins_txt_sync",
         "fallout4/ini_deck_preset",

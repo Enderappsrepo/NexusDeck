@@ -5,6 +5,7 @@ import { Download, ExternalLink, FolderOpen, RefreshCw, ShieldCheck } from "luci
 import { AppDialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { OptionCard } from "@/components/mod/OptionCard";
 import { api } from "@/lib/commands";
 import { getGameMeta } from "@/lib/games";
 import type { ScriptExtenderInstallInfo, ScriptExtenderStatus } from "@/lib/nexus/types";
@@ -174,22 +175,13 @@ export function ScriptExtenderInstallDialog({
         )}
 
         {canPatchLauncher && (
-          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--color-border)] p-4">
-            <input
-              type="checkbox"
-              checked={configureLauncher}
-              onChange={(e) => setConfigureLauncher(e.target.checked)}
-              className="focusable mt-1 h-5 w-5 accent-[var(--color-primary)]"
-              data-focusable="true"
-            />
-            <div>
-              <p className="font-medium">Configure Steam launcher</p>
-              <p className="text-sm text-[var(--color-muted)]">
-                Backs up the original launcher and routes Steam launches through {label}.
-                Recommended for Steam Deck and Proton.
-              </p>
-            </div>
-          </label>
+          <OptionCard
+            control="checkbox"
+            checked={configureLauncher}
+            onToggle={() => setConfigureLauncher((v) => !v)}
+            title="Configure Steam launcher"
+            description={`Backs up the original launcher and routes Steam launches through ${label}. Recommended for Steam Deck and Proton.`}
+          />
         )}
 
         {error && (

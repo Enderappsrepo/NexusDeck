@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   CheckCircle2,
   Circle,
+  Copy,
   Download,
   ExternalLink,
   Palette,
@@ -30,6 +31,8 @@ export function BodySlideSetupPanel({ profileId }: { profileId: string }) {
   const profile = useGamesStore((s) => s.profiles.find((p) => p.id === profileId));
   const [status, setStatus] = useState<BodySetupStatus | null>(null);
   const [launching, setLaunching] = useState<"bodyslide" | "outfit" | null>(null);
+  const [configuring, setConfiguring] = useState(false);
+  const [copiedPath, setCopiedPath] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +105,32 @@ export function BodySlideSetupPanel({ profileId }: { profileId: string }) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLaunching(null);
+    }
+  };
+
+  const configurePaths = async () => {
+    setConfiguring(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await api.configureBodyslidePaths(profileId);
+      setMessage(`Game path saved to BodySlide Config.xml: ${result.game_data_path}`);
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConfiguring(false);
+    }
+  };
+
+  const copyGamePath = async () => {
+    if (!status.bodyslide_game_data_path) return;
+    try {
+      await navigator.clipboard.writeText(status.bodyslide_game_data_path);
+      setCopiedPath(true);
+      window.setTimeout(() => setCopiedPath(false), 2000);
+    } catch {
+      setError("Could not copy path to clipboard.");
     }
   };
 
@@ -187,6 +216,43 @@ export function BodySlideSetupPanel({ profileId }: { profileId: string }) {
           </div>
         </div>
       </div>
+
+      {status.bodyslide_installed && status.bodyslide_game_data_path && (
+        <div className="border-b border-[var(--color-border)] bg-[var(--color-secondary)]/20 px-5 py-3 text-sm">
+          <p className="font-medium">Game Data folder</p>
+          <p className="mt-1 text-[var(--color-muted)]">
+            {status.bodyslide_browse_hint ??
+              "NexusDeck configures BodySlide before launch. You should not need to browse for your game folder."}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <code className="max-w-full overflow-x-auto rounded-lg bg-[var(--color-background)] px-2 py-1 text-xs">
+              {status.bodyslide_game_data_path}
+            </code>
+            <Button variant="outline" size="sm" onClick={copyGamePath} data-focusable="true">
+              <Copy className="h-4 w-4" />
+              {copiedPath ? "Copied" : "Copy path"}
+            </Button>
+            {!status.bodyslide_config_ready && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={configurePaths}
+                loading={configuring}
+                data-focusable="true"
+              >
+                Fix BodySlide path
+              </Button>
+            )}
+            {status.bodyslide_config_ready && (
+              <Badge variant="success">Path configured</Badge>
+            )}
+          </div>
+          <p className="mt-2 text-xs text-[var(--color-muted)]">
+            If BodySlide still asks: click <strong>Launch BodySlide</strong> again (not from Steam
+            directly), or tap <strong>Fix BodySlide path</strong> above, then relaunch.
+          </p>
+        </div>
+      )}
 
       {status.bodyslide_installed && !status.presets_built && (
         <div className="border-b border-[var(--color-border)] bg-[var(--color-warning)]/10 px-5 py-3 text-sm">

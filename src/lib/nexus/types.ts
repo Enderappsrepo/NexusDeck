@@ -622,6 +622,14 @@ export interface ScriptExtenderStatus {
   scripts_installed?: boolean | null;
 }
 
+export interface BethesdaAudioStatus {
+  applicable: boolean;
+  ready: boolean;
+  dll_override_applied: boolean;
+  xact_installed: boolean;
+  message?: string | null;
+}
+
 export interface SupportedGameInfo {
   domain: string;
   display_name: string;
@@ -771,6 +779,10 @@ export interface BodySetupStatus {
   cbbe_mod_id?: number | null;
   cbbe_mod_name?: string | null;
   can_one_click_cbbe?: boolean;
+  bodyslide_game_data_path?: string | null;
+  bodyslide_linux_data_path?: string | null;
+  bodyslide_config_ready?: boolean;
+  bodyslide_browse_hint?: string | null;
 }
 
 export interface InstallPreset {
@@ -783,6 +795,11 @@ export interface RepairResult {
   mods_processed: number;
   files_relocated: number;
   warnings: string[];
+}
+
+export interface DeployMode {
+  hardlink: boolean;
+  work_dir: string;
 }
 
 export interface SteamShortcutInfo {
@@ -809,6 +826,15 @@ export interface PlatformInfo {
   is_flatpak: boolean;
   steamos_version: string | null;
   app_version: string;
+}
+
+export type SevenZipSource = "system" | "bundled" | "host";
+
+export interface SevenZipInfo {
+  available: boolean;
+  source: SevenZipSource | null;
+  path: string | null;
+  message: string;
 }
 
 export interface GameSettingOption {
@@ -866,6 +892,13 @@ export interface ResetProfileResult {
   plugins_txt_reset: boolean;
   backup_path: string | null;
   warnings: string[];
+}
+
+export interface AppResetResult {
+  database_cleared: boolean;
+  api_key_cleared: boolean;
+  cache_cleared: boolean;
+  onboarding_reset: boolean;
 }
 
 export interface AppUpdateInfo {

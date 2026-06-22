@@ -6,6 +6,7 @@ use crate::services::game_settings;
 use crate::services::log_parser;
 use crate::services::prefix_manager;
 use crate::services::proton_deps;
+use crate::services::proton_audio;
 
 pub fn scan_profile(profile_id: &str) -> Result<DiagnosticScanResult> {
     let profile = db::get_profile(profile_id)?
@@ -163,6 +164,24 @@ pub fn scan_profile(profile_id: &str) -> Result<DiagnosticScanResult> {
                     false,
                     Some("Use Proton GE 9+ or Proton Experimental for best mod compatibility.".into()),
                     serde_json::to_value(&proton)?,
+                ));
+            }
+        }
+    }
+
+    if cfg!(not(target_os = "windows")) && proton_audio::is_bethesda_game(&profile.game_domain) {
+        if let Ok(audio) = proton_audio::get_bethesda_audio_status(&profile) {
+            if audio.applicable && !audio.ready {
+                findings.push(finding(
+                    "bethesda_voice_audio",
+                    "warning",
+                    "NPC voice dialogue and music may be silent on Proton (SFX can still work).",
+                    Some("voice_dialogue_missing".into()),
+                    true,
+                    Some(
+                        "NexusDeck can install XACT and configure xaudio2 in your Proton prefix.",
+                    ),
+                    serde_json::to_value(&audio)?,
                 ));
             }
         }

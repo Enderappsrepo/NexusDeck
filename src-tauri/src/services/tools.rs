@@ -9,6 +9,7 @@ use walkdir::WalkDir;
 
 use crate::db::{self, Profile};
 use crate::error::{NexusDeckError, Result};
+use crate::services::bodyslide_config::{self, BodyslidePathInfo};
 use crate::services::steam_launch::{launch_direct_executable, launch_through_proton};
 
 pub const FO4_BODYSLIDE_NEXUS_URL: &str =
@@ -106,6 +107,10 @@ pub struct BodySetupStatus {
     pub cbbe_mod_id: Option<u64>,
     pub cbbe_mod_name: Option<String>,
     pub can_one_click_cbbe: bool,
+    pub bodyslide_game_data_path: Option<String>,
+    pub bodyslide_linux_data_path: Option<String>,
+    pub bodyslide_config_ready: bool,
+    pub bodyslide_browse_hint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,6 +272,17 @@ pub fn get_body_setup_status(profile_id: &str) -> Result<BodySetupStatus> {
     let cbbe_mod_name = cbbe.map(|c| c.mod_name.to_string());
     let can_one_click_cbbe = cbbe.is_some() && !cbbe_installed;
 
+    let path_info = if bodyslide.installed {
+        bodyslide
+            .working_dir
+            .as_deref()
+            .and_then(|dir| {
+                bodyslide_config::bodyslide_path_info(&profile, Some(Path::new(dir))).ok()
+            })
+    } else {
+        bodyslide_config::bodyslide_path_info(&profile, None).ok()
+    };
+
     let step1_status = if cbbe_installed { "done" } else { "pending" };
     let step2_status = if bodyslide.installed {
         "done"
@@ -334,6 +350,10 @@ pub fn get_body_setup_status(profile_id: &str) -> Result<BodySetupStatus> {
         cbbe_mod_id,
         cbbe_mod_name,
         can_one_click_cbbe,
+        bodyslide_game_data_path: path_info.as_ref().map(|p| p.game_data_path.clone()),
+        bodyslide_linux_data_path: path_info.as_ref().map(|p| p.linux_data_path.clone()),
+        bodyslide_config_ready: path_info.as_ref().is_some_and(|p| p.config_matches),
+        bodyslide_browse_hint: path_info.as_ref().and_then(|p| p.browse_hint.clone()),
     })
 }
 
@@ -387,6 +407,25 @@ pub fn launch_sseedit(profile_id: &str) -> Result<String> {
     Ok("Launched SSEEdit through Proton.".into())
 }
 
+pub fn configure_bodyslide_paths(profile_id: &str) -> Result<BodyslidePathInfo> {
+    let profile = load_profile(profile_id)?;
+    let info = detect_bodyslide(profile_id)?;
+    let dir = info.working_dir.ok_or_else(|| {
+        NexusDeckError::NotFound(
+            "BodySlide install folder not found. Install BodySlide to Data/CalienteTools/BodySlide first.".into(),
+        )
+    })?;
+    bodyslide_config::configure_bodyslide(&profile, Path::new(&dir))
+}
+
+fn prepare_bodyslide_launch(profile_id: &str, cwd: &str) -> Result<BodyslidePathInfo> {
+    let profile = load_profile(profile_id)?;
+    if std::env::consts::OS == "windows" {
+        return bodyslide_config::bodyslide_path_info(&profile, Some(Path::new(cwd)));
+    }
+    bodyslide_config::configure_bodyslide(&profile, Path::new(cwd))
+}
+
 pub fn launch_bodyslide(profile_id: &str) -> Result<String> {
     let info = detect_bodyslide(profile_id)?;
     let exe = info.exe_path.ok_or_else(|| {
@@ -396,6 +435,7 @@ pub fn launch_bodyslide(profile_id: &str) -> Result<String> {
         ))
     })?;
     let cwd = info.working_dir.unwrap_or_default();
+    let path_info = prepare_bodyslide_launch(profile_id, &cwd)?;
 
     if std::env::consts::OS == "windows" {
         launch_direct_executable(Path::new(&exe), Path::new(&cwd), &[])?;
@@ -404,7 +444,10 @@ pub fn launch_bodyslide(profile_id: &str) -> Result<String> {
 
     let profile = load_profile(profile_id)?;
     launch_through_proton(&profile, Path::new(&exe), Path::new(&cwd), &[])?;
-    Ok("Launched BodySlide through Proton. Batch Build your presets, then verify meshes in Data/meshes/.".into())
+    Ok(format!(
+        "Configured BodySlide game path and launched through Proton. If prompted, use: {}",
+        path_info.game_data_path
+    ))
 }
 
 pub fn launch_outfit_studio(profile_id: &str) -> Result<String> {
@@ -421,6 +464,7 @@ pub fn launch_outfit_studio(profile_id: &str) -> Result<String> {
         return Ok("Launched Outfit Studio.".into());
     }
 
+    let _path_info = prepare_bodyslide_launch(profile_id, &cwd.display().to_string())?;
     launch_through_proton(&profile, &exe, &cwd, &[])?;
-    Ok("Launched Outfit Studio through Proton.".into())
+    Ok("Configured game path and launched Outfit Studio through Proton.".into())
 }

@@ -70,6 +70,58 @@ pub fn list_game_deps(game_domain: &str) -> Result<Vec<String>> {
     Ok(config.packages)
 }
 
+pub fn install_packages_for_app(app_id: u32, packages: &[&str]) -> Result<ProtonDepsResult> {
+    if cfg!(target_os = "windows") {
+        return Ok(ProtonDepsResult {
+            success: true,
+            installed: vec![],
+            skipped: packages.iter().map(|p| (*p).to_string()).collect(),
+            failed: vec![],
+            message: "Proton dependencies are not required on Windows.".to_string(),
+        });
+    }
+
+    let pt = detect_protontricks();
+    if !pt.available {
+        return Ok(ProtonDepsResult {
+            success: false,
+            installed: vec![],
+            skipped: vec![],
+            failed: packages.iter().map(|p| (*p).to_string()).collect(),
+            message: pt.message,
+        });
+    }
+
+    let mut installed = Vec::new();
+    let mut skipped = Vec::new();
+    let mut failed = Vec::new();
+
+    for pkg in packages {
+        match run_protontricks(app_id, pkg, &pt.command) {
+            Ok(()) => installed.push((*pkg).to_string()),
+            Err(e) => {
+                log::warn!("protontricks {pkg} failed: {e}");
+                failed.push((*pkg).to_string());
+            }
+        }
+    }
+
+    let installed_count = installed.len();
+    let failed_list = failed.join(", ");
+    let success = failed.is_empty();
+    Ok(ProtonDepsResult {
+        success,
+        installed,
+        skipped,
+        failed,
+        message: if success {
+            format!("Installed {installed_count} audio package(s) via protontricks.")
+        } else {
+            format!("Some audio packages failed: {failed_list}.")
+        },
+    })
+}
+
 pub fn install_game_deps(game_domain: &str, dry_run: bool) -> Result<ProtonDepsResult> {
     if cfg!(target_os = "windows") {
         return Ok(ProtonDepsResult {
@@ -160,7 +212,7 @@ fn load_deps_config(game_domain: &str) -> Result<DepsConfig> {
             include_str!("../games/rules/skyrimspecialedition_proton_deps.json")
         }
         "fallout4" => {
-            r#"{"app_id":377160,"packages":["vcrun2019","dotnet48","d3dx9_43","xact","xinput"]}"#
+            r#"{"app_id":377160,"packages":["vcrun2019","dotnet48","d3dx9_43","xact","xact_64","xinput"]}"#
         }
         other => {
             return Err(NexusDeckError::Other(format!(

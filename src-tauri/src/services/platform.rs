@@ -54,7 +54,7 @@ fn detect_steam_deck() -> bool {
     is_steam_deck()
 }
 
-fn is_flatpak_sandbox() -> bool {
+pub fn is_flatpak_sandbox() -> bool {
     std::env::var("FLATPAK_ID").is_ok()
         || Path::new("/.flatpak-info").exists()
         || std::env::var("container")

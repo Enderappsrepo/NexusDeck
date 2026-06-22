@@ -21,6 +21,7 @@ import {
 import { InstallOptionsPanel } from "@/components/mod/InstallOptionsPanel";
 import { InstallSummaryPanel } from "@/components/mod/InstallSummaryPanel";
 import { InstallWizardStepper } from "@/components/mod/InstallWizardStepper";
+import { OptionCard } from "@/components/mod/OptionCard";
 import { api } from "@/lib/commands";
 import { useGamepadBackHandler } from "@/hooks/useGamepadRouter";
 import { loadFomodAssetUrl, releaseFomodAssetUrls } from "@/lib/fomodAssets";
@@ -32,11 +33,13 @@ import type {
   InstallOptions,
   InstallPreview,
   InstallProgress,
+  InstallResult,
   InstallWizard,
   ModFileInfo,
   Profile,
   SelectedInstallOption,
   InstallPreset,
+  SevenZipInfo,
 } from "@/lib/nexus/types";
 import { modFileDownloadName } from "@/lib/nexus/types";
 import { applyCbbeDeckPreset } from "@/lib/fomodPresets";
@@ -66,6 +69,10 @@ function displayInstallPath(fullPath: string, gamePath: string) {
     return normalizedPath.slice(normalizedGame.length + 1);
   }
   return fullPath;
+}
+
+function isInstallCancelled(message: string) {
+  return /install cancelled/i.test(message);
 }
 
 function phaseToStepperIndex(
@@ -116,11 +123,19 @@ export function ModInstallDialog({
   const [error, setError] = useState<string | null>(null);
   const [extractElapsedSec, setExtractElapsedSec] = useState(0);
   const [dryRun, setDryRun] = useState(false);
+  const [dryRunResult, setDryRunResult] = useState<InstallResult | null>(null);
   const [installLogPath, setInstallLogPath] = useState<string | null>(null);
   const { lines: installLogLines, clear: clearInstallLog } = useInstallLogger(
     extracting || installing
   );
   const [reviewImage, setReviewImage] = useState<string | null>(null);
+  const [sevenZip, setSevenZip] = useState<SevenZipInfo | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      api.getSevenZipInfo().then(setSevenZip).catch(() => setSevenZip(null));
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!extracting) {
@@ -136,6 +151,7 @@ export function ModInstallDialog({
   }, [extracting]);
 
   const previewDebounceRef = useRef<number | null>(null);
+  const wizardDebounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!open || !archivePath || !preview) return;
@@ -156,6 +172,30 @@ export function ModInstallDialog({
       }
     };
   }, [selections, phase, open, archivePath, strategy, preparedExtractDir]);
+
+  useEffect(() => {
+    if (!open || !archivePath || !preparedExtractDir || phase !== "wizard") return;
+
+    if (wizardDebounceRef.current) {
+      window.clearTimeout(wizardDebounceRef.current);
+    }
+    wizardDebounceRef.current = window.setTimeout(() => {
+      void api
+        .getFomodWizardState({
+          extractDir: preparedExtractDir,
+          archivePath,
+          selections,
+        })
+        .then((state) => setInstallWizard(state.wizard))
+        .catch(() => {});
+    }, 200);
+
+    return () => {
+      if (wizardDebounceRef.current) {
+        window.clearTimeout(wizardDebounceRef.current);
+      }
+    };
+  }, [selections, phase, open, archivePath, preparedExtractDir]);
 
   useEffect(() => {
     if (open) return;
@@ -247,6 +287,7 @@ export function ModInstallDialog({
     setAnalysisProgress(null);
     setLocatingArchive(false);
     setError(null);
+    setDryRunResult(null);
 
     const prepare = async () => {
       setLoading(true);
@@ -315,7 +356,6 @@ export function ModInstallDialog({
 
         if (nextPhase === "wizard" && !result.install_wizard_required) {
           setPhase("welcome");
-          await extractAndConfigure();
         } else {
           setPhase(nextPhase);
         }
@@ -371,7 +411,7 @@ export function ModInstallDialog({
       if (event.payload.profile_id !== profile.id) return;
       if (event.payload.phase === "preview") {
         setAnalysisProgress(event.payload);
-      } else if (extracting || installing) {
+      } else if (extracting || installing || phase === "installing") {
         setInstallProgress(event.payload);
       }
     }).then((fn) => unsubs.push(fn));
@@ -482,7 +522,12 @@ export function ModInstallDialog({
         setPhase("review");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      if (isInstallCancelled(message)) {
+        onOpenChange(false);
+        return;
+      }
+      setError(message);
     } finally {
       setExtracting(false);
     }
@@ -522,6 +567,7 @@ export function ModInstallDialog({
     setError(null);
     setInstallLogPath(null);
     clearInstallLog();
+    setDryRunResult(null);
     try {
       const options: InstallOptions = {
         strategy,
@@ -545,7 +591,7 @@ export function ModInstallDialog({
       });
       if (result.log_path) setInstallLogPath(result.log_path);
       if (result.dry_run) {
-        setError(null);
+        setDryRunResult(result);
         setPhase("review");
         return;
       }
@@ -557,6 +603,10 @@ export function ModInstallDialog({
       onOpenChange(false);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      if (isInstallCancelled(message)) {
+        onOpenChange(false);
+        return;
+      }
       const logMatch = message.match(/Full log: (.+)$/m);
       if (logMatch) setInstallLogPath(logMatch[1].trim());
       setError(message);
@@ -572,8 +622,22 @@ export function ModInstallDialog({
       ? Math.round((installProgress.files_done / installProgress.files_total) * 100)
       : null;
 
+  const showDeterminateProgress =
+    installProgressPercent !== null &&
+    (extracting ||
+      installProgress?.stage === "extracting" ||
+      installProgress?.stage === "deploying");
+
   const extractAlmostDone =
     extracting && installProgressPercent !== null && installProgressPercent >= 90;
+
+  const handleCancel = () => {
+    if (installBusy) {
+      void api.cancelInstall(profile.id).catch(() => {});
+      return;
+    }
+    onOpenChange(false);
+  };
 
   const currentWizardStep = wizardStepPages[wizardStepIndex];
   const wizardCanAdvance =
@@ -645,7 +709,9 @@ export function ModInstallDialog({
         : loading && phase === "review"
           ? "Updating preview…"
           : phase === "welcome"
-            ? "Begin installation"
+            ? hasWizardSteps || wizardRequired
+              ? "Extract & configure"
+              : "Begin installation"
             : phase === "wizard"
               ? wizardStepIndex < wizardStepCount - 1
                 ? "Next"
@@ -744,6 +810,17 @@ export function ModInstallDialog({
               </div>
             </div>
             <div className="space-y-4 p-6">
+              {sevenZip && !sevenZip.available && (
+                <div className="rounded-xl border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 p-4 text-sm">
+                  <p className="font-medium text-[var(--color-warning)]">
+                    Built-in decompressor only
+                  </p>
+                  <p className="mt-1 text-[var(--color-muted)]">
+                    Native 7-Zip was not found. Large solid archives can take several minutes to
+                    extract.
+                  </p>
+                </div>
+              )}
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-secondary)]/40 p-4">
                   <p className="text-xs uppercase tracking-wide text-[var(--color-muted)]">Archive</p>
@@ -761,8 +838,9 @@ export function ModInstallDialog({
                 </div>
               </div>
               <p className="text-sm text-[var(--color-muted)]">
-                NexusDeck will extract the archive with native 7-Zip, then walk you through each
-                install step with previews — similar to Vortex.
+                {sevenZip?.available
+                  ? "NexusDeck will extract the archive with native 7-Zip, then walk you through each install step with previews — similar to Vortex."
+                  : "NexusDeck will extract the archive, then walk you through each install step with previews — similar to Vortex."}
               </p>
             </div>
           </div>
@@ -777,6 +855,29 @@ export function ModInstallDialog({
                   alt={displayTitle}
                   className="max-h-36 w-full object-cover"
                 />
+              </div>
+            )}
+
+            {dryRunResult && (
+              <div className="rounded-xl border border-[var(--color-success)]/40 bg-[var(--color-success)]/10 p-4">
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[var(--color-success)]" />
+                  <div className="space-y-1">
+                    <p className="font-medium">Dry run complete — no files were changed</p>
+                    <p className="text-sm text-[var(--color-muted)]">
+                      {dryRunResult.files_planned ?? dryRunResult.files_installed ?? preview.file_count}{" "}
+                      file(s) would be deployed
+                      {dryRunResult.conflicts.length > 0
+                        ? ` · ${dryRunResult.conflicts.length} potential conflict(s)`
+                        : ""}
+                    </p>
+                    {dryRunResult.log_path && (
+                      <p className="font-mono text-xs text-[var(--color-muted)]">
+                        Log: {dryRunResult.log_path}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -807,66 +908,46 @@ export function ModInstallDialog({
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium">Install method</label>
-              <select
-                value={strategy}
-                onChange={(e) => void handleStrategyChange(e.target.value)}
-                className="focusable h-12 w-full rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-card)] px-4"
-                data-focusable="true"
-                disabled={loading || installing}
-              >
+              <p className="mb-2 text-sm font-medium">Install method</p>
+              <div className="grid gap-2 sm:grid-cols-2">
                 {preview.strategies.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
+                  <OptionCard
+                    key={s.id}
+                    control="radio"
+                    checked={strategy === s.id}
+                    disabled={loading || installing}
+                    onToggle={() => void handleStrategyChange(s.id)}
+                    title={s.label}
+                  />
                 ))}
-              </select>
+              </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--color-border)] p-4">
-                <input
-                  type="checkbox"
-                  checked={enableMod}
-                  onChange={(e) => setEnableMod(e.target.checked)}
-                  className="mt-1 h-5 w-5 accent-[var(--color-primary)]"
-                  disabled={loading || installing}
-                />
-                <div>
-                  <p className="font-medium">Enable after install</p>
-                  <p className="text-sm text-[var(--color-muted)]">Mark mod as active in your library</p>
-                </div>
-              </label>
-              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--color-border)] p-4">
-                <input
-                  type="checkbox"
-                  checked={overwriteFiles}
-                  onChange={(e) => setOverwriteFiles(e.target.checked)}
-                  className="mt-1 h-5 w-5 accent-[var(--color-primary)]"
-                  disabled={loading || installing}
-                />
-                <div>
-                  <p className="font-medium">Overwrite existing files</p>
-                  <p className="text-sm text-[var(--color-muted)]">
-                    Replace files that already exist at the target path
-                  </p>
-                </div>
-              </label>
-              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--color-border)] p-4">
-                <input
-                  type="checkbox"
-                  checked={dryRun}
-                  onChange={(e) => setDryRun(e.target.checked)}
-                  className="mt-1 h-5 w-5 accent-[var(--color-primary)]"
-                  disabled={loading || installing}
-                />
-                <div>
-                  <p className="font-medium">Dry run</p>
-                  <p className="text-sm text-[var(--color-muted)]">
-                    Simulate install and write a log without changing game files
-                  </p>
-                </div>
-              </label>
+              <OptionCard
+                control="checkbox"
+                checked={enableMod}
+                disabled={loading || installing}
+                onToggle={() => setEnableMod((v) => !v)}
+                title="Enable after install"
+                description="Mark mod as active in your library"
+              />
+              <OptionCard
+                control="checkbox"
+                checked={overwriteFiles}
+                disabled={loading || installing}
+                onToggle={() => setOverwriteFiles((v) => !v)}
+                title="Overwrite existing files"
+                description="Replace files that already exist at the target path"
+              />
+              <OptionCard
+                control="checkbox"
+                checked={dryRun}
+                disabled={loading || installing}
+                onToggle={() => setDryRun((v) => !v)}
+                title="Dry run"
+                description="Simulate install and write a log without changing game files"
+              />
             </div>
 
             <div className="rounded-xl border border-[var(--color-border)] p-4">
@@ -940,7 +1021,7 @@ export function ModInstallDialog({
                   <p className="font-medium">
                     {installProgress?.message ?? (extracting ? "Extracting archive…" : "Installing…")}
                   </p>
-                  {extracting && installProgress && installProgress.files_total > 0 && (
+                  {showDeterminateProgress && installProgress && (
                     <p className="text-sm text-[var(--color-muted)]">
                       {installProgress.files_done.toLocaleString()} of{" "}
                       {installProgress.files_total.toLocaleString()} files
@@ -953,7 +1034,7 @@ export function ModInstallDialog({
                   )}
                 </div>
               </div>
-              {extracting && installProgressPercent !== null && (
+              {showDeterminateProgress && installProgressPercent !== null && (
                 <div className="text-right">
                   <p className="text-3xl font-bold tabular-nums text-[var(--color-primary)]">
                     {installProgressPercent}%
@@ -964,7 +1045,7 @@ export function ModInstallDialog({
                 </div>
               )}
             </div>
-            {installProgressPercent !== null ? (
+            {showDeterminateProgress && installProgressPercent !== null ? (
               <div className="space-y-2">
                 <Progress value={installProgressPercent} />
                 {extracting && installProgressPercent === 0 && extractElapsedSec >= 15 && (
@@ -976,7 +1057,7 @@ export function ModInstallDialog({
                 {extracting && installProgress && installProgress.files_total > 0 && (
                   <p className="text-xs text-[var(--color-muted)]">
                     {installProgress.message.includes("built-in")
-                      ? "Tip: Install 7-Zip for much faster extraction of large mods."
+                      ? "Using the built-in decompressor — this can be much slower on large solid archives."
                       : "Large archives can take a few minutes — progress updates as files are extracted."}
                   </p>
                 )}
@@ -998,11 +1079,10 @@ export function ModInstallDialog({
           <Button
             variant="outline"
             className="flex-1"
-            onClick={() => onOpenChange(false)}
-            disabled={installBusy}
+            onClick={handleCancel}
             data-focusable="true"
           >
-            Cancel
+            {installBusy ? "Stop install" : "Cancel"}
           </Button>
           {showBack && (
             <Button

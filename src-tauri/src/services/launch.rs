@@ -97,6 +97,14 @@ pub fn launch_game(
         })?;
     }
 
+    emit_progress(app, profile_id, "preparing");
+
+    #[cfg(target_os = "linux")]
+    if crate::services::proton_audio::is_bethesda_game(&profile.game_domain) {
+        emit_progress(app, profile_id, "preparing_audio");
+        let _ = crate::services::proton_audio::ensure_bethesda_audio(&profile);
+    }
+
     if pre_actions.iter().any(|a| a == "ensure_archive_invalidation")
         || profile_has_loose_assets(&profile).unwrap_or(false)
     {

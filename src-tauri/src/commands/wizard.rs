@@ -95,8 +95,18 @@ pub fn complete_onboarding() -> Result<()> {
 }
 
 #[tauri::command]
+pub fn restart_onboarding() -> Result<()> {
+    db::set_setting("onboarding_complete", "false")
+}
+
+#[tauri::command]
 pub fn get_platform_info() -> Result<PlatformInfo> {
     Ok(platform::detect_platform())
+}
+
+#[tauri::command]
+pub fn get_sevenzip_info() -> Result<crate::services::sevenzip::SevenZipInfo> {
+    Ok(crate::services::sevenzip::get_info())
 }
 
 #[tauri::command]

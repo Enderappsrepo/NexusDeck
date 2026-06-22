@@ -161,6 +161,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Fetch bundled 7-Zip
+        run: node scripts/fetch-7zip.mjs
+
       - name: Build NSIS installer
         run: npm run tauri build -- --bundles nsis
 

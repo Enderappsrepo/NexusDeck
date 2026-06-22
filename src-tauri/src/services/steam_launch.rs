@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::Profile;
 use crate::error::{NexusDeckError, Result};
 use crate::games::GameRegistry;
+use crate::services::proton_audio::apply_bethesda_audio_env;
 use crate::services::steam::detect_steam;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -211,6 +212,7 @@ pub fn launch_through_proton(
             steam_root.display()
         ));
         c.arg(format!("--env=STEAM_COMPAT_INSTALL_PATH={}", profile.game_path));
+        apply_bethesda_audio_env(&mut c, &profile.game_domain, true);
         c.arg(proton.display().to_string());
         c.arg("run");
         c.arg(exe.display().to_string());
@@ -222,6 +224,7 @@ pub fn launch_through_proton(
         c.env("STEAM_COMPAT_DATA_PATH", &compat);
         c.env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_root);
         c.env("STEAM_COMPAT_INSTALL_PATH", &profile.game_path);
+        apply_bethesda_audio_env(&mut c, &profile.game_domain, false);
         c
     };
 

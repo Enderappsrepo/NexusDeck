@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
@@ -14,19 +14,21 @@ import { api } from "@/lib/commands";
 import { GAMEPAD_HINTS } from "@/hooks/useFocusNavigation";
 import { AddToSteamPanel } from "@/components/steam/AddToSteamPanel";
 import { ResetModsDialog } from "@/components/mod/ResetModsDialog";
+import { ResetAppDialog } from "@/components/settings/ResetAppDialog";
+import type { SevenZipInfo } from "@/lib/nexus/types";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
 
 function SettingsPage() {
+  const navigate = useNavigate();
   const { user, logout, login, loading: authLoading, error: authError } = useAuthStore();
   const { profiles, loadProfiles } = useGamesStore();
   const {
     downloadSettings,
     performanceMode,
     deckDetected,
-    loading: settingsLoading,
     gyroScroll,
     loadSettings,
     setDownloadSettings,
@@ -56,11 +58,17 @@ function SettingsPage() {
     () => localStorage.getItem("nexusdeck_clear_download_after_install") !== "false"
   );
   const [resetProfile, setResetProfile] = useState<{ id: string; name: string } | null>(null);
+  const [resetAppOpen, setResetAppOpen] = useState(false);
+  const [rerunningOnboarding, setRerunningOnboarding] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [logsDir, setLogsDir] = useState<string | null>(null);
   const [verboseLogging, setVerboseLogging] = useState(false);
   const [exportingLogs, setExportingLogs] = useState(false);
   const [apiKey, setApiKey] = useState("");
+  const [sevenZip, setSevenZip] = useState<SevenZipInfo | null>(null);
+  const [downloadSaveState, setDownloadSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const downloadSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const connectApiKey = async () => {
     if (!apiKey.trim()) return;
@@ -80,7 +88,49 @@ function SettingsPage() {
     api.getPlatformInfo().then((p) => setAppVersion(p.app_version)).catch(() => {});
     api.getLogsDir().then(setLogsDir).catch(() => {});
     api.getVerboseLogging().then(setVerboseLogging).catch(() => {});
+    api.getSevenZipInfo().then(setSevenZip).catch(() => setSevenZip(null));
   }, [loadProfiles, loadSettings, loadLaunchSettings]);
+
+  const persistDownloadSettings = useCallback(
+    async (overrides?: Partial<{
+      max_concurrent: number;
+      speed_limit_kbps: number;
+      auto_install_after_download: boolean;
+      pause_on_battery: boolean;
+      bandwidth_saver: boolean;
+    }>) => {
+      setDownloadSaveState("saving");
+      try {
+        await setDownloadSettings({
+          max_concurrent: overrides?.max_concurrent ?? maxConcurrent,
+          speed_limit_kbps: overrides?.speed_limit_kbps ?? speedLimit,
+          auto_install_after_download:
+            overrides?.auto_install_after_download ?? autoInstallAfterDownload,
+          pause_on_battery: overrides?.pause_on_battery ?? pauseOnBattery,
+          bandwidth_saver: overrides?.bandwidth_saver ?? bandwidthSaver,
+        });
+        setDownloadSaveState("saved");
+        if (downloadSaveTimer.current) clearTimeout(downloadSaveTimer.current);
+        downloadSaveTimer.current = setTimeout(() => setDownloadSaveState("idle"), 2000);
+      } catch {
+        setDownloadSaveState("idle");
+      }
+    },
+    [
+      autoInstallAfterDownload,
+      bandwidthSaver,
+      maxConcurrent,
+      pauseOnBattery,
+      setDownloadSettings,
+      speedLimit,
+    ]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (downloadSaveTimer.current) clearTimeout(downloadSaveTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     setMaxConcurrent(downloadSettings.max_concurrent);
@@ -117,31 +167,59 @@ function SettingsPage() {
   };
 
   const backup = async (profileId: string) => {
-    const dest = `${paths?.config_dir}/backup-${profileId}.json`;
-    await api.backupProfile(profileId, dest);
-    alert(`Backup saved to ${dest}`);
-  };
-
-  const restore = async () => {
-    const selected = await open({
-      multiple: false,
-      filters: [{ name: "Backup", extensions: ["json"] }],
-    });
-    if (typeof selected === "string") {
-      await api.restoreProfile(selected);
-      await loadProfiles();
-      alert("Profile restored.");
+    setBackupError(null);
+    try {
+      const dest = `${paths?.config_dir}/backup-${profileId}.json`;
+      await api.backupProfile(profileId, dest);
+      alert(`Backup saved to ${dest}`);
+    } catch (e) {
+      setBackupError(e instanceof Error ? e.message : String(e));
     }
   };
 
-  const saveDownloadSettings = async () => {
-    await setDownloadSettings({
-      max_concurrent: maxConcurrent,
-      speed_limit_kbps: speedLimit,
-      auto_install_after_download: autoInstallAfterDownload,
-      pause_on_battery: pauseOnBattery,
-      bandwidth_saver: bandwidthSaver,
-    });
+  const restore = async () => {
+    setBackupError(null);
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "Backup", extensions: ["json"] }],
+      });
+      if (typeof selected === "string") {
+        await api.restoreProfile(selected);
+        await loadProfiles();
+        alert("Profile restored.");
+      }
+    } catch (e) {
+      setBackupError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const exportSteamInputGuide = async () => {
+    try {
+      const guide = await api.exportSteamInputGuide();
+      const dest = await save({
+        defaultPath: "nexusdeck-steam-input.txt",
+        filters: [{ name: "Text", extensions: ["txt", "md"] }],
+      });
+      if (dest) {
+        await api.writeTextFile(dest, guide);
+        alert("Steam Input guide exported.");
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const rerunOnboarding = async () => {
+    setRerunningOnboarding(true);
+    try {
+      await api.restartOnboarding();
+      navigate({ to: "/onboarding" });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRerunningOnboarding(false);
+    }
   };
 
   return (
@@ -222,7 +300,11 @@ function SettingsPage() {
               min={1}
               max={8}
               value={maxConcurrent}
-              onChange={(e) => setMaxConcurrent(Number(e.target.value))}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                setMaxConcurrent(value);
+                void persistDownloadSettings({ max_concurrent: value });
+              }}
             />
           </label>
           <label className="block space-y-2">
@@ -233,7 +315,11 @@ function SettingsPage() {
               type="number"
               min={0}
               value={speedLimit}
-              onChange={(e) => setSpeedLimit(Number(e.target.value))}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                setSpeedLimit(value);
+                void persistDownloadSettings({ speed_limit_kbps: value });
+              }}
             />
           </label>
           <div className="flex items-center justify-between gap-4">
@@ -245,7 +331,10 @@ function SettingsPage() {
             </div>
             <Switch
               checked={autoInstallAfterDownload}
-              onCheckedChange={setAutoInstallAfterDownload}
+              onCheckedChange={(checked) => {
+                setAutoInstallAfterDownload(checked);
+                void persistDownloadSettings({ auto_install_after_download: checked });
+              }}
               data-focusable="true"
             />
           </div>
@@ -258,7 +347,10 @@ function SettingsPage() {
             </div>
             <Switch
               checked={pauseOnBattery}
-              onCheckedChange={setPauseOnBattery}
+              onCheckedChange={(checked) => {
+                setPauseOnBattery(checked);
+                void persistDownloadSettings({ pause_on_battery: checked });
+              }}
               data-focusable="true"
             />
           </div>
@@ -271,13 +363,18 @@ function SettingsPage() {
             </div>
             <Switch
               checked={bandwidthSaver}
-              onCheckedChange={setBandwidthSaver}
+              onCheckedChange={(checked) => {
+                setBandwidthSaver(checked);
+                void persistDownloadSettings({ bandwidth_saver: checked });
+              }}
               data-focusable="true"
             />
           </div>
-          <Button onClick={saveDownloadSettings} disabled={settingsLoading} data-focusable="true">
-            Save download settings
-          </Button>
+          {downloadSaveState !== "idle" && (
+            <p className="text-xs text-[var(--color-muted)]">
+              {downloadSaveState === "saving" ? "Saving…" : "Saved"}
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -369,12 +466,14 @@ function SettingsPage() {
               <li>{GAMEPAD_HINTS.menu}: Search / command palette (Menu)</li>
             </ul>
             <p className="mt-3">
-              <a
-                href="docs/steam-input.md"
-                className="text-[var(--color-primary)] underline"
+              <button
+                type="button"
+                className="focusable text-[var(--color-primary)] underline"
+                data-focusable="true"
+                onClick={() => void exportSteamInputGuide()}
               >
-                Steam Input profile guide (docs/steam-input.md)
-              </a>
+                Export Steam Input profile guide
+              </button>
             </p>
           </div>
         </CardContent>
@@ -449,6 +548,21 @@ function SettingsPage() {
               <p>Data: {paths.data_dir}</p>
             </>
           )}
+          {sevenZip && (
+            <div
+              className={
+                sevenZip.available
+                  ? "rounded-xl border border-[var(--color-success)]/30 bg-[var(--color-success)]/10 p-3 text-[var(--color-foreground)]"
+                  : "rounded-xl border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 p-3 text-[var(--color-foreground)]"
+              }
+            >
+              <p className="font-medium">Archive extractor</p>
+              <p className="mt-1">{sevenZip.message}</p>
+              {sevenZip.path && (
+                <p className="mt-1 font-mono text-xs break-all opacity-80">{sevenZip.path}</p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -503,11 +617,52 @@ function SettingsPage() {
             Restore profile from backup
           </Button>
           <Button variant="outline" onClick={exportDiag} data-focusable="true">Export Diagnostics</Button>
+          {backupError && (
+            <p className="text-sm text-[var(--color-danger)]">{backupError}</p>
+          )}
           {diagnostics && (
             <pre className="max-h-48 overflow-auto rounded-xl bg-[var(--color-secondary)] p-4 text-xs">
               {diagnostics}
             </pre>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Danger zone</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <p className="font-medium">Run setup wizard again</p>
+            <p className="mt-1 text-sm text-[var(--color-muted)]">
+              Re-open the first-run setup without deleting profiles or mod data.
+            </p>
+            <Button
+              variant="secondary"
+              className="mt-3"
+              loading={rerunningOnboarding}
+              onClick={() => void rerunOnboarding()}
+              data-focusable="true"
+            >
+              Re-run onboarding
+            </Button>
+          </div>
+          <div className="border-t border-[var(--color-border)] pt-4">
+            <p className="font-medium text-[var(--color-danger)]">Full app reset</p>
+            <p className="mt-1 text-sm text-[var(--color-muted)]">
+              Erase all profiles, downloads, launch presets, and your saved API key. Game files and
+              staging folders are kept.
+            </p>
+            <Button
+              variant="danger"
+              className="mt-3"
+              onClick={() => setResetAppOpen(true)}
+              data-focusable="true"
+            >
+              Reset NexusDeck
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -532,6 +687,8 @@ function SettingsPage() {
           onComplete={() => void loadProfiles()}
         />
       )}
+
+      <ResetAppDialog open={resetAppOpen} onOpenChange={setResetAppOpen} />
     </div>
   );
 }

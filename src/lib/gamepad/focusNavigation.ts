@@ -30,37 +30,105 @@ export function getFocusableElements(root: HTMLElement | Document = document): H
 
 let focusIndex = 0;
 
+type FocusDirection = "next" | "prev" | "up" | "down";
+
+/**
+ * Pick the best element in the pressed direction using 2D geometry: nearest in
+ * the travel axis with a strong penalty for cross-axis misalignment, so grids
+ * move column-by-column and lists row-by-row instead of jumping to whatever
+ * happens to be closest by top edge. Returns -1 when nothing lies that way.
+ */
+function directionalPick(
+  items: HTMLElement[],
+  current: HTMLElement,
+  direction: FocusDirection
+): number {
+  const cur = current.getBoundingClientRect();
+  const cx = cur.left + cur.width / 2;
+  const cy = cur.top + cur.height / 2;
+  let best = -1;
+  let bestScore = Infinity;
+
+  items.forEach((el, i) => {
+    if (el === current) return;
+    const r = el.getBoundingClientRect();
+    const dx = r.left + r.width / 2 - cx;
+    const dy = r.top + r.height / 2 - cy;
+
+    let primary: number;
+    let cross: number;
+    switch (direction) {
+      case "down":
+        if (dy <= 1) return;
+        primary = dy;
+        cross = Math.abs(dx);
+        break;
+      case "up":
+        if (dy >= -1) return;
+        primary = -dy;
+        cross = Math.abs(dx);
+        break;
+      case "next":
+        if (dx <= 1) return;
+        primary = dx;
+        cross = Math.abs(dy);
+        break;
+      default:
+        if (dx >= -1) return;
+        primary = -dx;
+        cross = Math.abs(dy);
+        break;
+    }
+
+    // Distance along the travel axis, plus a heavy penalty for drifting off the
+    // line so the nearest *aligned* element wins.
+    const score = primary + cross * 2;
+    if (score < bestScore) {
+      bestScore = score;
+      best = i;
+    }
+  });
+
+  return best;
+}
+
 export function moveFocus(
-  direction: "next" | "prev" | "up" | "down",
+  direction: FocusDirection,
   container?: HTMLElement | null
 ): void {
   const current = document.activeElement as HTMLElement;
+  // Scope, in priority order: explicit container, a focus group, an open modal
+  // dialog (so D-pad can't escape to the background behind an installer), else
+  // the whole page.
   const group = current?.closest<HTMLElement>("[data-focus-group]");
-  const root = container ?? group ?? document.body;
+  const dialog = current?.closest<HTMLElement>('[role="dialog"]');
+  const root = container ?? group ?? dialog ?? document.body;
   const items = getFocusableElements(root);
   if (items.length === 0) return;
 
-  let idx = items.indexOf(current);
-  if (idx === -1) idx = focusIndex;
-
-  if (direction === "next") idx = (idx + 1) % items.length;
-  else if (direction === "prev") idx = (idx - 1 + items.length) % items.length;
-  else if (direction === "down" || direction === "up") {
-    const rect = current?.getBoundingClientRect() ?? items[idx]?.getBoundingClientRect();
-    if (!rect) return;
-    const candidates = items
-      .map((el, i) => ({ el, i, r: el.getBoundingClientRect() }))
-      .filter(({ r }) =>
-        direction === "down" ? r.top > rect.top + 4 : r.top < rect.top - 4
-      )
-      .sort((a, b) =>
-        direction === "down" ? a.r.top - b.r.top : b.r.top - a.r.top
-      );
-    if (candidates.length > 0) idx = candidates[0].i;
+  const idx = items.indexOf(current);
+  if (idx === -1) {
+    const start = Math.min(focusIndex, items.length - 1);
+    focusIndex = start;
+    items[start]?.focus();
+    return;
   }
 
-  focusIndex = idx;
-  items[idx]?.focus();
+  const picked = directionalPick(items, current, direction);
+  if (picked !== -1) {
+    focusIndex = picked;
+    items[picked].focus();
+    return;
+  }
+
+  // No neighbour that way: wrap in DOM order for left/right so a list still
+  // cycles; for up/down stay put (already at the edge of this region).
+  if (direction === "next" || direction === "prev") {
+    const delta = direction === "next" ? 1 : -1;
+    const wrapped = (idx + delta + items.length) % items.length;
+    focusIndex = wrapped;
+    items[wrapped].focus();
+  }
 }
 
 /** Reset directional-nav state so the next move starts from the top of the page. */

@@ -287,7 +287,11 @@ function SetupWizardPage() {
       modManager: modManager,
     });
     await loadProfiles();
-    navigate({ to: isSkyrimSe ? "/games/$domain/troubleshoot" : "/games/$domain", params: { domain } });
+    navigate({
+      to: "/games/$domain/mods",
+      params: { domain },
+      search: { welcome: "1", modId: undefined },
+    });
   };
 
   const f4se = f4seStatus as ScriptExtenderStatus | null;

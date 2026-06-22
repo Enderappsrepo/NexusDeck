@@ -399,6 +399,23 @@ pub fn build_install_header(
 ) -> String {
     let platform = crate::services::platform::detect_platform();
     let has_7z = crate::services::archive::has_7z_executable();
+    let sevenzip = crate::services::sevenzip::get_info();
+    let sevenzip_detail = if has_7z {
+        format!(
+            "yes ({}{})",
+            sevenzip
+                .source
+                .map(|s| format!("{s:?}"))
+                .unwrap_or_else(|| "unknown".into()),
+            sevenzip
+                .path
+                .as_ref()
+                .map(|p| format!(" @ {p}"))
+                .unwrap_or_default()
+        )
+    } else {
+        "no".to_string()
+    };
     let archive_size = std::fs::metadata(archive_path)
         .map(|m| format!("{} bytes", m.len()))
         .unwrap_or_else(|_| "unknown".into());
@@ -427,7 +444,7 @@ pub fn build_install_header(
         profile.game_domain,
         profile.game_path,
         prefix,
-        has_7z,
+        sevenzip_detail,
         is_verbose_logging_enabled(),
         archive_path.display(),
     )

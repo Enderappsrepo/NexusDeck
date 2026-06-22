@@ -10,6 +10,7 @@ use crate::services::game_settings;
 use crate::services::plugins_txt;
 use crate::services::prefix_manager;
 use crate::services::proton_deps;
+use crate::services::proton_audio;
 use crate::services::script_extender;
 
 pub fn apply_remedy(profile_id: &str, remedy_id: &str) -> Result<ApplyFixesResult> {
@@ -26,6 +27,7 @@ pub fn apply_remedy(profile_id: &str, remedy_id: &str) -> Result<ApplyFixesResul
     let result = match fix_type.as_str() {
         "enable_archive_invalidation" => apply_archive_invalidation(&profile, remedy_id, backup_path.clone()),
         "sync_plugins_txt" => apply_plugins_sync(&profile, remedy_id, backup_path.clone()),
+        "fix_bethesda_audio" => apply_bethesda_audio(&profile, remedy_id, backup_path.clone()),
         "install_proton_deps" => apply_proton_deps(&profile, remedy_id, backup_path.clone()),
         "fix_permissions" => apply_permissions(&profile, remedy_id, backup_path.clone()),
         "apply_deck_ini_preset" => apply_deck_ini(&profile, remedy_id, backup_path.clone()),
@@ -102,6 +104,31 @@ fn apply_plugins_sync(
                 "plugins.txt synced ({} plugins) to {}",
                 result.plugin_count, result.path
             ),
+            backup_path,
+        },
+        Err(e) => FixResult {
+            remedy_id: remedy_id.to_string(),
+            applied: false,
+            skipped: false,
+            message: e.to_string(),
+            backup_path,
+        },
+    }
+}
+
+fn apply_bethesda_audio(
+    profile: &db::Profile,
+    remedy_id: &str,
+    backup_path: Option<String>,
+) -> FixResult {
+    match proton_audio::ensure_bethesda_audio(profile) {
+        Ok(status) => FixResult {
+            remedy_id: remedy_id.to_string(),
+            applied: status.ready,
+            skipped: false,
+            message: status
+                .message
+                .unwrap_or_else(|| "Voice audio fix applied.".to_string()),
             backup_path,
         },
         Err(e) => FixResult {

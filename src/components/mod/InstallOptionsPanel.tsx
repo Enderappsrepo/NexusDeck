@@ -1,4 +1,5 @@
 import { Layers } from "lucide-react";
+import { OptionCard } from "@/components/mod/OptionCard";
 import type { InstallOptionGroup, SelectedInstallOption } from "@/lib/nexus/types";
 
 interface InstallOptionsPanelProps {
@@ -80,64 +81,38 @@ export function InstallOptionsPanel({
 
               <div className="space-y-2">
                 {group.options.map((option) => {
-                  const inputId = `install-option-${group.id}-${option.id}`;
                   const checked = selectedIds.includes(option.id);
 
                   if (isSingleChoice) {
                     return (
-                      <label
+                      <OptionCard
                         key={option.id}
-                        htmlFor={inputId}
-                        className="focusable flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--color-border)] p-3 transition-colors hover:bg-[var(--color-secondary)]/50"
-                        data-focusable="true"
-                      >
-                        <input
-                          id={inputId}
-                          type="radio"
-                          name={`install-option-${group.id}`}
-                          checked={checked}
-                          onChange={() => {
-                            if (isSelectAtMostOne && checked) {
-                              onChange(updateGroupSelection(selections, group.id, []));
-                            } else {
-                              handleSelectOne(group, option.id);
-                            }
-                          }}
-                          className="mt-1 h-5 w-5 accent-[var(--color-primary)]"
-                          disabled={disabled}
-                        />
-                        <div className="min-w-0">
-                          <p className="font-medium">{option.label}</p>
-                          {option.description && (
-                            <p className="text-sm text-[var(--color-muted)]">{option.description}</p>
-                          )}
-                        </div>
-                      </label>
+                        control="radio"
+                        checked={checked}
+                        disabled={disabled}
+                        onToggle={() => {
+                          if (isSelectAtMostOne && checked) {
+                            onChange(updateGroupSelection(selections, group.id, []));
+                          } else {
+                            handleSelectOne(group, option.id);
+                          }
+                        }}
+                        title={option.label}
+                        description={option.description ?? undefined}
+                      />
                     );
                   }
 
                   return (
-                    <label
+                    <OptionCard
                       key={option.id}
-                      htmlFor={inputId}
-                      className="focusable flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--color-border)] p-3 transition-colors hover:bg-[var(--color-secondary)]/50"
-                      data-focusable="true"
-                    >
-                      <input
-                        id={inputId}
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) => handleSelectAny(group, option.id, e.target.checked)}
-                        className="mt-1 h-5 w-5 accent-[var(--color-primary)]"
-                        disabled={disabled}
-                      />
-                      <div className="min-w-0">
-                        <p className="font-medium">{option.label}</p>
-                        {option.description && (
-                          <p className="text-sm text-[var(--color-muted)]">{option.description}</p>
-                        )}
-                      </div>
-                    </label>
+                      control="checkbox"
+                      checked={checked}
+                      disabled={disabled}
+                      onToggle={() => handleSelectAny(group, option.id, !checked)}
+                      title={option.label}
+                      description={option.description ?? undefined}
+                    />
                   );
                 })}
               </div>

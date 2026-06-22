@@ -212,6 +212,7 @@ fn install_from_archive_meta(
             overwrite: true,
             dry_run: false,
             on_progress: None,
+            on_cancel: None,
         },
     )?;
 

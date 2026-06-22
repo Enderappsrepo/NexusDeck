@@ -7,6 +7,7 @@ import { InstallPromptDialog } from "@/components/install/InstallPromptDialog";
 import { InstallQueuePanel } from "@/components/install/InstallQueuePanel";
 import { CollectionInstallProgressPanel } from "@/components/collections/CollectionInstallProgressPanel";
 import { ModInstallDialog } from "@/components/mod/ModInstallDialog";
+import { InstallSuccessDialog } from "@/components/install/InstallSuccessDialog";
 import {
   useAuthStore,
   useDownloadsStore,
@@ -70,10 +71,14 @@ function RootLayout() {
   const setError = useDownloadsStore((s) => s.setError);
   const dismiss = useDownloadsStore((s) => s.dismiss);
   const hydrateFromRecords = useDownloadsStore((s) => s.hydrateFromRecords);
+  const hydrated = useDownloadsStore((s) => s.hydrated);
   const downloadSettings = useSettingsStore((s) => s.downloadSettings);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
+  const settingsLoading = useSettingsStore((s) => s.loading);
   const perfActive = useSettingsStore((s) => s.perfActive);
   const updatingDownloadsRef = useRef(new Set<string>());
+  const bootedRef = useRef(false);
+  const recoveryHandledRef = useRef(false);
   const subscribeLaunchEvents = useLaunchStore((s) => s.subscribeEvents);
   const loadLaunchSettings = useLaunchStore((s) => s.loadSettings);
   const launchFromStore = useLaunchStore((s) => s.launch);
@@ -93,6 +98,10 @@ function RootLayout() {
   const downloadErrors = useDownloadsStore((s) => s.errors);
 
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
+  const [installSuccess, setInstallSuccess] = useState<{
+    profile: Profile;
+    modName: string;
+  } | null>(null);
 
   useEffect(() => {
     applyPerfAttribute(perfActive);
@@ -202,25 +211,16 @@ function RootLayout() {
   }, [pathname]);
 
   useEffect(() => {
+    if (bootedRef.current) return;
+    bootedRef.current = true;
+
     void ensureGamepadPolyfill();
-    initialize();
-    loadProfiles();
-    loadLaunchSettings();
-    loadSettings();
-    api.listDownloads().then(hydrateFromRecords);
+    void initialize();
+    void loadProfiles();
+    void loadLaunchSettings();
+    void loadSettings();
+    void api.listDownloads().then(hydrateFromRecords);
     const unsubLaunch = subscribeLaunchEvents();
-    api
-      .isOnboardingComplete()
-      .then((done) => {
-        if (!done && pathname !== "/onboarding") {
-          navigate({ to: "/onboarding" });
-        }
-      })
-      .catch(() => {
-        if (pathname !== "/onboarding") {
-          navigate({ to: "/onboarding" });
-        }
-      });
     return () => unsubLaunch();
   }, [
     initialize,
@@ -229,8 +229,62 @@ function RootLayout() {
     subscribeLaunchEvents,
     loadLaunchSettings,
     loadSettings,
-    navigate,
-    pathname,
+  ]);
+
+  useEffect(() => {
+    if (isOnboarding) return;
+    api
+      .isOnboardingComplete()
+      .then((done) => {
+        if (!done) {
+          navigate({ to: "/onboarding" });
+        }
+      })
+      .catch(() => {
+        navigate({ to: "/onboarding" });
+      });
+  }, [isOnboarding, navigate]);
+
+  useEffect(() => {
+    if (!hydrated || settingsLoading || isOnboarding || recoveryHandledRef.current) return;
+    if (installPrompt || activeJob) return;
+
+    const completed = Object.values(active).filter(
+      (d) => d.status === "complete" && !d.update_target_mod_id
+    );
+    if (completed.length === 0) return;
+
+    recoveryHandledRef.current = true;
+    const download = completed[0];
+    const pending = pendingByDownloadId[download.id];
+    const autoInstall =
+      download.auto_install ||
+      pending?.source === "collection" ||
+      pending?.source === "dep" ||
+      pending?.source === "bodyslide" ||
+      pending?.source === "cbbe" ||
+      pending?.source === "nxm" ||
+      downloadSettings.auto_install_after_download;
+
+    if (autoInstall) {
+      void enqueueFromDownload(download, pending?.source ?? "manual", profiles, {
+        replaceModId: pending?.replaceModId,
+      });
+    } else {
+      showInstallPrompt(download);
+    }
+  }, [
+    hydrated,
+    settingsLoading,
+    isOnboarding,
+    active,
+    installPrompt,
+    activeJob,
+    pendingByDownloadId,
+    downloadSettings.auto_install_after_download,
+    profiles,
+    enqueueFromDownload,
+    showInstallPrompt,
   ]);
 
   useEffect(() => {
@@ -349,12 +403,16 @@ function RootLayout() {
   };
 
   const handleInstallComplete = async (downloadId?: string) => {
+    const job = useInstallQueueStore.getState().getActiveJob();
     const clearAfterInstall =
       localStorage.getItem("nexusdeck_clear_download_after_install") !== "false";
     if (downloadId && clearAfterInstall) {
       await dismiss(downloadId).catch(() => {});
     }
     completeActive(downloadId);
+    if (job) {
+      setInstallSuccess({ profile: job.profile, modName: job.modName });
+    }
   };
 
   return (
@@ -396,6 +454,13 @@ function RootLayout() {
             onInstallFailed={(err) => failActive(err)}
           />
         )}
+
+        <InstallSuccessDialog
+          open={!!installSuccess}
+          onOpenChange={(open) => !open && setInstallSuccess(null)}
+          profile={installSuccess?.profile ?? null}
+          modName={installSuccess?.modName ?? ""}
+        />
       </div>
     </GamepadRouterProvider>
   );

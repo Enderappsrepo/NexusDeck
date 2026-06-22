@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ExternalLink, RefreshCw } from "lucide-react";
 import { AppDialog } from "@/components/ui/dialog";
@@ -30,18 +31,43 @@ export function FreeDownloadDialog({
 }: FreeDownloadDialogProps) {
   const [urls, setUrls] = useState<NexusBrowserUrls | null>(null);
   const [checking, setChecking] = useState(false);
+  const [watching, setWatching] = useState(false);
   const [ready, setReady] = useState(false);
+  const fileName = modFileDownloadName(file);
 
   useEffect(() => {
     if (open) {
       api.getNexusBrowserUrls(gameDomain, modId, file.file_id).then(setUrls);
       setReady(false);
+      setWatching(false);
     }
   }, [open, gameDomain, modId, file.file_id]);
 
+  useEffect(() => {
+    if (!open || ready) return;
+
+    let cancelled = false;
+    void api.startStagingWatcher(stagingPath, fileName).then(() => {
+      if (!cancelled) setWatching(true);
+    });
+
+    const unlisten = listen<string>("staging-file-ready", (event) => {
+      if (event.payload === fileName) {
+        setReady(true);
+        setWatching(false);
+        onReadyToInstall?.();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      void unlisten.then((fn) => fn());
+    };
+  }, [open, ready, stagingPath, fileName, onReadyToInstall]);
+
   const checkDownload = async () => {
     setChecking(true);
-    const exists = await api.watchStagingReady(stagingPath, modFileDownloadName(file));
+    const exists = await api.watchStagingReady(stagingPath, fileName);
     setReady(exists);
     setChecking(false);
     if (exists) onReadyToInstall?.();
@@ -57,7 +83,7 @@ export function FreeDownloadDialog({
       <div className="space-y-4">
         <div className="rounded-xl bg-[var(--color-secondary)] p-4 text-sm">
           <p className="font-medium">{modName}</p>
-          <p className="mt-1 text-[var(--color-muted)]">{modFileDownloadName(file)}</p>
+          <p className="mt-1 text-[var(--color-muted)]">{fileName}</p>
         </div>
 
         <ol className="list-decimal space-y-2 pl-5 text-sm text-[var(--color-muted)]">
@@ -68,6 +94,12 @@ export function FreeDownloadDialog({
         <p className="rounded-lg bg-[var(--color-card)] p-3 font-mono text-xs break-all">
           {stagingPath}
         </p>
+
+        {watching && !ready && (
+          <p className="text-sm text-[var(--color-muted)]">
+            Watching staging folder — NexusDeck will detect the file automatically.
+          </p>
+        )}
 
         <div className="flex flex-wrap gap-3">
           <Button

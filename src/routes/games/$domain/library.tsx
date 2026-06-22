@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ArrowDownAZ, Download, GitCompare, ListOrdered, Loader2, Package, Search, Trash2, Wrench } from "lucide-react";
@@ -28,7 +28,7 @@ import { useGamesStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { triggerHaptic } from "@/lib/haptics";
 import { EXPORT_FORMATS } from "@/lib/nexus/export-formats";
-import type { InstalledMod, ModSafetyReport, ModUpdateInfo, ModUpdateProgress } from "@/lib/nexus/types";
+import type { DeployMode, InstalledMod, ModSafetyReport, ModUpdateInfo, ModUpdateProgress } from "@/lib/nexus/types";
 
 function reloadLibrary(profileId: string) {
   return Promise.all([
@@ -43,6 +43,7 @@ export const Route = createFileRoute("/games/$domain/library")({
 
 function LibraryPage() {
   const { domain } = useParams({ from: "/games/$domain/library" });
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const { getProfile } = useGamesStore();
   const profile = getProfile(domain);
@@ -65,6 +66,7 @@ function LibraryPage() {
   const [sorting, setSorting] = useState(false);
   const [repairing, setRepairing] = useState(false);
   const [repairNote, setRepairNote] = useState<string | null>(null);
+  const [deployMode, setDeployMode] = useState<DeployMode | null>(null);
   const [updateProgress, setUpdateProgress] = useState<Record<string, ModUpdateProgress>>({});
   const [safetyPrompt, setSafetyPrompt] = useState<{
     mod: InstalledMod;
@@ -92,7 +94,15 @@ function LibraryPage() {
         }
       })
       .finally(() => setLoading(false));
-  }, [profile]);
+  }, [profile, pathname]);
+
+  useEffect(() => {
+    const onInstalled = () => {
+      void refreshLibrary();
+    };
+    window.addEventListener("nexusdeck-mod-installed", onInstalled);
+    return () => window.removeEventListener("nexusdeck-mod-installed", onInstalled);
+  }, [refreshLibrary]);
 
   const filteredMods = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -343,6 +353,20 @@ function LibraryPage() {
     }
   };
 
+  useEffect(() => {
+    if (!profile) return;
+    let active = true;
+    api
+      .checkDeployMode(profile.id)
+      .then((m) => {
+        if (active) setDeployMode(m);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [profile?.id]);
+
   const repairDeployment = async () => {
     if (!profile) return;
     setRepairing(true);
@@ -447,6 +471,16 @@ function LibraryPage() {
           </p>
           {repairNote && (
             <p className="mt-1 text-sm text-[var(--color-success)]">{repairNote}</p>
+          )}
+          {deployMode && (
+            <Badge
+              variant={deployMode.hardlink ? "success" : "warning"}
+              className="mt-2 w-fit"
+            >
+              {deployMode.hardlink
+                ? "Instant deploy — files are hardlinked (no extra disk)"
+                : "Copy deploy — game is on a different drive than NexusDeck"}
+            </Badge>
           )}
         </div>
         <div className="flex flex-wrap gap-2">

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, CheckCircle2, Circle, ImageIcon, Square } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Circle, ImageIcon } from "lucide-react";
+import { OptionCard } from "@/components/mod/OptionCard";
 import type {
   FomodCondition,
   FomodFlag,
@@ -259,67 +260,46 @@ function OptionListGroup({
       <div className="space-y-1" role={isSingleChoice ? "radiogroup" : "group"} aria-label={group.name}>
         {group.options.map((option) => {
           const checked = selectedIds.includes(option.id);
-          const inputId = `wizard-${group.id}-${option.id}`;
           const fileCount = optionFileCounts?.[option.id];
           const zeroFiles = fileCount === 0;
           const isFocused = focusedOptionId === option.id;
+          const meta =
+            fileCount !== undefined ? (
+              <span
+                className={cn(
+                  "rounded-md px-1.5 py-0.5 text-xs",
+                  zeroFiles
+                    ? "bg-[var(--color-warning)]/15 text-[var(--color-warning)]"
+                    : "bg-[var(--color-secondary)] text-[var(--color-muted)]"
+                )}
+              >
+                {zeroFiles ? (
+                  <span className="inline-flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />0 files
+                  </span>
+                ) : (
+                  `${fileCount.toLocaleString()} files`
+                )}
+              </span>
+            ) : undefined;
 
           return (
-            <label
+            <OptionCard
               key={option.id}
-              htmlFor={inputId}
-              className={cn(
-                "focusable flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 transition-all",
-                checked
-                  ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
-                  : isFocused
-                    ? "border-[var(--color-border-strong)] bg-[var(--color-secondary)]/40"
-                    : "border-[var(--color-border)] hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-secondary)]/30",
-                disabled && "pointer-events-none opacity-60"
-              )}
-              data-focusable="true"
-              onMouseEnter={() => onFocusOption(option.id)}
-            >
-              <input
-                id={inputId}
-                type={isSingleChoice ? "radio" : "checkbox"}
-                name={isSingleChoice ? `wizard-${group.id}` : undefined}
-                checked={checked}
-                onChange={() => {
-                  if (isSelectOne) handleSelectOne(option.id);
-                  else if (isSelectAtMostOne) handleSelectAtMostOne(option.id);
-                  else handleToggleMulti(option.id);
-                }}
-                className="mt-1 h-4 w-4 accent-[var(--color-primary)]"
-                disabled={disabled}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{option.label}</span>
-                  {fileCount !== undefined && (
-                    <span
-                      className={cn(
-                        "rounded-md px-1.5 py-0.5 text-xs",
-                        zeroFiles
-                          ? "bg-[var(--color-warning)]/15 text-[var(--color-warning)]"
-                          : "bg-[var(--color-secondary)] text-[var(--color-muted)]"
-                      )}
-                    >
-                      {zeroFiles ? (
-                        <span className="inline-flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3" />0 files
-                        </span>
-                      ) : (
-                        `${fileCount.toLocaleString()} files`
-                      )}
-                    </span>
-                  )}
-                </div>
-                {option.description && (
-                  <p className="mt-0.5 text-sm text-[var(--color-muted)]">{option.description}</p>
-                )}
-              </div>
-            </label>
+              control={isSingleChoice ? "radio" : "checkbox"}
+              checked={checked}
+              focused={isFocused}
+              disabled={disabled}
+              onFocusOption={() => onFocusOption(option.id)}
+              onToggle={() => {
+                if (isSelectOne) handleSelectOne(option.id);
+                else if (isSelectAtMostOne) handleSelectAtMostOne(option.id);
+                else handleToggleMulti(option.id);
+              }}
+              title={option.label}
+              description={option.description ?? undefined}
+              meta={meta}
+            />
           );
         })}
       </div>

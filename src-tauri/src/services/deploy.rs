@@ -283,6 +283,9 @@ pub fn deploy_extracted_entries(
     }
 
     for (index, (source_entry, deploy_entry)) in pairs.iter().enumerate() {
+        if let Some(ref check) = options.on_cancel {
+            check()?;
+        }
         let src = resolve_entry_source_path(extract_dir, source_entries, source_entry);
         if !src.is_file() {
             continue;
@@ -507,6 +510,9 @@ pub fn merge_game_data_directory(
     let mut case_cache = CaseCache::new();
 
     for (index, entry) in file_entries.iter().enumerate() {
+        if let Some(ref check) = options.on_cancel {
+            check()?;
+        }
         let rel = entry.path().strip_prefix(src).unwrap();
         let target = if resolve_case {
             resolve_deploy_target(dest, rel, &mut case_cache)
@@ -723,6 +729,7 @@ mod tests {
                 overwrite: true,
                 dry_run: false,
                 on_progress: None,
+                on_cancel: None,
             },
         )
         .unwrap();

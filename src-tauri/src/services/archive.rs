@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::{copy, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
@@ -522,35 +522,11 @@ fn extract_single_rar(archive_path: &Path, inner_path: &str, dest: &Path) -> Res
 }
 
 pub fn has_7z_executable() -> bool {
-    find_7z_executable().is_some()
-}
-
-fn find_7z_executable() -> Option<PathBuf> {
-    if let Ok(path) = which::which("7z") {
-        return Some(path);
-    }
-    if let Ok(path) = which::which("7za") {
-        return Some(path);
-    }
-
-    #[cfg(windows)]
-    {
-        for candidate in [
-            r"C:\Program Files\7-Zip\7z.exe",
-            r"C:\Program Files (x86)\7-Zip\7z.exe",
-        ] {
-            let path = PathBuf::from(candidate);
-            if path.is_file() {
-                return Some(path);
-            }
-        }
-    }
-
-    None
+    crate::services::sevenzip::has_7z_executable()
 }
 
 fn extract_with_7z_cli(archive_path: &Path, dest: &Path) -> Result<()> {
-    extract_with_7z_cli_progress(archive_path, dest, 0, None)
+    extract_with_7z_cli_progress(archive_path, dest, 0, None, None)
 }
 
 struct SevenZipParseState {
@@ -594,26 +570,48 @@ fn extract_with_7z_cli_progress(
     dest: &Path,
     files_total: u32,
     on_progress: Option<crate::services::archive_options::ExtractProgressFn>,
+    cancel_check: Option<crate::services::archive_options::CancelCheckFn>,
 ) -> Result<()> {
-    let seven_zip = find_7z_executable().ok_or_else(|| {
-        NexusDeckError::Other("7-Zip executable not found on PATH".into())
-    })?;
     std::fs::create_dir_all(dest)?;
 
-    let mut child = Command::new(&seven_zip)
-        .arg("x")
-        .arg("-y")
-        .arg("-bsp1")
-        .arg("-bb1")
-        .arg(format!("-o{}", dest.display()))
-        .arg(archive_path)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| NexusDeckError::Archive(format!("Failed to run 7-Zip: {e}")))?;
+    let mut child = crate::services::sevenzip::spawn_7z([
+        "x",
+        "-y",
+        "-bsp1",
+        "-bb1",
+        &format!("-o{}", dest.display()),
+        &archive_path.display().to_string(),
+    ])
+    .map_err(|e| NexusDeckError::Archive(format!("Failed to run 7-Zip: {e}")))?
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .map_err(|e| NexusDeckError::Archive(format!("Failed to run 7-Zip: {e}")))?;
 
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
+    let child_wrap = Arc::new(Mutex::new(Some(child)));
+    if let Some(check) = cancel_check.clone() {
+        let child_for_kill = child_wrap.clone();
+        thread::spawn(move || {
+            loop {
+                if check().is_err() {
+                    if let Some(mut child) = child_for_kill.lock().unwrap().take() {
+                        let _ = child.kill();
+                    }
+                    break;
+                }
+                thread::sleep(std::time::Duration::from_millis(200));
+            }
+        });
+    }
+
+    let (stdout, stderr) = {
+        let mut guard = child_wrap.lock().unwrap();
+        let child = guard
+            .as_mut()
+            .ok_or_else(|| NexusDeckError::Archive("7-Zip process unavailable".into()))?;
+        (child.stdout.take(), child.stderr.take())
+    };
+
     let parse_state = Arc::new(Mutex::new(SevenZipParseState {
         percent: 0,
         files_done: 0,
@@ -744,9 +742,17 @@ fn extract_with_7z_cli_progress(
         let _ = handle.join();
     }
 
-    let status = child
+    let status = child_wrap
+        .lock()
+        .unwrap()
+        .take()
+        .ok_or_else(|| NexusDeckError::Archive("7-Zip process unavailable".into()))?
         .wait()
         .map_err(|e| NexusDeckError::Archive(format!("Failed to wait for 7-Zip: {e}")))?;
+
+    if let Some(check) = cancel_check {
+        check()?;
+    }
 
     emit_from_state(true);
 
@@ -761,7 +767,7 @@ fn extract_with_7z_cli_progress(
 
 /// Prefer the native 7-Zip binary (same approach as Vortex) for large solid archives.
 pub fn extract_archive_fast(archive_path: &Path, dest: &Path) -> Result<Vec<String>> {
-    extract_archive_fast_with_progress(archive_path, dest, 0, None)
+    extract_archive_fast_with_progress(archive_path, dest, 0, None, None)
 }
 
 pub fn extract_archive_fast_with_progress(
@@ -769,13 +775,20 @@ pub fn extract_archive_fast_with_progress(
     dest: &Path,
     files_total: u32,
     on_progress: Option<crate::services::archive_options::ExtractProgressFn>,
+    cancel_check: Option<crate::services::archive_options::CancelCheckFn>,
 ) -> Result<Vec<String>> {
-    if find_7z_executable().is_some() {
-        if let Ok(()) = extract_with_7z_cli_progress(archive_path, dest, files_total, on_progress.clone()) {
+    if crate::services::sevenzip::has_7z_executable() {
+        if let Ok(()) = extract_with_7z_cli_progress(
+            archive_path,
+            dest,
+            files_total,
+            on_progress.clone(),
+            cancel_check.clone(),
+        ) {
             return collect_extracted_files(dest);
         }
     }
-    extract_archive_with_progress(archive_path, dest, files_total, on_progress)
+    extract_archive_with_progress(archive_path, dest, files_total, on_progress, cancel_check)
 }
 
 fn extract_archive_with_progress(
@@ -783,12 +796,19 @@ fn extract_archive_with_progress(
     dest: &Path,
     files_total: u32,
     on_progress: Option<crate::services::archive_options::ExtractProgressFn>,
+    cancel_check: Option<crate::services::archive_options::CancelCheckFn>,
 ) -> Result<Vec<String>> {
     std::fs::create_dir_all(dest)?;
     match detect_archive_format(archive_path)? {
-        ArchiveFormat::Zip => extract_zip_with_progress(archive_path, dest, files_total, on_progress),
-        ArchiveFormat::SevenZ => extract_7z_with_progress(archive_path, dest, files_total, on_progress),
-        ArchiveFormat::Rar => extract_rar_with_progress(archive_path, dest, files_total, on_progress),
+        ArchiveFormat::Zip => {
+            extract_zip_with_progress(archive_path, dest, files_total, on_progress, cancel_check)
+        }
+        ArchiveFormat::SevenZ => {
+            extract_7z_with_progress(archive_path, dest, files_total, on_progress, cancel_check)
+        }
+        ArchiveFormat::Rar => {
+            extract_rar_with_progress(archive_path, dest, files_total, on_progress, cancel_check)
+        }
     }
 }
 
@@ -797,6 +817,7 @@ fn extract_zip_with_progress(
     dest: &Path,
     files_total: u32,
     on_progress: Option<crate::services::archive_options::ExtractProgressFn>,
+    cancel_check: Option<crate::services::archive_options::CancelCheckFn>,
 ) -> Result<Vec<String>> {
     let file = File::open(archive_path)?;
     let mut archive =
@@ -805,6 +826,9 @@ fn extract_zip_with_progress(
     let mut extracted = Vec::new();
 
     for i in 0..archive.len() {
+        if let Some(ref check) = cancel_check {
+            check()?;
+        }
         let mut file = archive
             .by_index(i)
             .map_err(|e| NexusDeckError::Archive(e.to_string()))?;
@@ -841,6 +865,7 @@ fn extract_rar_with_progress(
     dest: &Path,
     files_total: u32,
     on_progress: Option<crate::services::archive_options::ExtractProgressFn>,
+    cancel_check: Option<crate::services::archive_options::CancelCheckFn>,
 ) -> Result<Vec<String>> {
     let mut archive = unrar::Archive::new(archive_path)
         .open_for_processing()
@@ -852,6 +877,9 @@ fn extract_rar_with_progress(
         .read_header()
         .map_err(|e| NexusDeckError::Archive(e.to_string()))?
     {
+        if let Some(ref check) = cancel_check {
+            check()?;
+        }
         let entry = header.entry();
         let filename = entry.filename.clone();
         if entry.is_directory() {
@@ -961,14 +989,21 @@ fn extract_7z_with_progress(
     dest: &Path,
     files_total: u32,
     on_progress: Option<crate::services::archive_options::ExtractProgressFn>,
+    cancel_check: Option<crate::services::archive_options::CancelCheckFn>,
 ) -> Result<Vec<String>> {
     use sevenz_rust::decompress_file_with_extract_fn;
 
     std::fs::create_dir_all(dest)?;
     let progress = on_progress.clone();
+    let cancel = cancel_check.clone();
     let mut done = 0u32;
 
     decompress_file_with_extract_fn(archive_path, dest, move |entry, reader, path| {
+        if let Some(ref check) = cancel {
+            if check().is_err() {
+                return Err(sevenz_rust::Error::other("Install cancelled"));
+            }
+        }
         let result = sevenz_rust::default_entry_extract_fn(entry, reader, path);
         if !entry.is_directory() {
             done += 1;
@@ -1117,6 +1152,9 @@ pub fn merge_directory(
     let mut case_cache = crate::services::deploy::CaseCache::new();
 
     for (index, entry) in file_entries.iter().enumerate() {
+        if let Some(ref check) = options.on_cancel {
+            check()?;
+        }
         let rel = entry.path().strip_prefix(src).unwrap();
         let target = if resolve_case {
             crate::services::deploy::resolve_deploy_target(dest, rel, &mut case_cache)

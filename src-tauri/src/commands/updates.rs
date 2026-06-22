@@ -77,8 +77,9 @@ pub async fn complete_mod_update(
     app: AppHandle,
     download_id: String,
     nexus: State<'_, Arc<NexusClient>>,
+    installs: State<'_, Arc<crate::services::install_manager::InstallManager>>,
 ) -> Result<db::InstalledMod> {
-    crate::commands::deploy::finish_mod_update(&app, &nexus, &download_id).await
+    crate::commands::deploy::finish_mod_update(&app, &nexus, &download_id, installs.inner().clone()).await
 }
 
 #[tauri::command]

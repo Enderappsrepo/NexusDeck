@@ -5,6 +5,7 @@
     "dotnet48",
     "d3dx9_43",
     "xact",
+    "xact_64",
     "xinput"
   ],
   "description": "Common Proton dependencies for Skyrim SE modding (SKSE plugins, .NET mods, audio)."

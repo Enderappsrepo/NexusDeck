@@ -56,6 +56,7 @@ import type {
   NexusBrowserUrls,
   NexusUser,
   PlatformInfo,
+  SevenZipInfo,
   PreviewFileResult,
   PreviewNode,
   Profile,
@@ -63,6 +64,7 @@ import type {
   SelectedInstallOption,
   SupportedGameInfo,
   RepairResult,
+  DeployMode,
   StagingFile,
   StrategyOption,
   TrackedMod,
@@ -121,7 +123,11 @@ export const api = {
 
   completeOnboarding: () => invoke<void>("complete_onboarding"),
 
+  restartOnboarding: () => invoke<void>("restart_onboarding"),
+
   getPlatformInfo: () => invoke<PlatformInfo>("get_platform_info"),
+
+  getSevenZipInfo: () => invoke<SevenZipInfo>("get_sevenzip_info"),
 
   searchMods: (
     gameDomain: string,
@@ -376,6 +382,9 @@ export const api = {
       modName: params.modName,
     }),
 
+  cancelInstall: (profileId: string) =>
+    invoke<void>("cancel_install", { profileId }),
+
   readFomodAsset: (params: { extractDir: string; relativePath: string }) =>
     invoke<{ bytes: number[]; mime_type: string } | null>("read_fomod_asset", {
       extractDir: params.extractDir,
@@ -400,6 +409,9 @@ export const api = {
 
   repairDeployment: (profileId: string) =>
     invoke<RepairResult>("repair_deployment", { profileId }),
+
+  checkDeployMode: (profileId: string) =>
+    invoke<DeployMode>("check_deploy_mode", { profileId }),
 
   detectF4se: (gamePath: string) =>
     invoke<ScriptExtenderStatus>("detect_f4se", { gamePath }),
@@ -603,6 +615,15 @@ export const api = {
   launchBodyslide: (profileId: string) =>
     invoke<string>("launch_bodyslide", { profileId }),
 
+  configureBodyslidePaths: (profileId: string) =>
+    invoke<{
+      game_data_path: string;
+      linux_data_path: string;
+      config_path?: string | null;
+      config_matches: boolean;
+      browse_hint?: string | null;
+    }>("configure_bodyslide_paths", { profileId }),
+
   launchOutfitStudio: (profileId: string) =>
     invoke<string>("launch_outfit_studio", { profileId }),
 
@@ -678,6 +699,16 @@ export const api = {
       dryRun,
     }),
 
+  getBethesdaAudioStatus: (profileId: string) =>
+    invoke<import("@/lib/nexus/types").BethesdaAudioStatus>("get_bethesda_audio_status", {
+      profileId,
+    }),
+
+  fixBethesdaAudio: (profileId: string) =>
+    invoke<import("@/lib/nexus/types").BethesdaAudioStatus>("fix_bethesda_audio", {
+      profileId,
+    }),
+
   detectMo2: () => invoke<import("@/lib/autofix-types").Mo2Status>("detect_mo2"),
 
   getMo2Status: (profileId: string) =>
@@ -712,6 +743,11 @@ export const api = {
       clearStaging: params.clearStaging ?? true,
       clearDownloads: params.clearDownloads ?? true,
       resetPluginsTxt: params.resetPluginsTxt ?? true,
+    }),
+
+  resetApp: (clearCache?: boolean) =>
+    invoke<import("@/lib/nexus/types").AppResetResult>("reset_app", {
+      clearCache: clearCache ?? true,
     }),
 
   checkAppUpdate: () => invoke<import("@/lib/nexus/types").AppUpdateInfo>("check_app_update"),

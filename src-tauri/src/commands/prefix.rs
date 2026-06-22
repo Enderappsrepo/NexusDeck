@@ -1,6 +1,12 @@
 use crate::error::Result;
 use crate::services::prefix_manager;
+use crate::services::proton_audio;
 use crate::services::proton_deps;
+
+fn load_profile(profile_id: &str) -> Result<crate::db::Profile> {
+    crate::db::get_profile(profile_id)?
+        .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))
+}
 
 #[tauri::command]
 pub fn get_protontricks_info() -> proton_deps::ProtontricksInfo {
@@ -43,6 +49,27 @@ pub fn detect_protontricks() -> proton_deps::ProtontricksInfo {
 #[tauri::command]
 pub fn install_proton_deps(game_domain: String, dry_run: bool) -> Result<proton_deps::ProtonDepsResult> {
     proton_deps::install_game_deps(&game_domain, dry_run)
+}
+
+#[tauri::command]
+pub async fn get_bethesda_audio_status(profile_id: String) -> Result<proton_audio::BethesdaAudioStatus> {
+    let profile_id = profile_id;
+    tokio::task::spawn_blocking(move || {
+        let profile = load_profile(&profile_id)?;
+        proton_audio::get_bethesda_audio_status(&profile)
+    })
+    .await
+    .map_err(|e| crate::error::NexusDeckError::Other(format!("Audio status failed: {e}")))?
+}
+
+#[tauri::command]
+pub async fn fix_bethesda_audio(profile_id: String) -> Result<proton_audio::BethesdaAudioStatus> {
+    tokio::task::spawn_blocking(move || {
+        let profile = load_profile(&profile_id)?;
+        proton_audio::ensure_bethesda_audio(&profile)
+    })
+    .await
+    .map_err(|e| crate::error::NexusDeckError::Other(format!("Audio fix failed: {e}")))?
 }
 
 #[tauri::command]
