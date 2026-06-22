@@ -41,7 +41,10 @@ modules:
   - name: sevenzip
     buildsystem: simple
     build-commands:
-      - install -Dm755 7z2601-linux-x64/7zz /app/bin/7z
+      - |
+        BIN=$(find . -name '7zz' -type f | head -1)
+        if [ -z "$BIN" ]; then echo "7zz not found in $(pwd):"; ls -laR .; exit 1; fi
+        install -Dm755 "$BIN" /app/bin/7z
     sources:
       - type: archive
         url: https://www.7-zip.org/a/7z2601-linux-x64.tar.xz
