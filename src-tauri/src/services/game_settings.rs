@@ -225,7 +225,21 @@ pub fn resolve_my_games_dir(profile: &Profile) -> Result<PathBuf> {
             .map(|d| d.join("My Games").join(&folder))
             .ok_or_else(|| NexusDeckError::Other("Could not locate Documents folder".into()))?
     } else if let Some(ref prefix) = profile.proton_prefix_path {
-        PathBuf::from(prefix)
+        let prefix_path = PathBuf::from(prefix);
+        for user in ["steamuser", "steam"] {
+            let candidate = prefix_path
+                .join("drive_c")
+                .join("users")
+                .join(user)
+                .join("Documents")
+                .join("My Games")
+                .join(&folder);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+        // Default to steamuser and create on first write.
+        prefix_path
             .join("drive_c")
             .join("users")
             .join("steamuser")

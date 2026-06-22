@@ -1,6 +1,6 @@
 {
   "minimum_version": "0.6.0",
-  "latest_version": "0.6.4",
-  "message": "NexusDeck 0.6.4 fixes CBBE and other FOMOD installs that left files in numbered option folders (00 Required, 01 Curvy, outfit packs) instead of merging into Data/. Also fixes \"No files were found\" errors on wrapped archives like KS Hairdos and Commonwealth Cuts.",
+  "latest_version": "0.6.5",
+  "message": "NexusDeck 0.6.5 launches Fallout 4 through F4SE automatically (via Proton on Deck), enables archive invalidation for loose textures/meshes, and normalizes Linux file casing after installs. Also fixes CBBE FOMOD empty-destination paths and MCM $ placeholder issues when F4SE was not loading.",
   "release_url": "https://github.com/Enderappsrepo/NexusDeck/releases/latest"
 }

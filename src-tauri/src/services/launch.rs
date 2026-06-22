@@ -6,12 +6,15 @@ use tauri::{AppHandle, Emitter};
 use crate::db::{self, LaunchConfig, LaunchHistoryEntry, Profile};
 use crate::error::{NexusDeckError, Result};
 use crate::games::GameRegistry;
+use crate::services::game_settings::ensure_archive_invalidation;
 use crate::services::launch_config::LaunchSettings;
 use crate::services::plugins_txt::{create_safe_launch_backup, sync_plugins_txt};
-use crate::services::pre_launch::{validate_launch, LaunchValidationResult};
+use crate::services::pre_launch::{profile_has_loose_assets, validate_launch, LaunchValidationResult};
 use crate::services::process_monitor::ProcessMonitor;
+use crate::services::repair::repair_deployment;
 use crate::services::steam_launch::{
-    launch_direct_executable, launch_via_steam_cli, launch_via_steam_uri, proton_compat_data_path,
+    launch_direct_executable, launch_through_proton, launch_via_steam_cli, launch_via_steam_uri,
+    proton_compat_data_path,
 };
 use crate::services::steam_shortcut::resolve_config;
 
@@ -90,6 +93,20 @@ pub fn launch_game(
         let _ = sync_plugins_txt(&profile);
     }
 
+    if pre_actions.iter().any(|a| a == "ensure_archive_invalidation")
+        || profile_has_loose_assets(&profile).unwrap_or(false)
+    {
+        emit_progress(app, profile_id, "preparing_loose_files");
+        let _ = ensure_archive_invalidation(&profile);
+    }
+
+    if pre_actions.iter().any(|a| a == "repair_loose_files") || cfg!(target_os = "linux") {
+        if profile_has_loose_assets(&profile).unwrap_or(false) {
+            emit_progress(app, profile_id, "repairing_loose_files");
+            let _ = repair_deployment(profile_id);
+        }
+    }
+
     emit_progress(app, profile_id, "launching");
 
     let history_id = uuid::Uuid::new_v4().to_string();
@@ -111,31 +128,43 @@ pub fn launch_game(
     let mut args: Vec<String> = serde_json::from_str(&config.args_json).unwrap_or_default();
     args.extend(options.extra_args);
 
-    let (direct_pid, method) = match config.launch_method.as_str() {
-        "direct" | "custom" => {
-            let exe = resolve_executable(&profile, &config)?;
-            let pid = launch_direct_executable(
-                Path::new(&exe),
-                Path::new(&profile.game_path),
-                &args,
-            )?;
-            (Some(pid), "direct".to_string())
-        }
-        _ => {
-            let compat = resolve_compat_path(&profile, app_id);
-            // Prefer the steam:// URI on every platform. Inside the Flatpak
-            // sandbox it is the only reliable way to reach the host Steam (via
-            // the desktop portal), and it lets Steam set up the Proton prefix
-            // itself. Fall back to the Steam CLI — which can also pass custom
-            // launch args — only if the URI launch fails. (Custom args are best
-            // set via Steam launch options or the direct/custom launch method.)
-            let method = if launch_via_steam_uri(app_id).is_ok() {
-                "steam_uri".to_string()
-            } else {
-                launch_via_steam_cli(app_id, &args, compat.as_deref())?;
-                "steam_cli".to_string()
-            };
-            (None, method)
+    let (direct_pid, method) = if should_launch_direct(&profile, &config) {
+        let exe = resolve_executable(&profile, &config)?;
+        let game_root = Path::new(&profile.game_path);
+        let pid = if cfg!(target_os = "linux") {
+            launch_through_proton(&profile, Path::new(&exe), game_root, &args)?
+        } else {
+            launch_direct_executable(Path::new(&exe), game_root, &args)?
+        };
+        let label = if config.use_f4se { "f4se_direct" } else { "direct" };
+        (Some(pid), label.to_string())
+    } else {
+        match config.launch_method.as_str() {
+            "direct" | "custom" => {
+                let exe = resolve_executable(&profile, &config)?;
+                let pid = launch_direct_executable(
+                    Path::new(&exe),
+                    Path::new(&profile.game_path),
+                    &args,
+                )?;
+                (Some(pid), "direct".to_string())
+            }
+            _ => {
+                let compat = resolve_compat_path(&profile, app_id);
+                // Prefer the steam:// URI on every platform. Inside the Flatpak
+                // sandbox it is the only reliable way to reach the host Steam (via
+                // the desktop portal), and it lets Steam set up the Proton prefix
+                // itself. Fall back to the Steam CLI — which can also pass custom
+                // launch args — only if the URI launch fails. (Custom args are best
+                // set via Steam launch options or the direct/custom launch method.)
+                let method = if launch_via_steam_uri(app_id).is_ok() {
+                    "steam_uri".to_string()
+                } else {
+                    launch_via_steam_cli(app_id, &args, compat.as_deref())?;
+                    "steam_cli".to_string()
+                };
+                (None, method)
+            }
         }
     };
 
@@ -168,6 +197,23 @@ pub fn launch_game(
 fn load_profile(profile_id: &str) -> Result<Profile> {
     db::get_profile(profile_id)?
         .ok_or_else(|| NexusDeckError::NotFound("Profile not found".into()))
+}
+
+fn should_launch_direct(profile: &Profile, config: &LaunchConfig) -> bool {
+    if config.launch_method == "direct" || config.launch_method == "custom" {
+        return true;
+    }
+    if !config.use_f4se {
+        return false;
+    }
+    let Ok(plugin) = GameRegistry::get(&profile.game_domain) else {
+        return false;
+    };
+    // Steam's default shortcut always starts the vanilla exe — route F4SE through
+    // the loader directly (via Proton on Linux).
+    plugin
+        .detect_script_extender(Path::new(&profile.game_path))
+        .installed
 }
 
 fn resolve_executable(profile: &Profile, config: &LaunchConfig) -> Result<String> {

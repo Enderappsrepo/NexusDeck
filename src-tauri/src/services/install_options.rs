@@ -293,10 +293,21 @@ fn load_cached_fomod_groups(archive_path: &Path) -> Result<Option<InstallWizard>
     }
     let raw = std::fs::read_to_string(&path)?;
     if let Ok(wizard) = serde_json::from_str::<InstallWizard>(&raw) {
+        // Stale cache from before required_files / conditional patterns were stored.
+        if wizard.required_files.is_empty()
+            && wizard.conditional_patterns.is_empty()
+            && !wizard.flattened_groups().is_empty()
+        {
+            return Ok(None);
+        }
         return Ok(Some(wizard));
     }
-    // Legacy cache: flat groups only
+    // Legacy cache: flat groups only — missing required_files/conditional patterns.
+    // Force a fresh XML parse so destination remapping works (CBBE, etc.).
     let groups: Vec<InstallOptionGroup> = serde_json::from_str(&raw)?;
+    if !groups.is_empty() {
+        return Ok(None);
+    }
     Ok(Some(InstallWizard {
         module_name: None,
         module_image_path: None,
@@ -570,6 +581,18 @@ pub fn apply_fomod_destination_remap(
         .collect()
 }
 
+fn fomod_mapping_destination(mapping: &FomodFileRef) -> &str {
+    match mapping
+        .destination
+        .as_deref()
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+    {
+        None => "Data",
+        Some(dest) => dest,
+    }
+}
+
 fn active_fomod_file_mappings(
     groups: &[InstallOptionGroup],
     selections: &[SelectedInstallOption],
@@ -582,7 +605,39 @@ fn active_fomod_file_mappings(
             mappings.extend(pattern.files.clone());
         }
     }
+
+    let selection_map: HashMap<&str, &[String]> = selections
+        .iter()
+        .map(|s| (s.group_id.as_str(), s.option_ids.as_slice()))
+        .collect();
+    for group in groups {
+        let selected_ids = selection_map
+            .get(group.id.as_str())
+            .copied()
+            .unwrap_or(&[]);
+        for option in &group.options {
+            if selected_ids.contains(&option.id) {
+                for prefix in &option.folder_prefixes {
+                    mappings.push(folder_prefix_to_fomod_mapping(prefix));
+                }
+            }
+        }
+    }
+
     mappings
+}
+
+fn folder_prefix_to_fomod_mapping(prefix: &str) -> FomodFileRef {
+    let normalized = prefix.replace('\\', "/").trim_matches('/').to_string();
+    let source = normalized
+        .strip_prefix("Data/")
+        .or_else(|| normalized.strip_prefix("data/"))
+        .unwrap_or(&normalized)
+        .to_string();
+    FomodFileRef {
+        source,
+        destination: None,
+    }
 }
 
 fn remap_entry_for_fomod_mappings(rel: &str, mappings: &[FomodFileRef]) -> Option<String> {
@@ -604,19 +659,15 @@ fn remap_entry_for_fomod_mappings(rel: &str, mappings: &[FomodFileRef]) -> Optio
 }
 
 fn remap_entry_for_fomod_mapping(rel: &str, mapping: &FomodFileRef) -> Option<String> {
-    let dest = mapping.destination.as_deref()?.trim();
-    if dest.is_empty() {
-        return None;
-    }
     let source = mapping.source.replace('\\', "/").trim_matches('/').to_string();
-    let dest = dest.replace('\\', "/").trim_matches('/').to_string();
+    let dest = fomod_mapping_destination(mapping);
 
     for candidate in fomod_source_match_candidates(&source) {
         if rel == candidate {
-            return Some(apply_fomod_destination(&dest, ""));
+            return Some(apply_fomod_destination(dest, ""));
         }
         if let Some(suffix) = rel.strip_prefix(&format!("{candidate}/")) {
-            return Some(apply_fomod_destination(&dest, suffix));
+            return Some(apply_fomod_destination(dest, suffix));
         }
     }
     None
@@ -1907,11 +1958,35 @@ mod tests {
     }
 
     #[test]
+    fn remaps_fomod_empty_destination_to_data_root() {
+        let entries = vec![
+            entry("00 Required/CBBE.esp"),
+            entry("00 Required/meshes/actors/character/characterassets/FemaleBody.nif"),
+        ];
+        let mapping = FomodFileRef {
+            source: "00 Required".into(),
+            destination: None,
+        };
+        let remapped = remap_entry_for_fomod_mappings("00 Required/CBBE.esp", &[mapping.clone()])
+            .unwrap();
+        assert_eq!(remapped, "CBBE.esp");
+        let remapped_mesh = remap_entry_for_fomod_mappings(
+            "00 Required/meshes/actors/character/characterassets/FemaleBody.nif",
+            &[mapping],
+        )
+        .unwrap();
+        assert_eq!(
+            remapped_mesh,
+            "meshes/actors/character/characterassets/FemaleBody.nif"
+        );
+    }
+
+    #[test]
     fn remaps_fomod_destination_folders_into_data_root() {
         let xml = r#"
         <config>
           <requiredInstallFiles>
-            <folder source="00 Required" destination="Data"/>
+            <folder source="00 Required" destination=""/>
           </requiredInstallFiles>
           <installSteps>
             <installStep name="Body">
@@ -1969,7 +2044,7 @@ mod tests {
         let xml = r#"
         <config>
           <requiredInstallFiles>
-            <folder source="00 Required" destination="Data"/>
+            <folder source="00 Required" destination=""/>
           </requiredInstallFiles>
           <installSteps>
             <installStep name="Outfits">

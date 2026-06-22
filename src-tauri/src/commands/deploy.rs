@@ -1212,6 +1212,23 @@ pub async fn install_mod_from_archive(
         }
     };
 
+    #[cfg(target_os = "linux")]
+    {
+        match crate::services::repair::repair_deployment(&profile_id) {
+            Ok(result) if result.files_relocated > 0 => {
+                session.info(
+                    "proton",
+                    &format!(
+                        "Normalized {} loose-file path(s) for Linux (textures/meshes)",
+                        result.files_relocated
+                    ),
+                );
+            }
+            Ok(_) => {}
+            Err(e) => session.warn("proton", &format!("Loose-file repair skipped: {e}")),
+        }
+    }
+
     if profile.proton_prefix_path.as_deref().unwrap_or("").is_empty() {
         session.warn(
             "proton",

@@ -3,16 +3,13 @@
 //! (built body meshes) lands in the game's Data folder.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
 use crate::db::{self, Profile};
 use crate::error::{NexusDeckError, Result};
-use crate::games::GameRegistry;
-use crate::services::steam::detect_steam;
-use crate::services::steam_launch::launch_direct_executable;
+use crate::services::steam_launch::{launch_direct_executable, launch_through_proton};
 
 pub const FO4_BODYSLIDE_NEXUS_URL: &str =
     "https://www.nexusmods.com/fallout4/mods/25";
@@ -292,7 +289,7 @@ pub fn launch_sseedit(profile_id: &str) -> Result<String> {
     }
 
     let profile = load_profile(profile_id)?;
-    launch_through_proton(&profile, Path::new(&exe), Path::new(&cwd))?;
+    launch_through_proton(&profile, Path::new(&exe), Path::new(&cwd), &[])?;
     Ok("Launched SSEEdit through Proton.".into())
 }
 
@@ -312,138 +309,6 @@ pub fn launch_bodyslide(profile_id: &str) -> Result<String> {
     }
 
     let profile = load_profile(profile_id)?;
-    launch_through_proton(&profile, Path::new(&exe), Path::new(&cwd))?;
+    launch_through_proton(&profile, Path::new(&exe), Path::new(&cwd), &[])?;
     Ok("Launched BodySlide through Proton. Batch Build your presets, then verify meshes in Data/meshes/.".into())
-}
-
-fn launch_through_proton(profile: &Profile, exe: &Path, cwd: &Path) -> Result<()> {
-    let plugin = GameRegistry::get(&profile.game_domain)?;
-    let app_id = plugin.steam_app_id().unwrap_or(489830);
-
-    let compat = compat_data_dir(profile, app_id).ok_or_else(|| {
-        NexusDeckError::Other(
-            "Couldn't find the game's Proton prefix. Launch the game once through Steam so Proton creates it, then try again.".into(),
-        )
-    })?;
-
-    let steam_root = steam_root_dir().ok_or_else(|| {
-        NexusDeckError::Other("Couldn't locate your Steam install.".into())
-    })?;
-
-    let proton = find_proton(&steam_root).ok_or_else(|| {
-        NexusDeckError::Other(
-            "Couldn't find a Proton version. Open the game's Properties in Steam, force a Proton version under Compatibility, then try again.".into(),
-        )
-    })?;
-
-    let mut cmd = if Path::new("/.flatpak-info").exists() {
-        let mut c = Command::new("flatpak-spawn");
-        c.arg("--host");
-        c.arg(format!("--directory={}", cwd.display()));
-        c.arg(format!("--env=STEAM_COMPAT_DATA_PATH={}", compat.display()));
-        c.arg(format!(
-            "--env=STEAM_COMPAT_CLIENT_INSTALL_PATH={}",
-            steam_root.display()
-        ));
-        c.arg(format!("--env=STEAM_COMPAT_INSTALL_PATH={}", profile.game_path));
-        c.arg(proton.display().to_string());
-        c.arg("run");
-        c.arg(exe.display().to_string());
-        c
-    } else {
-        let mut c = Command::new(&proton);
-        c.arg("run").arg(exe).current_dir(cwd);
-        c.env("STEAM_COMPAT_DATA_PATH", &compat);
-        c.env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_root);
-        c.env("STEAM_COMPAT_INSTALL_PATH", &profile.game_path);
-        c
-    };
-
-    cmd.spawn().map_err(|e| {
-        NexusDeckError::LaunchFailed(format!("Failed to start BodySlide through Proton: {e}"))
-    })?;
-    Ok(())
-}
-
-fn compat_data_dir(profile: &Profile, app_id: u32) -> Option<PathBuf> {
-    if let Some(ref prefix) = profile.proton_prefix_path {
-        return Path::new(prefix).parent().map(Path::to_path_buf);
-    }
-    let steam = detect_steam().ok().flatten()?;
-    steam.library_folders.into_iter().find_map(|lib| {
-        let candidate = Path::new(&lib)
-            .join("steamapps")
-            .join("compatdata")
-            .join(app_id.to_string());
-        candidate.exists().then_some(candidate)
-    })
-}
-
-fn steam_root_dir() -> Option<PathBuf> {
-    if let Ok(Some(steam)) = detect_steam() {
-        let p = PathBuf::from(&steam.steam_path);
-        if p.exists() {
-            return Some(p);
-        }
-    }
-    let home = std::env::var("HOME").ok()?;
-    [
-        format!("{home}/.steam/steam"),
-        format!("{home}/.local/share/Steam"),
-        format!("{home}/.var/app/com.valvesoftware.Steam/data/Steam"),
-    ]
-    .into_iter()
-    .map(PathBuf::from)
-    .find(|p| p.exists())
-}
-
-fn find_proton(steam_root: &Path) -> Option<PathBuf> {
-    let mut roots = vec![
-        steam_root.join("steamapps").join("common"),
-        steam_root.join("compatibilitytools.d"),
-    ];
-    if let Ok(Some(steam)) = detect_steam() {
-        for lib in steam.library_folders {
-            roots.push(Path::new(&lib).join("steamapps").join("common"));
-        }
-    }
-
-    let mut best: Option<(i64, PathBuf)> = None;
-    for root in roots {
-        let Ok(entries) = std::fs::read_dir(&root) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if !name.to_lowercase().contains("proton") {
-                continue;
-            }
-            let proton_bin = entry.path().join("proton");
-            if !proton_bin.exists() {
-                continue;
-            }
-            let score = proton_score(&name);
-            if best.as_ref().map(|(s, _)| score > *s).unwrap_or(true) {
-                best = Some((score, proton_bin));
-            }
-        }
-    }
-    best.map(|(_, p)| p)
-}
-
-fn proton_score(name: &str) -> i64 {
-    let lower = name.to_lowercase();
-    if lower.contains("experimental") {
-        return 100_000;
-    }
-    let digits: String = name
-        .chars()
-        .map(|c| if c.is_ascii_digit() { c } else { ' ' })
-        .collect();
-    digits
-        .split_whitespace()
-        .take(2)
-        .collect::<String>()
-        .parse::<i64>()
-        .unwrap_or(0)
 }

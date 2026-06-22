@@ -757,6 +757,7 @@ pub fn seed_default_launch_configs(profile_id: &str, game_domain: &str) -> Resul
         .map(|label| format!("Default ({label})"))
         .unwrap_or_else(|| "Default".to_string());
     let use_extender = extender_label.is_some();
+    let pre_launch = r#"["sync_plugins","ensure_archive_invalidation","repair_loose_files"]"#.to_string();
     let defaults = vec![
         LaunchConfig {
             id: uuid::Uuid::new_v4().to_string(),
@@ -766,7 +767,7 @@ pub fn seed_default_launch_configs(profile_id: &str, game_domain: &str) -> Resul
             launch_method: "steam".to_string(),
             custom_executable: None,
             args_json: "[]".to_string(),
-            pre_launch_actions_json: serde_json::json!(["sync_plugins"]).to_string(),
+            pre_launch_actions_json: pre_launch.clone(),
             is_default: true,
             last_used_at: None,
             created_at: now,
@@ -779,7 +780,7 @@ pub fn seed_default_launch_configs(profile_id: &str, game_domain: &str) -> Resul
             launch_method: "steam".to_string(),
             custom_executable: None,
             args_json: "[]".to_string(),
-            pre_launch_actions_json: serde_json::json!(["sync_plugins"]).to_string(),
+            pre_launch_actions_json: pre_launch.clone(),
             is_default: false,
             last_used_at: None,
             created_at: now,
@@ -792,7 +793,7 @@ pub fn seed_default_launch_configs(profile_id: &str, game_domain: &str) -> Resul
             launch_method: "steam".to_string(),
             custom_executable: None,
             args_json: deck_args.to_string(),
-            pre_launch_actions_json: serde_json::json!(["sync_plugins"]).to_string(),
+            pre_launch_actions_json: pre_launch,
             is_default: false,
             last_used_at: None,
             created_at: now,
