@@ -369,6 +369,8 @@ export interface DownloadSettings {
   max_concurrent: number;
   speed_limit_kbps: number;
   auto_install_after_download?: boolean;
+  pause_on_battery?: boolean;
+  bandwidth_saver?: boolean;
 }
 
 export interface ModSearchFilters {
@@ -483,6 +485,83 @@ export interface CollectionDetail {
   mods: CollectionModEntry[];
 }
 
+export interface CollectionModInput {
+  mod_id: number;
+  file_id?: number | null;
+  name: string;
+  optional: boolean;
+  version: string;
+}
+
+export interface CollectionModDiffEntry {
+  mod_id: number;
+  name: string;
+  optional: boolean;
+  status: "missing" | "installed" | "outdated" | "wrong_file" | string;
+  collection_version: string;
+  installed_version?: string | null;
+  installed_mod_id?: string | null;
+  collection_file_id?: number | null;
+  installed_file_id?: number | null;
+}
+
+export interface CollectionDiffResult {
+  installed_count: number;
+  total_count: number;
+  missing_count: number;
+  outdated_count: number;
+  wrong_file_count: number;
+  mods: CollectionModDiffEntry[];
+}
+
+export interface ModSafetyReport {
+  safe: boolean;
+  severity: string;
+  warnings: string[];
+  plugin_count: number;
+  has_scripts: boolean;
+}
+
+export interface OrphanFileEntry {
+  path: string;
+  size_bytes: number;
+}
+
+export interface DuplicateFileEntry {
+  path: string;
+  mods: string[];
+}
+
+export interface DeployScanResult {
+  orphan_files: OrphanFileEntry[];
+  duplicate_files: DuplicateFileEntry[];
+  orphan_count: number;
+  duplicate_count: number;
+}
+
+export interface ProfileConflictSummary {
+  total_conflicts: number;
+  affected_mods: string[];
+  conflicts: FileConflict[];
+}
+
+export interface TextureBudgetReport {
+  loose_file_count: number;
+  loose_bytes: number;
+  texture_count: number;
+  mesh_count: number;
+  estimated_vram_mb: number;
+  recommendation: string;
+}
+
+export interface ModLoadout {
+  id: string;
+  name: string;
+  enabled_mod_ids: string[];
+  sort_orders: Record<string, number>;
+  created_at: number;
+}
+
 export interface ModUpdateInfo {
   installed_mod_id: string;
   nexus_mod_id: number;
@@ -564,6 +643,13 @@ export interface LoadOrderPluginEntry {
   mod_name?: string | null;
 }
 
+export interface LootPluginIssue {
+  code: string;
+  plugin?: string | null;
+  message: string;
+  severity: string;
+}
+
 export interface LoadOrderState {
   mods: LoadOrderModEntry[];
   plugins: LoadOrderPluginEntry[];
@@ -571,6 +657,7 @@ export interface LoadOrderState {
   plugins_txt_ready: boolean;
   active_plugin_count: number;
   message: string;
+  loot_issues: LootPluginIssue[];
 }
 
 export interface PluginsSyncResult {
@@ -688,6 +775,7 @@ export interface BodySetupStatus {
 export interface InstallPreset {
   strategy: string;
   autoConfirm?: boolean;
+  fomodPreset?: "cbbe_deck";
 }
 
 export interface RepairResult {

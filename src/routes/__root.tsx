@@ -26,7 +26,8 @@ import { useCollectionInstallStore } from "@/stores/collectionInstallStore";
 import { api } from "@/lib/commands";
 import { ensureGamepadPolyfill } from "@/lib/gamepadPolyfill";
 import { applyPerfAttribute } from "@/lib/platform";
-import type { DownloadProgress, Profile, AppUpdateInfo } from "@/lib/nexus/types";
+import type { DownloadProgress, Profile, AppUpdateInfo, ModFileInfo } from "@/lib/nexus/types";
+import { modFileDownloadName } from "@/lib/nexus/types";
 
 const DISMISSED_UPDATE_KEY = "nexusdeck_dismissed_update_version";
 
@@ -112,6 +113,7 @@ function RootLayout() {
     }
     setUpdateInfo(null);
   }, [updateInfo]);
+  const registerPendingInstall = useInstallQueueStore((s) => s.registerPendingInstall);
   const prioritizeDownload = useInstallQueueStore((s) => s.prioritizeDownload);
   const pendingByDownloadId = useInstallQueueStore((s) => s.pendingByDownloadId);
 
@@ -152,6 +154,7 @@ function RootLayout() {
         pending?.source === "dep" ||
         pending?.source === "bodyslide" ||
         pending?.source === "cbbe" ||
+        pending?.source === "nxm" ||
         downloadSettings.auto_install_after_download;
 
       if (autoInstall) {
@@ -159,7 +162,9 @@ function RootLayout() {
         const installPreset =
           source === "bodyslide"
             ? { strategy: "merge_loose_to_data", autoConfirm: true }
-            : undefined;
+            : source === "cbbe"
+              ? { strategy: "auto", fomodPreset: "cbbe_deck" as const, autoConfirm: true }
+              : undefined;
         await enqueueFromDownload(download, source, profiles, {
           replaceModId: pending?.replaceModId,
           installPreset,
@@ -255,8 +260,45 @@ function RootLayout() {
       setError(e.payload.id, e.payload.error);
     }).then((u) => unsubs.push(u));
     listen<string>("nxm-url", (e) => {
-      api.handleNxmUrl(e.payload).then((data) => {
-        const d = data as { game_domain: string; mod_id: number };
+      api.handleNxmUrl(e.payload).then(async (data) => {
+        const d = data as {
+          game_domain: string;
+          mod_id: number;
+          file_id?: number;
+          files?: ModFileInfo[];
+        };
+        const profile = profiles.find((p) => p.game_domain === d.game_domain);
+        const nxmOneClick =
+          localStorage.getItem("nexusdeck_nxm_one_click") !== "false";
+        if (profile && nxmOneClick && d.files?.length) {
+          const fileId = d.file_id ?? d.files[0].file_id;
+          const file = d.files.find((f) => f.file_id === fileId) ?? d.files[0];
+          try {
+            const progress = await api.startModDownload({
+              gameDomain: d.game_domain,
+              modId: d.mod_id,
+              fileId: file.file_id,
+              fileName: modFileDownloadName(file),
+              stagingPath: profile.staging_path,
+              expectedSizeKb: file.size_kb,
+              modName: file.name,
+              profileId: profile.id,
+            });
+            registerPendingInstall(progress.id, {
+              source: "nxm",
+              modId: d.mod_id,
+              modName: file.name,
+            });
+            setProgress(progress);
+            navigate({
+              to: "/games/$domain/mods/$modId",
+              params: { domain: d.game_domain, modId: String(d.mod_id) },
+            });
+            return;
+          } catch {
+            // fall through to mod page navigation
+          }
+        }
         navigate({
           to: "/games/$domain/mods/$modId",
           params: { domain: d.game_domain, modId: String(d.mod_id) },
@@ -264,7 +306,7 @@ function RootLayout() {
       });
     }).then((u) => unsubs.push(u));
     return () => unsubs.forEach((u) => u());
-  }, [setProgress, setError, navigate, handleDownloadComplete]);
+  }, [setProgress, setError, navigate, handleDownloadComplete, profiles, registerPendingInstall]);
 
   useEffect(() => {
     const onInstall = (e: Event) => {

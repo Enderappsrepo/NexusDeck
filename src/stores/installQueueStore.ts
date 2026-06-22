@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { api } from "@/lib/commands";
 import type { DownloadProgress, ModFileInfo, Profile, InstallPreset } from "@/lib/nexus/types";
 
-export type InstallJobSource = "manual" | "update" | "dep" | "collection" | "bodyslide" | "cbbe";
+export type InstallJobSource = "manual" | "update" | "dep" | "collection" | "bodyslide" | "cbbe" | "nxm";
 export type InstallJobStatus = "queued" | "active" | "done" | "failed";
 
 export interface InstallJob {

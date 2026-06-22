@@ -51,6 +51,10 @@ pub struct DownloadSettings {
     pub speed_limit_kbps: u32,
     #[serde(default)]
     pub auto_install_after_download: bool,
+    #[serde(default)]
+    pub pause_on_battery: bool,
+    #[serde(default)]
+    pub bandwidth_saver: bool,
 }
 
 impl Default for DownloadSettings {
@@ -59,6 +63,8 @@ impl Default for DownloadSettings {
             max_concurrent: 2,
             speed_limit_kbps: 0,
             auto_install_after_download: false,
+            pause_on_battery: false,
+            bandwidth_saver: false,
         }
     }
 }
@@ -448,7 +454,13 @@ impl DownloadManager {
         spawn(async move {
             loop {
                 let settings = manager.get_download_settings().unwrap_or_default();
-                let max = settings.max_concurrent.max(1) as usize;
+                if settings.pause_on_battery && on_battery_power() {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+
+                let (max_concurrent, _) = effective_download_limits(&settings);
+                let max = max_concurrent.max(1) as usize;
                 let running = manager.running_count.load(Ordering::SeqCst);
 
                 if running >= max {
@@ -496,6 +508,7 @@ impl DownloadManager {
         )?;
 
         let settings = self.get_download_settings().unwrap_or_default();
+        let (_, speed_limit_kbps) = effective_download_limits(&settings);
         let result = self
             .download_file(
                 &item.app,
@@ -509,7 +522,7 @@ impl DownloadManager {
                 expected_bytes,
                 item.resume_bytes,
                 cancel_rx,
-                settings.speed_limit_kbps,
+                speed_limit_kbps,
                 &item.mod_name,
                 &item.profile_id,
                 &item.update_target_mod_id,
@@ -788,6 +801,40 @@ fn validate_download(path: &Path, bytes_done: u64, expected_bytes: u64) -> Resul
     }
 
     Ok(())
+}
+
+fn on_battery_power() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(entries) = std::fs::read_dir("/sys/class/power_supply") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Ok(kind) = std::fs::read_to_string(path.join("type")) {
+                    if kind.trim() == "Battery" {
+                        if let Ok(status) = std::fs::read_to_string(path.join("status")) {
+                            match status.trim() {
+                                "Discharging" | "Not charging" => return true,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+fn effective_download_limits(settings: &DownloadSettings) -> (u32, u32) {
+    let mut max_concurrent = settings.max_concurrent;
+    let mut speed_limit_kbps = settings.speed_limit_kbps;
+    if settings.bandwidth_saver {
+        max_concurrent = max_concurrent.min(1);
+        if speed_limit_kbps == 0 {
+            speed_limit_kbps = 512;
+        }
+    }
+    (max_concurrent, speed_limit_kbps)
 }
 
 impl Default for DownloadManager {

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { DownloadProgress } from "@/lib/nexus/types";
+import type { DownloadProgress, Profile } from "@/lib/nexus/types";
 import type { InstallJob } from "@/stores/installQueueStore";
 
 export type CollectionModStatus =
@@ -7,11 +7,14 @@ export type CollectionModStatus =
   | "downloading"
   | "installing"
   | "done"
-  | "failed";
+  | "failed"
+  | "skipped";
 
 export interface CollectionModProgress {
   modId: number;
   name: string;
+  fileId?: number | null;
+  optional: boolean;
   downloadId?: string;
   status: CollectionModStatus;
   error?: string;
@@ -21,7 +24,7 @@ export interface ActiveCollectionInstall {
   slug: string;
   name: string;
   gameDomain: string;
-  profileId: string;
+  profile: Profile;
   mods: CollectionModProgress[];
   startedAt: number;
 }
@@ -32,6 +35,7 @@ interface CollectionInstallState {
   bindDownload: (modId: number, downloadId: string) => void;
   syncFromDownload: (download: DownloadProgress, error?: string) => void;
   syncFromInstallJob: (job: InstallJob) => void;
+  markSkipped: (modId: number) => void;
   dismiss: () => void;
   doneCount: () => number;
   totalCount: () => number;
@@ -126,12 +130,21 @@ export const useCollectionInstallStore = create<CollectionInstallState>((set, ge
       return { active: { ...s.active, mods } };
     }),
 
+  markSkipped: (modId) =>
+    set((s) => {
+      if (!s.active) return s;
+      const mods = s.active.mods.map((m) =>
+        m.modId === modId ? { ...m, status: "skipped" as const } : m
+      );
+      return { active: { ...s.active, mods } };
+    }),
+
   dismiss: () => set({ active: null }),
 
   doneCount: () => {
     const active = get().active;
     if (!active) return 0;
-    return active.mods.filter((m) => m.status === "done").length;
+    return active.mods.filter((m) => m.status === "done" || m.status === "skipped").length;
   },
 
   totalCount: () => get().active?.mods.length ?? 0,

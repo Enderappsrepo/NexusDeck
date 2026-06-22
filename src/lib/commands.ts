@@ -4,8 +4,15 @@ import type {
   BodySetupStatus,
   BodySlideInfo,
   CollectionDetail,
+  CollectionDiffResult,
+  CollectionModInput,
   CollectionSummary,
   DependencyGraph,
+  DeployScanResult,
+  ModLoadout,
+  ModSafetyReport,
+  ProfileConflictSummary,
+  TextureBudgetReport,
   DownloadProgress,
   DownloadRecord,
   DownloadSettings,
@@ -740,6 +747,49 @@ export const api = {
       lastN: params.lastN ?? null,
       includeArchive: params.includeArchive ?? null,
     }),
+
+  diffCollectionInstall: (profileId: string, collectionMods: CollectionModInput[]) =>
+    invoke<CollectionDiffResult>("diff_collection_install", { profileId, collectionMods }),
+
+  assessModSafety: (profileId: string, installedModId: string, action: string) =>
+    invoke<ModSafetyReport>("assess_mod_safety", { profileId, installedModId, action }),
+
+  scanDeployFootprint: (profileId: string) =>
+    invoke<DeployScanResult>("scan_deploy_footprint", { profileId }),
+
+  scanProfileConflicts: (profileId: string) =>
+    invoke<ProfileConflictSummary>("scan_profile_conflicts", { profileId }),
+
+  analyzeTextureBudget: (profileId: string) =>
+    invoke<TextureBudgetReport>("analyze_texture_budget", { profileId }),
+
+  listModLoadouts: (profileId: string) =>
+    invoke<ModLoadout[]>("list_mod_loadouts", { profileId }),
+
+  saveModLoadout: (profileId: string, name: string) =>
+    invoke<ModLoadout>("save_mod_loadout", { profileId, name }),
+
+  applyModLoadout: (profileId: string, loadoutId: string) =>
+    invoke<void>("apply_mod_loadout", { profileId, loadoutId }),
+
+  deleteModLoadout: (profileId: string, loadoutId: string) =>
+    invoke<void>("delete_mod_loadout", { profileId, loadoutId }),
+
+  exportSyncBundle: (profileId: string) =>
+    invoke<string>("export_sync_bundle", { profileId }),
+
+  exportSteamInputGuide: () => invoke<string>("export_steam_input_guide"),
+
+  getModUpdateChangelog: (gameDomain: string, modId: number) =>
+    invoke<string>("get_mod_update_changelog", { gameDomain, modId }),
+
+  parseModlistImport: (content: string, format: string) =>
+    invoke<Array<{ name: string; source: string }>>("parse_modlist_import", { content, format }),
+
+  readTextFile: (path: string) => invoke<string>("read_text_file", { path }),
+
+  writeTextFile: (path: string, content: string) =>
+    invoke<void>("write_text_file", { path, content }),
 };
 
 export const logStartupEvent = api.logStartupEvent;

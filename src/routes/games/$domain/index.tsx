@@ -21,6 +21,11 @@ import { GameSettingsPanel } from "@/components/game/GameSettingsPanel";
 import { GameArt } from "@/components/game/GameArt";
 import { GameStatStrip } from "@/components/game/GameStatStrip";
 import { BodySlideSetupPanel } from "@/components/game/BodySlideSetupPanel";
+import { LoadOrderBanner } from "@/components/game/LoadOrderBanner";
+import { ModUpdatesPanel } from "@/components/mod/ModUpdatesPanel";
+import { ProfileBackupPanel } from "@/components/game/ProfileBackupPanel";
+import { ModLoadoutsPanel } from "@/components/library/ModLoadoutsPanel";
+import { TextureBudgetPanel } from "@/components/library/TextureBudgetPanel";
 import { ModSearchBar } from "@/components/mod/ModSearchBar";
 import { LaunchButton } from "@/components/launch/LaunchButton";
 import { useLaunchStore } from "@/stores/launchStore";
@@ -238,6 +243,8 @@ function GameDashboard() {
         </TabsList>
 
         <TabsContent value="play" className="space-y-5">
+          <LoadOrderBanner profileId={profile.id} gameDomain={domain} />
+          <ModUpdatesPanel profileId={profile.id} gameDomain={domain} compact />
           <DeckAdvisorPanel profileId={profile.id} />
           <BodySlideSetupPanel profileId={profile.id} />
           <GameModDiscovery domain={domain} signedIn={!!user} sections="hero" />
@@ -247,8 +254,11 @@ function GameDashboard() {
           <GameModDiscovery domain={domain} signedIn={!!user} sections="rows" compact />
         </TabsContent>
 
-        <TabsContent value="tune">
+        <TabsContent value="tune" className="space-y-5">
           <GameSettingsPanel profileId={profile.id} />
+          <ModLoadoutsPanel profileId={profile.id} />
+          <TextureBudgetPanel profileId={profile.id} />
+          <ProfileBackupPanel profileId={profile.id} />
         </TabsContent>
 
         <TabsContent value="community">

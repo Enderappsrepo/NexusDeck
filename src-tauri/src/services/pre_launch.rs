@@ -311,6 +311,15 @@ fn append_plugin_launch_checks(
             "info",
         ));
     }
+
+    for issue in &state.loot_issues {
+        let check = item(&issue.code, &issue.message, &issue.severity);
+        if issue.severity == "error" {
+            blockers.push(check);
+        } else {
+            warnings.push(check);
+        }
+    }
 }
 
 /// True when any enabled mod deploys loose assets under Data/ (textures, meshes, etc.).

@@ -15,7 +15,9 @@
     "install:url": "node scripts/get-install-url.mjs",
     "install:sync-docs": "node scripts/sync-install-docs.mjs",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:router": "npx tsx scripts/test-gamepad-router.ts",
+    "test:fomod": "npx tsx scripts/test-fomod-presets.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.17",

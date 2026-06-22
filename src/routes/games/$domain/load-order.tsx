@@ -18,6 +18,7 @@ import { LaunchButton } from "@/components/launch/LaunchButton";
 import { useGamesStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { triggerHaptic } from "@/lib/haptics";
+import { LoadOrderIssuesPanel } from "@/components/game/LoadOrderIssuesPanel";
 import type { LoadOrderState } from "@/lib/nexus/types";
 
 export const Route = createFileRoute("/games/$domain/load-order")({
@@ -143,6 +144,10 @@ function LoadOrderPage() {
         </div>
         <LaunchButton profileId={profile.id} gameDomain={domain} compact />
       </div>
+
+      {state && state.loot_issues.length > 0 && (
+        <LoadOrderIssuesPanel issues={state.loot_issues} gameDomain={domain} />
+      )}
 
       {state && (
         <Card className="border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5 p-4">

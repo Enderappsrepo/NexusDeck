@@ -284,6 +284,21 @@ pub fn run() {
             export_install_logs,
             export_install_logs_to,
             get_install_log_path_for_session,
+            diff_collection_install,
+            assess_mod_safety,
+            scan_deploy_footprint,
+            scan_profile_conflicts,
+            analyze_texture_budget,
+            list_mod_loadouts,
+            save_mod_loadout,
+            apply_mod_loadout,
+            delete_mod_loadout,
+            export_sync_bundle,
+            export_steam_input_guide,
+            get_mod_update_changelog,
+            parse_modlist_import,
+            read_text_file,
+            write_text_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

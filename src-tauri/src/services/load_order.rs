@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use libloot::GameType;
+use libloot::{EvalMode, GameType, MergeMode};
 use serde::{Deserialize, Serialize};
 
 use crate::db::{self, InstalledMod, Profile};
@@ -30,6 +30,14 @@ pub struct LoadOrderPluginEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LootPluginIssue {
+    pub code: String,
+    pub plugin: Option<String>,
+    pub message: String,
+    pub severity: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadOrderState {
     pub mods: Vec<LoadOrderModEntry>,
     pub plugins: Vec<LoadOrderPluginEntry>,
@@ -37,6 +45,7 @@ pub struct LoadOrderState {
     pub plugins_txt_ready: bool,
     pub active_plugin_count: usize,
     pub message: String,
+    pub loot_issues: Vec<LootPluginIssue>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,6 +215,8 @@ pub fn get_load_order_state(profile_id: &str) -> Result<LoadOrderState> {
         )
     };
 
+    let loot_issues = analyze_loot_issues(&profile, &plugin_entries, &plugin_to_mod).unwrap_or_default();
+
     Ok(LoadOrderState {
         mods: mod_entries,
         plugins: plugin_entries,
@@ -213,6 +224,7 @@ pub fn get_load_order_state(profile_id: &str) -> Result<LoadOrderState> {
         plugins_txt_ready,
         active_plugin_count,
         message,
+        loot_issues,
     })
 }
 
@@ -332,6 +344,7 @@ fn loot_plugin_ranks(
         "skyrim" => GameType::Skyrim,
         "fallout3" => GameType::Fallout3,
         "falloutnv" => GameType::FalloutNV,
+        "starfield" => GameType::Starfield,
         _ => return Ok(HashMap::new()),
     };
 
@@ -431,6 +444,7 @@ fn fetch_masterlist(game_domain: &str, dest: &Path) -> Result<()> {
         "skyrim" => "loot/skyrim",
         "fallout3" => "loot/fallout3",
         "falloutnv" => "loot/falloutnv",
+        "starfield" => "loot/starfield",
         _ => return Ok(()),
     };
     let url = format!("https://raw.githubusercontent.com/{repo}/master/masterlist.yaml");
@@ -469,6 +483,213 @@ fn resolve_local_data_path(profile: &Profile) -> PathBuf {
             .join(folder)
     } else {
         PathBuf::from(&profile.game_path).join("My Games").join(folder)
+    }
+}
+
+fn loot_issue(
+    code: &str,
+    plugin: Option<String>,
+    message: impl Into<String>,
+    severity: &str,
+) -> LootPluginIssue {
+    LootPluginIssue {
+        code: code.to_string(),
+        plugin,
+        message: message.into(),
+        severity: severity.to_string(),
+    }
+}
+
+fn resolve_plugin_path(
+    profile: &Profile,
+    plugin_name: &str,
+    plugin_to_mod: &HashMap<String, (String, String)>,
+) -> Option<PathBuf> {
+    let data_dir = PathBuf::from(&profile.game_path).join("Data");
+    let direct = data_dir.join(plugin_name);
+    if direct.is_file() {
+        return Some(direct);
+    }
+    if let Some((mod_id, _)) = plugin_to_mod.get(&plugin_name.to_lowercase()) {
+        if let Ok(m) = db::get_installed_mod(mod_id) {
+            if let Some(m) = m {
+                for file in installed_file_paths(&m).ok()? {
+                    let path = PathBuf::from(&file);
+                    if path.file_name()?.to_str()?.eq_ignore_ascii_case(plugin_name) {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+pub fn analyze_loot_issues(
+    profile: &Profile,
+    plugin_entries: &[LoadOrderPluginEntry],
+    plugin_to_mod: &HashMap<String, (String, String)>,
+) -> Result<Vec<LootPluginIssue>> {
+    let game_type = match profile.game_domain.as_str() {
+        "fallout4" => GameType::Fallout4,
+        "skyrimspecialedition" => GameType::SkyrimSE,
+        "skyrim" => GameType::Skyrim,
+        "fallout3" => GameType::Fallout3,
+        "falloutnv" => GameType::FalloutNV,
+        "starfield" => GameType::Starfield,
+        _ => return Ok(Vec::new()),
+    };
+
+    let active_plugins: Vec<String> = plugin_entries
+        .iter()
+        .filter(|p| p.enabled)
+        .map(|p| p.name.clone())
+        .collect();
+    if active_plugins.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut known_active: HashSet<String> = active_plugins
+        .iter()
+        .map(|n| n.to_lowercase())
+        .collect();
+    for base in base_game_plugins(&profile.game_domain, &profile.game_path) {
+        known_active.insert(base.to_lowercase());
+    }
+
+    let game_path = PathBuf::from(&profile.game_path);
+    let local_path = resolve_local_data_path(profile);
+    let mut game = if local_path.is_dir() {
+        libloot::Game::with_local_path(game_type, &game_path, &local_path)
+    } else {
+        libloot::Game::new(game_type, &game_path)
+    }
+    .map_err(|e| NexusDeckError::Other(format!("LOOT init failed: {e}")))?;
+
+    let _ = try_load_masterlist(&mut game, profile);
+
+    let mut mod_plugin_paths: Vec<PathBuf> = Vec::new();
+    let mut mod_plugin_names: Vec<String> = Vec::new();
+    for entry in plugin_entries.iter().filter(|p| p.enabled && p.kind == "mod") {
+        if let Some(path) = resolve_plugin_path(profile, &entry.name, plugin_to_mod) {
+            mod_plugin_paths.push(path);
+            mod_plugin_names.push(entry.name.clone());
+        }
+    }
+
+    let mut issues = Vec::new();
+
+    if !mod_plugin_paths.is_empty() {
+        let path_refs: Vec<&Path> = mod_plugin_paths.iter().map(|p| p.as_path()).collect();
+        let _ = game.load_plugin_headers(&path_refs);
+        for plugin in game.loaded_plugins() {
+            let name = plugin.name().to_string();
+            if let Ok(masters) = plugin.masters() {
+                for master in masters {
+                    if !known_active.contains(&master.to_lowercase()) {
+                        issues.push(loot_issue(
+                            "missing_master",
+                            Some(name.clone()),
+                            format!(
+                                "{name} requires master {master}, which is not active. \
+                                 Enable the required mod or DLC, then sync load order."
+                            ),
+                            "error",
+                        ));
+                    }
+                }
+            }
+        }
+
+        let name_refs: Vec<&str> = mod_plugin_names.iter().map(|s| s.as_str()).collect();
+        if let Ok(loot_sorted) = game.sort_plugins(&name_refs) {
+            let current: Vec<String> = mod_plugin_names
+                .iter()
+                .map(|n| n.to_lowercase())
+                .collect();
+            let sorted: Vec<String> = loot_sorted
+                .iter()
+                .map(|n| n.to_lowercase())
+                .collect();
+            if current != sorted {
+                issues.push(loot_issue(
+                    "load_order_conflict",
+                    None,
+                    "Mod plugin order differs from LOOT recommendation. \
+                     Use Auto-sort (LOOT) on the Load Order page before launch.",
+                    "warning",
+                ));
+            }
+        }
+    }
+
+    let database = game.database();
+    let db_guard = database
+        .read()
+        .map_err(|_| NexusDeckError::Other("LOOT database lock poisoned".into()))?;
+
+    for name in &active_plugins {
+        if let Ok(Some(meta)) = db_guard.plugin_metadata(
+            name,
+            MergeMode::WithUserMetadata,
+            EvalMode::Evaluate,
+        ) {
+            for msg in meta.messages() {
+                let severity = match msg.message_type() {
+                    libloot::metadata::MessageType::Error => "error",
+                    libloot::metadata::MessageType::Warn => "warning",
+                    libloot::metadata::MessageType::Say => "info",
+                };
+                let text = msg
+                    .content()
+                    .iter()
+                    .find(|c| c.language() == "en" || c.language().is_empty())
+                    .or_else(|| msg.content().first())
+                    .map(|c| c.text().to_string())
+                    .unwrap_or_else(|| "LOOT reported an issue with this plugin.".into());
+                issues.push(loot_issue(
+                    "loot_message",
+                    Some(name.clone()),
+                    text,
+                    severity,
+                ));
+            }
+        }
+    }
+
+    if let Ok(general) = db_guard.general_messages(MergeMode::WithUserMetadata, EvalMode::Evaluate)
+    {
+        for msg in general {
+            let severity = match msg.message_type() {
+                libloot::metadata::MessageType::Error => "error",
+                libloot::metadata::MessageType::Warn => "warning",
+                libloot::metadata::MessageType::Say => "info",
+            };
+            let text = msg
+                .content()
+                .iter()
+                .find(|c| c.language() == "en" || c.language().is_empty())
+                .or_else(|| msg.content().first())
+                .map(|c| c.text().to_string())
+                .unwrap_or_else(|| "LOOT general warning.".into());
+            issues.push(loot_issue("loot_general", None, text, severity));
+        }
+    }
+
+    issues.sort_by(|a, b| {
+        severity_rank(&a.severity)
+            .cmp(&severity_rank(&b.severity))
+            .then(a.plugin.cmp(&b.plugin))
+    });
+    issues.dedup_by(|a, b| a.code == b.code && a.plugin == b.plugin && a.message == b.message);
+    Ok(issues)
+}
+
+fn severity_rank(severity: &str) -> u8 {
+    match severity {
+        "error" => 0,
+        "warning" => 1,
+        _ => 2,
     }
 }
 

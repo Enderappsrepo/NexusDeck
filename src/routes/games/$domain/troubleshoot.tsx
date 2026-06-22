@@ -5,6 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DiagnosticReport } from "@/components/autofix/DiagnosticReport";
 import { LogViewer } from "@/components/autofix/LogViewer";
 import { Mo2SetupWizard } from "@/components/mo2/Mo2SetupWizard";
+import { ConflictDashboard } from "@/components/library/ConflictDashboard";
+import { DeployScanPanel } from "@/components/library/DeployScanPanel";
+import { ModlistImportWizard } from "@/components/wizard/ModlistImportWizard";
 import { useGamesStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { isSupportedDomain, loadSupportedGames } from "@/lib/games";
@@ -146,6 +149,10 @@ function TroubleshootPage() {
           applyingRemedy={applyingRemedy}
         />
       )}
+
+      <ConflictDashboard profileId={profile.id} gameDomain={domain} />
+      <DeployScanPanel profileId={profile.id} />
+      <ModlistImportWizard profileId={profile.id} />
 
       {domain === "skyrimspecialedition" && (
         <Mo2SetupWizard profileId={profile.id} onComplete={() => void runScan()} />

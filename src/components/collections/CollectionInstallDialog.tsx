@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Package } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { AppDialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/commands";
 import { useDownloadsStore, useInstallQueueStore } from "@/stores";
 import { useCollectionInstallStore } from "@/stores/collectionInstallStore";
@@ -25,6 +27,7 @@ export function CollectionInstallDialog({
   gameDomain,
 }: CollectionInstallDialogProps) {
   const [installing, setInstalling] = useState(false);
+  const [includeOptional, setIncludeOptional] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setProgress = useDownloadsStore((s) => s.setProgress);
   const registerPendingInstall = useInstallQueueStore((s) => s.registerPendingInstall);
@@ -32,6 +35,34 @@ export function CollectionInstallDialog({
   const bindDownload = useCollectionInstallStore((s) => s.bindDownload);
 
   const requiredMods = collection.mods.filter((m) => !m.optional);
+  const optionalMods = collection.mods.filter((m) => m.optional);
+  const targetMods = includeOptional ? collection.mods : requiredMods;
+
+  const queueMod = async (entry: (typeof collection.mods)[number]) => {
+    if (!entry.file_id) return;
+    const files = await api.getModFiles(gameDomain, entry.mod_id);
+    const file = files.find((f) => f.file_id === entry.file_id) ?? files[0];
+    if (!file) return;
+    const progress = await api.startModDownload({
+      gameDomain,
+      modId: entry.mod_id,
+      fileId: file.file_id,
+      fileName: modFileDownloadName(file),
+      stagingPath: profile.staging_path,
+      expectedSizeKb: file.size_kb,
+      modName: entry.name,
+      profileId: profile.id,
+    });
+    registerPendingInstall(progress.id, {
+      source: "collection",
+      collectionSlug: collection.slug,
+      collectionName: collection.name,
+      modId: entry.mod_id,
+      modName: entry.name,
+    });
+    bindDownload(entry.mod_id, progress.id);
+    setProgress(progress);
+  };
 
   const installAll = async () => {
     setInstalling(true);
@@ -41,38 +72,18 @@ export function CollectionInstallDialog({
         slug: collection.slug,
         name: collection.name,
         gameDomain,
-        profileId: profile.id,
-        mods: requiredMods.map((m) => ({
+        profile,
+        mods: targetMods.map((m) => ({
           modId: m.mod_id,
           name: m.name,
+          fileId: m.file_id,
+          optional: m.optional,
           status: "pending" as const,
         })),
       });
 
-      for (const entry of requiredMods) {
-        if (!entry.file_id) continue;
-        const files = await api.getModFiles(gameDomain, entry.mod_id);
-        const file = files.find((f) => f.file_id === entry.file_id) ?? files[0];
-        if (!file) continue;
-        const progress = await api.startModDownload({
-          gameDomain,
-          modId: entry.mod_id,
-          fileId: file.file_id,
-          fileName: modFileDownloadName(file),
-          stagingPath: profile.staging_path,
-          expectedSizeKb: file.size_kb,
-          modName: entry.name,
-          profileId: profile.id,
-        });
-        registerPendingInstall(progress.id, {
-          source: "collection",
-          collectionSlug: collection.slug,
-          collectionName: collection.name,
-          modId: entry.mod_id,
-          modName: entry.name,
-        });
-        bindDownload(entry.mod_id, progress.id);
-        setProgress(progress);
+      for (const entry of targetMods) {
+        await queueMod(entry);
       }
       onOpenChange(false);
     } catch (e) {
@@ -85,9 +96,20 @@ export function CollectionInstallDialog({
   return (
     <AppDialog open={open} onOpenChange={onOpenChange} title={`Install ${collection.name}`}>
       <p className="mb-4 text-sm text-[var(--color-muted)]">
-        Download and auto-install {requiredMods.length} required mods. Progress appears in a panel
-        at the bottom of the screen.
+        Download and auto-install mods from this collection. Progress appears in a panel at the
+        bottom of the screen.
       </p>
+
+      {optionalMods.length > 0 && (
+        <label className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-[var(--color-secondary)] p-3 text-sm">
+          <span>Include {optionalMods.length} optional mod{optionalMods.length === 1 ? "" : "s"}</span>
+          <Switch
+            checked={includeOptional}
+            onCheckedChange={setIncludeOptional}
+            data-focusable="true"
+          />
+        </label>
+      )}
 
       <div className="mb-4 max-h-48 space-y-2 overflow-y-auto scrollbar-thin" data-scroll-pane>
         {collection.mods.map((mod) => (
@@ -115,7 +137,7 @@ export function CollectionInstallDialog({
         </Button>
         <Button onClick={installAll} disabled={installing} data-focusable="true">
           <Package className="h-4 w-4" />
-          {installing ? "Starting..." : "Install all required"}
+          {installing ? "Starting..." : `Install ${targetMods.length} mod${targetMods.length === 1 ? "" : "s"}`}
         </Button>
       </div>
     </AppDialog>

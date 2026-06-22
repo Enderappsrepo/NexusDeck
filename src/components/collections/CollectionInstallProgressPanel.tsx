@@ -1,7 +1,12 @@
-import { CheckCircle2, Loader2, X, XCircle } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, Loader2, RefreshCw, X, XCircle } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { api } from "@/lib/commands";
+import { useDownloadsStore, useInstallQueueStore } from "@/stores";
 import { useCollectionInstallStore } from "@/stores/collectionInstallStore";
+import { modFileDownloadName } from "@/lib/nexus/types";
 import { cn } from "@/lib/utils";
 
 const STATUS_ICON = {
@@ -10,19 +15,56 @@ const STATUS_ICON = {
   installing: Loader2,
   done: CheckCircle2,
   failed: XCircle,
+  skipped: CheckCircle2,
 } as const;
 
 export function CollectionInstallProgressPanel() {
   const active = useCollectionInstallStore((s) => s.active);
   const dismiss = useCollectionInstallStore((s) => s.dismiss);
+  const bindDownload = useCollectionInstallStore((s) => s.bindDownload);
   const doneCount = useCollectionInstallStore((s) => s.doneCount());
   const totalCount = useCollectionInstallStore((s) => s.totalCount());
+  const setProgress = useDownloadsStore((s) => s.setProgress);
+  const registerPendingInstall = useInstallQueueStore((s) => s.registerPendingInstall);
+  const [retryingId, setRetryingId] = useState<number | null>(null);
 
   if (!active) return null;
 
   const allDone = doneCount === totalCount && totalCount > 0;
   const failed = active.mods.some((m) => m.status === "failed");
   const pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+  const retryMod = async (modId: number) => {
+    const mod = active.mods.find((m) => m.modId === modId);
+    if (!mod?.fileId) return;
+    setRetryingId(modId);
+    try {
+      const files = await api.getModFiles(active.gameDomain, modId);
+      const file = files.find((f) => f.file_id === mod.fileId) ?? files[0];
+      if (!file) return;
+      const progress = await api.startModDownload({
+        gameDomain: active.gameDomain,
+        modId,
+        fileId: file.file_id,
+        fileName: modFileDownloadName(file),
+        stagingPath: active.profile.staging_path,
+        expectedSizeKb: file.size_kb,
+        modName: mod.name,
+        profileId: active.profile.id,
+      });
+      registerPendingInstall(progress.id, {
+        source: "collection",
+        collectionSlug: active.slug,
+        collectionName: active.name,
+        modId,
+        modName: mod.name,
+      });
+      bindDownload(modId, progress.id);
+      setProgress(progress);
+    } finally {
+      setRetryingId(null);
+    }
+  };
 
   return (
     <div
@@ -56,7 +98,7 @@ export function CollectionInstallProgressPanel() {
         </div>
 
         <ul
-          className="max-h-40 space-y-1 overflow-y-auto px-4 py-2 text-sm scrollbar-thin"
+          className="max-h-48 space-y-1 overflow-y-auto px-4 py-2 text-sm scrollbar-thin"
           data-scroll-pane
         >
           {active.mods.map((mod) => {
@@ -70,19 +112,44 @@ export function CollectionInstallProgressPanel() {
                 <Icon
                   className={cn(
                     "h-4 w-4 shrink-0",
-                    mod.status === "done" && "text-[var(--color-success)]",
+                    (mod.status === "done" || mod.status === "skipped") &&
+                      "text-[var(--color-success)]",
                     mod.status === "failed" && "text-[var(--color-danger)]",
                     spinning && "animate-spin text-[var(--color-primary)]"
                   )}
                 />
                 <span className="min-w-0 flex-1 truncate">{mod.name}</span>
-                <span className="shrink-0 text-xs capitalize text-[var(--color-muted)]">
-                  {mod.status === "downloading"
-                    ? "Downloading"
-                    : mod.status === "installing"
-                      ? "Installing"
-                      : mod.status}
-                </span>
+                <div className="flex shrink-0 items-center gap-1">
+                  {mod.status === "failed" && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        loading={retryingId === mod.modId}
+                        onClick={() => void retryMod(mod.modId)}
+                        data-focusable="true"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Retry
+                      </Button>
+                      <Button variant="ghost" size="sm" asChild data-focusable="true">
+                        <Link
+                          to="/games/$domain/mods/$modId"
+                          params={{ domain: active.gameDomain, modId: String(mod.modId) }}
+                        >
+                          View
+                        </Link>
+                      </Button>
+                    </>
+                  )}
+                  <span className="text-xs capitalize text-[var(--color-muted)]">
+                    {mod.status === "downloading"
+                      ? "Downloading"
+                      : mod.status === "installing"
+                        ? "Installing"
+                        : mod.status}
+                  </span>
+                </div>
               </li>
             );
           })}

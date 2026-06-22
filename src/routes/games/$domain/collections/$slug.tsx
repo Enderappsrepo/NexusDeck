@@ -4,6 +4,7 @@ import { ArrowLeft, Download } from "lucide-react";
 import { useGamesStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { CollectionInstallDialog } from "@/components/collections/CollectionInstallDialog";
+import { CollectionDiffPanel } from "@/components/collections/CollectionDiffPanel";
 import type { CollectionDetail } from "@/lib/nexus/types";
 import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
 import { GP } from "@/lib/gamepad/buttons";
@@ -89,6 +90,8 @@ function CollectionDetailPage() {
               Install collection
             </Button>
           </div>
+
+          <CollectionDiffPanel profile={profile} gameDomain={domain} collection={detail} />
 
           <div className="space-y-3">
             {detail.mods.map((mod) => (

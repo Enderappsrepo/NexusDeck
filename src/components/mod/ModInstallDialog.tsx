@@ -39,6 +39,7 @@ import type {
   InstallPreset,
 } from "@/lib/nexus/types";
 import { modFileDownloadName } from "@/lib/nexus/types";
+import { applyCbbeDeckPreset } from "@/lib/fomodPresets";
 
 type InstallPhase = "welcome" | "wizard" | "options" | "review" | "installing" | "error";
 
@@ -408,6 +409,62 @@ export function ModInstallDialog({
       if (result.install_wizard) {
         setInstallWizard(result.install_wizard);
       }
+
+      if (
+        installPreset?.fomodPreset === "cbbe_deck" &&
+        result.install_wizard &&
+        result.install_wizard.steps.length > 0
+      ) {
+        const presetSelections = applyCbbeDeckPreset(result.install_wizard);
+        setSelections(presetSelections);
+        const presetPreview = await loadPreview(
+          strategy,
+          archivePath,
+          presetSelections,
+          result.prepared_extract_dir
+        );
+        if (presetPreview) {
+          setPhase("review");
+          if (installPreset.autoConfirm) {
+            setInstalling(true);
+            setPhase("installing");
+            try {
+              const installResult = await api.installModFromArchive({
+                profileId: profile.id,
+                modName,
+                nexusModId: modId,
+                nexusFileId: file.file_id,
+                archivePath,
+                options: {
+                  strategy,
+                  enable_mod: true,
+                  overwrite_files: false,
+                  selected_options: presetSelections,
+                  prepared_extract_dir: result.prepared_extract_dir,
+                  dry_run: false,
+                },
+                fileVersion: file.version ?? null,
+                replaceModId: replaceModId ?? null,
+              });
+              if (installResult.log_path) setInstallLogPath(installResult.log_path);
+              onInstalled?.();
+              window.dispatchEvent(
+                new CustomEvent("nexusdeck-mod-installed", { detail: { modName } })
+              );
+              onOpenChange(false);
+            } catch (e) {
+              const message = e instanceof Error ? e.message : String(e);
+              setError(message);
+              setPhase("error");
+              onInstallFailed?.(message);
+            } finally {
+              setInstalling(false);
+            }
+          }
+        }
+        return;
+      }
+
       const previewResult = await loadPreview(
         strategy,
         archivePath,

@@ -8,6 +8,7 @@ import {
   scrollFocusedPane,
 } from "./focusNavigation";
 import { focusedDownloadId, isDownloadRowComplete } from "./domHelpers";
+import { resolveTabHandler as pickTabHandler } from "./tabPriority";
 
 export type ButtonHandler = (button: number) => void;
 export type AxisHandler = (axis: number, value: number) => void;
@@ -247,10 +248,7 @@ class GamepadRouterImpl {
   }
 
   private resolveTabHandler(): TabHandler | undefined {
-    for (let i = this.tabHandlers.length - 1; i >= 0; i--) {
-      if (this.tabHandlers[i].scope !== "sidebar") return this.tabHandlers[i];
-    }
-    return this.tabHandlers[this.tabHandlers.length - 1];
+    return pickTabHandler(this.tabHandlers);
   }
 
   private handleButtonPress(button: number): void {

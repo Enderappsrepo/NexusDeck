@@ -21,6 +21,7 @@ mod prefix;
 mod mo2;
 mod reset;
 mod app_update;
+mod profile_insights;
 mod logs;
 
 pub use auth::*;
@@ -46,4 +47,5 @@ pub use prefix::*;
 pub use mo2::*;
 pub use reset::*;
 pub use app_update::*;
+pub use profile_insights::*;
 pub use logs::*;

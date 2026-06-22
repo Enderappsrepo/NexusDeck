@@ -10,6 +10,11 @@ import { AppDialog } from "@/components/ui/dialog";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ListRowSkeleton } from "@/components/ui/LoadingSkeleton";
+import { ModUpdatesPanel } from "@/components/mod/ModUpdatesPanel";
+import { ModSafetyDialog } from "@/components/mod/ModSafetyDialog";
+import { ConflictDashboard } from "@/components/library/ConflictDashboard";
+import { DeployScanPanel } from "@/components/library/DeployScanPanel";
+import { LibraryDepSummary } from "@/components/deps/LibraryDepHint";
 import { LaunchButton } from "@/components/launch/LaunchButton";
 import {
   CONTEXT_MENU_ICONS,
@@ -23,7 +28,7 @@ import { useGamesStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { triggerHaptic } from "@/lib/haptics";
 import { EXPORT_FORMATS } from "@/lib/nexus/export-formats";
-import type { InstalledMod, ModUpdateInfo, ModUpdateProgress } from "@/lib/nexus/types";
+import type { InstalledMod, ModSafetyReport, ModUpdateInfo, ModUpdateProgress } from "@/lib/nexus/types";
 
 function reloadLibrary(profileId: string) {
   return Promise.all([
@@ -60,8 +65,12 @@ function LibraryPage() {
   const [sorting, setSorting] = useState(false);
   const [repairing, setRepairing] = useState(false);
   const [repairNote, setRepairNote] = useState<string | null>(null);
-  const [updatingAll, setUpdatingAll] = useState(false);
   const [updateProgress, setUpdateProgress] = useState<Record<string, ModUpdateProgress>>({});
+  const [safetyPrompt, setSafetyPrompt] = useState<{
+    mod: InstalledMod;
+    action: "disable" | "uninstall";
+    report: ModSafetyReport;
+  } | null>(null);
 
   const refreshLibrary = useCallback(async () => {
     if (!profile) return;
@@ -115,6 +124,46 @@ function LibraryPage() {
       setTogglingId(null);
     }
   }, []);
+
+  const requestToggleMod = useCallback(
+    async (mod: InstalledMod) => {
+      if (!profile || !mod.enabled) {
+        await toggleMod(mod);
+        return;
+      }
+      try {
+        const report = await api.assessModSafety(profile.id, mod.id, "disable");
+        if (report.warnings.length > 0) {
+          setSafetyPrompt({ mod, action: "disable", report });
+          return;
+        }
+      } catch {
+        // proceed if safety check fails
+      }
+      await toggleMod(mod);
+    },
+    [profile, toggleMod]
+  );
+
+  const requestUninstall = useCallback(
+    async (mod: InstalledMod) => {
+      if (!profile) {
+        setUninstallTarget(mod);
+        return;
+      }
+      try {
+        const report = await api.assessModSafety(profile.id, mod.id, "uninstall");
+        if (report.warnings.length > 0) {
+          setSafetyPrompt({ mod, action: "uninstall", report });
+          return;
+        }
+      } catch {
+        // proceed if safety check fails
+      }
+      setUninstallTarget(mod);
+    },
+    [profile]
+  );
 
   const reorderMod = useCallback(
     async (modId: string, direction: "up" | "down") => {
@@ -279,24 +328,6 @@ function LibraryPage() {
     }
   };
 
-  const updateAllMods = async () => {
-    if (!profile) return;
-    setUpdatingAll(true);
-    setError(null);
-    try {
-      const result = await api.updateAllMods(profile.id);
-      if (result.errors.length > 0) {
-        setError(new Error(result.errors.join("\n")));
-      }
-      void triggerHaptic("install");
-    } catch (e) {
-      setError(e);
-      void triggerHaptic("error");
-    } finally {
-      setUpdatingAll(false);
-    }
-  };
-
   const autoSortLoadOrder = async () => {
     if (!profile) return;
     setSorting(true);
@@ -358,6 +389,19 @@ function LibraryPage() {
   return (
     <div className="page-section mx-auto max-w-4xl">
       {contextMenu}
+      <ModSafetyDialog
+        open={!!safetyPrompt}
+        onOpenChange={(open) => !open && setSafetyPrompt(null)}
+        modName={safetyPrompt?.mod.name ?? ""}
+        report={safetyPrompt?.report ?? null}
+        onConfirm={() => {
+          if (!safetyPrompt) return;
+          const { mod, action } = safetyPrompt;
+          setSafetyPrompt(null);
+          if (action === "disable") void toggleMod(mod);
+          else setUninstallTarget(mod);
+        }}
+      />
       <AppDialog
         open={!!uninstallTarget}
         onOpenChange={(open) => !open && setUninstallTarget(null)}
@@ -478,28 +522,11 @@ function LibraryPage() {
         <ApiErrorBanner context="generic" error={error} onRetry={() => setError(null)} />
       )}
 
+      <ConflictDashboard profileId={profile.id} gameDomain={domain} />
+      <DeployScanPanel profileId={profile.id} />
+
       {updates.length > 0 && (
-        <Card className="border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-semibold">
-                {updates.length} update{updates.length === 1 ? "" : "s"} available
-              </p>
-              <p className="text-sm text-[var(--color-muted)]">
-                Updates download and install automatically with your saved options.
-              </p>
-            </div>
-            <Button
-              loading={updatingAll}
-              disabled={updatingAll}
-              onClick={() => void updateAllMods()}
-              data-focusable="true"
-            >
-              <Download className="h-4 w-4" />
-              Update all
-            </Button>
-          </div>
-        </Card>
+        <ModUpdatesPanel profileId={profile.id} gameDomain={domain} />
       )}
 
       <Card className="p-4">
@@ -617,6 +644,7 @@ function LibraryPage() {
                     <p className="mt-1 text-sm text-[var(--color-muted)]">
                       {files.length} files deployed
                     </p>
+                    <LibraryDepSummary profileId={profile.id} nexusModId={mod.nexus_mod_id} />
                   </div>
                   <div className="flex gap-2">
                     {update && !compareMode && !progress && (
@@ -642,7 +670,7 @@ function LibraryPage() {
                           data-focusable="true"
                           onClick={(e) => {
                             e.stopPropagation();
-                            toggleMod(mod);
+                            void requestToggleMod(mod);
                           }}
                         >
                           {mod.enabled ? "Disable" : "Enable"}
@@ -654,7 +682,7 @@ function LibraryPage() {
                           data-focusable="true"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setUninstallTarget(mod);
+                            void requestUninstall(mod);
                           }}
                         >
                           <Trash2 className="h-4 w-4" />

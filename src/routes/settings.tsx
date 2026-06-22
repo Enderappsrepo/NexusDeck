@@ -45,6 +45,12 @@ function SettingsPage() {
   const [autoInstallAfterDownload, setAutoInstallAfterDownload] = useState(
     () => downloadSettings.auto_install_after_download ?? false
   );
+  const [pauseOnBattery, setPauseOnBattery] = useState(
+    () => downloadSettings.pause_on_battery ?? false
+  );
+  const [bandwidthSaver, setBandwidthSaver] = useState(
+    () => downloadSettings.bandwidth_saver ?? false
+  );
   const [clearDownloadAfterInstall, setClearDownloadAfterInstall] = useState(
     () => localStorage.getItem("nexusdeck_clear_download_after_install") !== "false"
   );
@@ -68,6 +74,8 @@ function SettingsPage() {
     setMaxConcurrent(downloadSettings.max_concurrent);
     setSpeedLimit(downloadSettings.speed_limit_kbps);
     setAutoInstallAfterDownload(downloadSettings.auto_install_after_download ?? false);
+    setPauseOnBattery(downloadSettings.pause_on_battery ?? false);
+    setBandwidthSaver(downloadSettings.bandwidth_saver ?? false);
   }, [downloadSettings]);
 
   const exportDiag = async () => {
@@ -119,6 +127,8 @@ function SettingsPage() {
       max_concurrent: maxConcurrent,
       speed_limit_kbps: speedLimit,
       auto_install_after_download: autoInstallAfterDownload,
+      pause_on_battery: pauseOnBattery,
+      bandwidth_saver: bandwidthSaver,
     });
   };
 
@@ -184,6 +194,32 @@ function SettingsPage() {
             <Switch
               checked={autoInstallAfterDownload}
               onCheckedChange={setAutoInstallAfterDownload}
+              data-focusable="true"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label>Pause downloads on battery</Label>
+              <p className="text-sm text-[var(--color-muted)]">
+                Hold the download queue while the Deck is unplugged (Linux/SteamOS).
+              </p>
+            </div>
+            <Switch
+              checked={pauseOnBattery}
+              onCheckedChange={setPauseOnBattery}
+              data-focusable="true"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label>Limited-bandwidth mode</Label>
+              <p className="text-sm text-[var(--color-muted)]">
+                One download at a time with a 512 KB/s cap when no speed limit is set.
+              </p>
+            </div>
+            <Switch
+              checked={bandwidthSaver}
+              onCheckedChange={setBandwidthSaver}
               data-focusable="true"
             />
           </div>

@@ -138,3 +138,6 @@ jobs:
 
       - name: Run controller focus smoke tests
         run: npm run test:e2e
+
+      - name: Run gamepad router and FOMOD preset unit checks
+        run: npm run test:router && npm run test:fomod

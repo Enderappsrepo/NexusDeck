@@ -29,7 +29,9 @@ export function LaunchConfirmDialog({
   gameDomain,
   onConfirm,
 }: LaunchConfirmDialogProps) {
-  const showLoadOrder = checks.some((c) => c.code.startsWith("plugin"));
+  const showLoadOrder = checks.some(
+    (c) => c.code.startsWith("plugin") || c.code.startsWith("loot") || c.code.startsWith("missing")
+  );
 
   return (
     <AppDialog open={open} onOpenChange={onOpenChange} title="Ready to launch?">

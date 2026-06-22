@@ -14,6 +14,8 @@ pub mod compare;
 pub mod dependency_resolver;
 pub mod mod_preview;
 pub mod collections;
+pub mod loadouts;
+pub mod profile_insights;
 pub mod update_checker;
 pub mod modlist_export;
 pub mod deck_advisor;
