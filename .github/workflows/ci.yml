@@ -71,6 +71,10 @@ jobs:
           cp src-tauri/icons/32x32.png flatpak/
           cp src-tauri/icons/128x128.png flatpak/
           cp src-tauri/icons/icon.png flatpak/
+          curl -fsSL -o /tmp/7z2601-linux-x64.tar.xz https://www.7-zip.org/a/7z2601-linux-x64.tar.xz
+          echo "8ea0fc8a135e7b848e80a4116fe22dff56c8c4518dde1f43cce67f4e340b437a  /tmp/7z2601-linux-x64.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/7z2601-linux-x64.tar.xz -C flatpak 7zz
+          chmod +x flatpak/7zz
 
       - name: Install GNOME 48 runtime
         run: |
