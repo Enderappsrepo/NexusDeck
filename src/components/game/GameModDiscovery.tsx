@@ -230,9 +230,15 @@ export function GameModDiscovery({
               Retry
             </Button>
           )}
-          <Link to="/games/$domain/mods" params={{ domain }} search={{ modId: undefined }}>
-            <Button>Browse all mods</Button>
-          </Link>
+          {!signedIn ? (
+            <Link to="/settings">
+              <Button>Open Settings</Button>
+            </Link>
+          ) : (
+            <Link to="/games/$domain/mods" params={{ domain }} search={{ modId: undefined }}>
+              <Button>Browse all mods</Button>
+            </Link>
+          )}
         </div>
       }
       className="py-10"

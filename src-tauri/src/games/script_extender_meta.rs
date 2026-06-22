@@ -14,6 +14,8 @@ pub struct ScriptExtenderMeta {
     pub website_url: &'static str,
     pub runtime: &'static str,
     pub notes: &'static str,
+    /// Required `.pex` in `Data/Scripts/` (or `Data/scripts/`) bundled with the extender archive.
+    pub required_script: Option<&'static str>,
 }
 
 impl ScriptExtenderMeta {
@@ -29,6 +31,7 @@ impl ScriptExtenderMeta {
         website_url: "https://f4se.silverlock.org/",
         runtime: "Fallout 4 1.10.163",
         notes: "Required for most Fallout 4 mods. NexusDeck can download and install F4SE, or use Install from file with a .7z from the website.",
+        required_script: Some("F4SE.pex"),
     };
 
     pub const SKYRIM_SE: ScriptExtenderMeta = ScriptExtenderMeta {
@@ -43,6 +46,7 @@ impl ScriptExtenderMeta {
         website_url: "https://skse.silverlock.org/",
         runtime: "Skyrim SE 1.6.1170 (Steam AE)",
         notes: "Match the SKSE build to your game version. If auto-download fails, grab the correct .7z from skse.silverlock.org and use Install from file.",
+        required_script: Some("skse64.pex"),
     };
 
     pub const SKYRIM_LE: ScriptExtenderMeta = ScriptExtenderMeta {
@@ -57,6 +61,7 @@ impl ScriptExtenderMeta {
         website_url: "https://skse.silverlock.org/",
         runtime: "Skyrim LE 1.9.32",
         notes: "Classic SKSE for Skyrim Legendary Edition. Extract into the folder containing TESV.exe.",
+        required_script: Some("skse.pex"),
     };
 
     pub const FALLOUT_NV: ScriptExtenderMeta = ScriptExtenderMeta {
@@ -71,6 +76,7 @@ impl ScriptExtenderMeta {
         website_url: "https://github.com/xNVSE/NVSE/releases",
         runtime: "Latest xNVSE (GitHub releases)",
         notes: "Uses the community xNVSE fork. NexusDeck downloads the latest release from GitHub, or use Install from file.",
+        required_script: Some("nvse.pex"),
     };
 
     pub const FALLOUT3: ScriptExtenderMeta = ScriptExtenderMeta {
@@ -85,6 +91,7 @@ impl ScriptExtenderMeta {
         website_url: "http://fose.silverlock.org/",
         runtime: "Fallout 3 1.7.0.3 (downgrade may be required for latest Steam)",
         notes: "FOSE may require downgrading Fallout 3 on newer Steam builds. Download from fose.silverlock.org if auto-install fails.",
+        required_script: Some("fose.pex"),
     };
 
     pub const STARFIELD: ScriptExtenderMeta = ScriptExtenderMeta {
@@ -99,6 +106,7 @@ impl ScriptExtenderMeta {
         website_url: "https://sfse.silverlock.org/",
         runtime: "Latest Starfield on Steam",
         notes: "SFSE is distributed via Nexus Mods. Download the archive from sfse.silverlock.org or Nexus, then use Install from file.",
+        required_script: None,
     };
 
     pub const OBLIVION: ScriptExtenderMeta = ScriptExtenderMeta {
@@ -113,6 +121,7 @@ impl ScriptExtenderMeta {
         website_url: "http://obse.silverlock.org/",
         runtime: "Oblivion 1.2.0.416",
         notes: "GOG users may need obse_loader.zip from the OBSE site. Use Install from file if the auto-download package does not match your copy.",
+        required_script: Some("obse.pex"),
     };
 
     pub const ALL: &'static [ScriptExtenderMeta] = &[

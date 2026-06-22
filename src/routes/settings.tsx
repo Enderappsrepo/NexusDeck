@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,7 +20,7 @@ export const Route = createFileRoute("/settings")({
 });
 
 function SettingsPage() {
-  const { user, logout } = useAuthStore();
+  const { user, logout, login, loading: authLoading, error: authError } = useAuthStore();
   const { profiles, loadProfiles } = useGamesStore();
   const {
     downloadSettings,
@@ -59,6 +60,17 @@ function SettingsPage() {
   const [logsDir, setLogsDir] = useState<string | null>(null);
   const [verboseLogging, setVerboseLogging] = useState(false);
   const [exportingLogs, setExportingLogs] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+
+  const connectApiKey = async () => {
+    if (!apiKey.trim()) return;
+    try {
+      await login(apiKey.trim());
+      setApiKey("");
+    } catch {
+      /* error shown via authError */
+    }
+  };
 
   useEffect(() => {
     loadProfiles();
@@ -153,7 +165,47 @@ function SettingsPage() {
               <Button variant="danger" onClick={logout} data-focusable="true">Sign Out</Button>
             </>
           ) : (
-            <p className="text-[var(--color-muted)]">Not signed in</p>
+            <div className="space-y-4">
+              <p className="text-[var(--color-muted)]">
+                Sign in with your Nexus Mods personal API key to browse and download mods.
+              </p>
+              <Input
+                type="password"
+                placeholder="Nexus API Key"
+                value={apiKey}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  if (authError) useAuthStore.setState({ error: null });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && apiKey.trim() && !authLoading) {
+                    void connectApiKey();
+                  }
+                }}
+                data-focusable="true"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  loading={authLoading}
+                  disabled={!apiKey.trim()}
+                  onClick={() => void connectApiKey()}
+                  data-focusable="true"
+                >
+                  Connect
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="text-[var(--color-primary)]"
+                  onClick={() =>
+                    void openUrl("https://www.nexusmods.com/users/myaccount?tab=api+access")
+                  }
+                  data-focusable="true"
+                >
+                  Get API key
+                </Button>
+              </div>
+              {authError && <p className="text-sm text-[var(--color-danger)]">{authError}</p>}
+            </div>
           )}
         </CardContent>
       </Card>

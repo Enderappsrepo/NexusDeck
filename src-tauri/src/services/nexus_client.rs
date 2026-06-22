@@ -1016,7 +1016,7 @@ impl NexusClient {
         "#;
 
         let variables = serde_json::json!({
-            "ids": [{ "domainName": game_domain, "modId": mod_id }]
+            "ids": [{ "gameDomain": game_domain, "modId": mod_id }]
         });
 
         let result: serde_json::Value = self.graphql(gql, variables).await?;

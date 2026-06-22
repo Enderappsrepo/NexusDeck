@@ -15,6 +15,7 @@ import { LaunchButton } from "@/components/launch/LaunchButton";
 import { GameCard } from "@/components/game/GameCard";
 import { GameArt } from "@/components/game/GameArt";
 import { useAuthStore, useGamesStore } from "@/stores";
+import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { useLaunchStore } from "@/stores/launchStore";
 import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
 import { GP } from "@/lib/gamepad/buttons";
@@ -30,6 +31,7 @@ export const Route = createFileRoute("/")({
 
 function HomePage() {
   const user = useAuthStore((s) => s.user);
+  const authError = useAuthStore((s) => s.error);
   const { profiles, loadProfiles } = useGamesStore();
   const [games, setGames] = useState<GameSummary[]>([]);
   const [supportedGames, setSupportedGames] = useState<SupportedGameInfo[]>([]);
@@ -62,6 +64,14 @@ function HomePage() {
 
   return (
     <div className="page-section mx-auto max-w-5xl" data-scroll-pane>
+      {!user && (
+        <SignInPrompt
+          className="mb-6"
+        />
+      )}
+      {authError && !user && (
+        <p className="mb-6 text-sm text-[var(--color-danger)]">{authError}</p>
+      )}
       {/* Hero */}
       <section className="page-hero">
         <div className="relative p-8 sm:p-10">

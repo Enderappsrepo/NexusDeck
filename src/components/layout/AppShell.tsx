@@ -1,10 +1,13 @@
+import { Link } from "@tanstack/react-router";
 import { GameRunningBanner } from "@/components/launch/GameRunningBanner";
 import { UpdateBanner } from "@/components/layout/UpdateBanner";
 import { Toaster } from "@/components/ui/toast";
+import { Button } from "@/components/ui/button";
 import { GAMEPAD_HINTS } from "@/hooks/useFocusNavigation";
 import { useGamepadRouterState } from "@/hooks/useGamepadRouter";
 import { useControllerFocus } from "@/hooks/useControllerFocus";
 import { useLaunchStore } from "@/stores/launchStore";
+import { useAuthStore } from "@/stores";
 import { BackButton } from "@/components/layout/BackButton";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
@@ -22,6 +25,7 @@ export function AppShell({
 }) {
   const toasts = useLaunchStore((s) => s.toasts);
   const dismissToast = useLaunchStore((s) => s.dismissToast);
+  const user = useAuthStore((s) => s.user);
   const { controllerActive } = useGamepadRouterState();
   useControllerFocus();
 
@@ -48,16 +52,23 @@ export function AppShell({
             </div>
           )}
         </div>
-        <div className="hidden items-center gap-3 text-xs text-[var(--color-muted)] xl:flex 2xl:gap-4 2xl:text-sm">
-          {!controllerActive && (
-            <>
-              <span>{GAMEPAD_HINTS.navigate}: Navigate</span>
-              <span>{GAMEPAD_HINTS.confirm}: Select</span>
-              <span>{GAMEPAD_HINTS.back}: Back</span>
-              <span>{GAMEPAD_HINTS.tabs}: Tabs</span>
-              <span>{GAMEPAD_HINTS.scroll}: Scroll</span>
-            </>
+        <div className="flex items-center gap-3">
+          {!user && !hideNav && (
+            <Button variant="secondary" size="sm" asChild data-focusable="true">
+              <Link to="/settings">Sign in</Link>
+            </Button>
           )}
+          <div className="hidden items-center gap-3 text-xs text-[var(--color-muted)] xl:flex 2xl:gap-4 2xl:text-sm">
+            {!controllerActive && (
+              <>
+                <span>{GAMEPAD_HINTS.navigate}: Navigate</span>
+                <span>{GAMEPAD_HINTS.confirm}: Select</span>
+                <span>{GAMEPAD_HINTS.back}: Back</span>
+                <span>{GAMEPAD_HINTS.tabs}: Tabs</span>
+                <span>{GAMEPAD_HINTS.scroll}: Scroll</span>
+              </>
+            )}
+          </div>
         </div>
       </header>
 

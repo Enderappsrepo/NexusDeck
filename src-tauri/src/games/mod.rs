@@ -41,6 +41,8 @@ pub struct ScriptExtenderStatus {
     pub recommended_extender_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version_compatible: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scripts_installed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

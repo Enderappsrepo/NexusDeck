@@ -14,6 +14,7 @@ import { ImportModDialog } from "@/components/mod/ImportModDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
+import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ModGridSkeleton } from "@/components/ui/LoadingSkeleton";
 import { useModsStore, useGamesStore, useAuthStore, useDownloadsStore } from "@/stores";
@@ -270,6 +271,8 @@ function ModBrowserPage() {
           </div>
         </div>
       </header>
+
+      {!user && <SignInPrompt className="mb-4" />}
 
       {/* Sticky toolbar */}
       <div className="mods-toolbar">

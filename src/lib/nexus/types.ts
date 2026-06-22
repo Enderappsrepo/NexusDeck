@@ -619,6 +619,7 @@ export interface ScriptExtenderStatus {
   extender_game_version?: string | null;
   recommended_extender_version?: string | null;
   version_compatible?: boolean | null;
+  scripts_installed?: boolean | null;
 }
 
 export interface SupportedGameInfo {

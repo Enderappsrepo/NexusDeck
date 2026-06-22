@@ -11,7 +11,56 @@ use crate::services::script_extender_version::{
 };
 use crate::services::MergeOptions;
 
+pub fn required_script_present(meta: &ScriptExtenderMeta, game_root: &Path) -> bool {
+    let Some(script_name) = meta.required_script else {
+        return true;
+    };
+
+    let data = game_root.join("Data");
+    if !data.is_dir() {
+        return false;
+    }
+
+    for scripts_dir in ["Scripts", "scripts"] {
+        let path = data.join(scripts_dir).join(script_name);
+        if path.is_file() {
+            return true;
+        }
+    }
+
+    if let Ok(entries) = std::fs::read_dir(&data) {
+        for entry in entries.flatten() {
+            if !entry.path().is_dir() {
+                continue;
+            }
+            let dir_name = entry.file_name().to_string_lossy().to_lowercase();
+            if dir_name != "scripts" {
+                continue;
+            }
+            let direct = entry.path().join(script_name);
+            if direct.is_file() {
+                return true;
+            }
+            if let Ok(files) = std::fs::read_dir(entry.path()) {
+                for file in files.flatten() {
+                    if file
+                        .file_name()
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case(script_name)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    false
+}
+
 pub fn detect_status(meta: &ScriptExtenderMeta, game_root: &Path) -> ScriptExtenderStatus {
+    let _ = ensure_loot_scripts_alias(game_root);
+
     let loader = game_root.join(meta.loader);
     let dll_found = meta.dll_prefix.is_some_and(|prefix| {
         std::fs::read_dir(game_root)
@@ -37,10 +86,20 @@ pub fn detect_status(meta: &ScriptExtenderMeta, game_root: &Path) -> ScriptExten
         .as_ref()
         .and_then(|r| r.installed_extender_game_version.clone());
     let version_compatible = version_report.as_ref().and_then(|r| r.compatible);
+    let scripts_installed = meta
+        .required_script
+        .map(|_| required_script_present(meta, game_root));
 
     if loader.exists() || dll_found {
         let mut message = format!("{} is installed and ready.", meta.label);
-        if version_compatible == Some(false) {
+        if scripts_installed == Some(false) {
+            message = format!(
+                "{meta_label} loader is present but Data/Scripts/{script} is missing. \
+                 Re-install {meta_label} from the game hub — extract the full archive including the Data folder.",
+                meta_label = meta.label,
+                script = meta.required_script.unwrap_or("script.pex")
+            );
+        } else if version_compatible == Some(false) {
             if let (Some(gv), Some(ev)) = (&game_version, &extender_game_version) {
                 message = format!(
                     "{meta_label} is installed for game {ev}, but your game is {gv}. \
@@ -61,6 +120,7 @@ pub fn detect_status(meta: &ScriptExtenderMeta, game_root: &Path) -> ScriptExten
             extender_game_version,
             recommended_extender_version: recommended_extender,
             version_compatible,
+            scripts_installed,
         }
     } else {
         let mut message = format!("{} not detected.", meta.label);
@@ -80,6 +140,7 @@ pub fn detect_status(meta: &ScriptExtenderMeta, game_root: &Path) -> ScriptExten
             extender_game_version,
             recommended_extender_version: recommended_extender,
             version_compatible,
+            scripts_installed,
         }
     }
 }
@@ -154,14 +215,56 @@ fn install_from_archive_meta(
         },
     )?;
 
+    ensure_loot_scripts_alias(game_root)?;
+
     if configure_steam_launcher {
         if let Some(launcher) = meta.launcher_exe {
             patch_steam_launcher(game_root, meta.loader, launcher)?;
         }
     }
 
+    let status = detect_status(meta, game_root);
+    if status.scripts_installed == Some(false) {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        return Err(NexusDeckError::Other(format!(
+            "{} loader files were copied but Data/Scripts/{} is still missing. \
+             Download the full {} archive from {} and use Install from file.",
+            meta.label,
+            meta.required_script.unwrap_or("script.pex"),
+            meta.label,
+            meta.website_url
+        )));
+    }
+
     let _ = std::fs::remove_dir_all(&temp_dir);
-    Ok(detect_status(meta, game_root))
+    Ok(status)
+}
+
+/// LOOT on Linux checks `Data/scripts/` (lowercase) while extenders install to `Data/Scripts/`.
+#[cfg(unix)]
+pub fn ensure_loot_scripts_alias(game_root: &Path) -> Result<()> {
+    let data = game_root.join("Data");
+    let scripts = data.join("Scripts");
+    let scripts_lower = data.join("scripts");
+
+    if !scripts.is_dir() {
+        return Ok(());
+    }
+
+    if scripts_lower.exists() {
+        return Ok(());
+    }
+
+    std::os::unix::fs::symlink("Scripts", &scripts_lower).map_err(|e| {
+        NexusDeckError::Other(format!(
+            "Could not create Data/scripts symlink for LOOT compatibility: {e}"
+        ))
+    })
+}
+
+#[cfg(not(unix))]
+pub fn ensure_loot_scripts_alias(_game_root: &Path) -> Result<()> {
+    Ok(())
 }
 
 
@@ -295,4 +398,38 @@ fn patch_steam_launcher(
 
     std::fs::copy(&loader, &launcher)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::games::script_extender_meta::ScriptExtenderMeta;
+    use std::fs;
+
+    #[test]
+    fn detects_missing_f4se_scripts() {
+        let root = std::env::temp_dir().join(format!("nexusdeck-f4se-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("f4se_loader.exe"), b"x").unwrap();
+        let meta = ScriptExtenderMeta::FALLOUT4;
+        assert!(!required_script_present(&meta, &root));
+        let status = detect_status(&meta, &root);
+        assert_eq!(status.scripts_installed, Some(false));
+        assert!(status.message.contains("F4SE.pex"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn detects_present_f4se_scripts() {
+        let root = std::env::temp_dir().join(format!("nexusdeck-f4se-test-{}", uuid::Uuid::new_v4()));
+        let scripts = root.join("Data").join("Scripts");
+        fs::create_dir_all(&scripts).unwrap();
+        fs::write(root.join("f4se_loader.exe"), b"x").unwrap();
+        fs::write(scripts.join("F4SE.pex"), b"pex").unwrap();
+        let meta = ScriptExtenderMeta::FALLOUT4;
+        assert!(required_script_present(&meta, &root));
+        let status = detect_status(&meta, &root);
+        assert_eq!(status.scripts_installed, Some(true));
+        let _ = fs::remove_dir_all(&root);
+    }
 }

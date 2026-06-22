@@ -24,8 +24,17 @@ export const useAuthStore = create<AuthState>((set) => ({
   initialize: async () => {
     set({ loading: true, error: null });
     try {
+      const hadKey = await api.checkHasApiKey();
       const user = await api.loadStoredApiKey();
-      set({ user, initialized: true, loading: false });
+      set({
+        user,
+        initialized: true,
+        loading: false,
+        error:
+          hadKey && !user
+            ? "Your saved API key expired or was revoked. Sign in again in Settings."
+            : null,
+      });
     } catch (e) {
       set({
         error: e instanceof Error ? e.message : String(e),
@@ -39,10 +48,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ loading: true, error: null });
     try {
       const user = await api.validateAndStoreApiKey(key);
-      set({ user, loading: false });
+      set({ user, loading: false, error: null });
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
       set({
-        error: e instanceof Error ? e.message : String(e),
+        error: message.toLowerCase().includes("invalid api key")
+          ? "That API key is invalid. Copy a fresh key from Nexus Mods and try again."
+          : message,
         loading: false,
       });
       throw e;

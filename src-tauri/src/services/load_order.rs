@@ -645,7 +645,7 @@ pub fn analyze_loot_issues(
                     .iter()
                     .find(|c| c.language() == "en" || c.language().is_empty())
                     .or_else(|| msg.content().first())
-                    .map(|c| c.text().to_string())
+                    .map(|c| normalize_loot_message(c.text()))
                     .unwrap_or_else(|| "LOOT reported an issue with this plugin.".into());
                 issues.push(loot_issue(
                     "loot_message",
@@ -670,7 +670,7 @@ pub fn analyze_loot_issues(
                 .iter()
                 .find(|c| c.language() == "en" || c.language().is_empty())
                 .or_else(|| msg.content().first())
-                .map(|c| c.text().to_string())
+                .map(|c| normalize_loot_message(c.text()))
                 .unwrap_or_else(|| "LOOT general warning.".into());
             issues.push(loot_issue("loot_general", None, text, severity));
         }
@@ -690,6 +690,46 @@ fn severity_rank(severity: &str) -> u8 {
         "error" => 0,
         "warning" => 1,
         _ => 2,
+    }
+}
+
+/// libloot 0.29 only substitutes `{0}` placeholders; many masterlists still ship `%1%` syntax.
+fn normalize_loot_message(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '%' {
+            if let Some(rel_end) = (i + 1..chars.len()).find(|&j| chars[j] == '%') {
+                let inner: String = chars[i + 1..rel_end].iter().collect();
+                if !inner.is_empty() && inner.chars().all(|c| c.is_ascii_digit()) {
+                    i = rel_end + 1;
+                    continue;
+                }
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+
+    let mut cleaned = out.replace("****", "");
+    while cleaned.contains("  ") {
+        cleaned = cleaned.replace("  ", " ");
+    }
+    cleaned.trim().to_string()
+}
+
+#[cfg(test)]
+mod loot_message_tests {
+    use super::normalize_loot_message;
+
+    #[test]
+    fn strips_legacy_percent_placeholders() {
+        let raw = "It appears you have installed **%1%**, but its required scripts seem to be missing.";
+        let normalized = normalize_loot_message(raw);
+        assert!(!normalized.contains('%'));
+        assert!(!normalized.contains("**"));
+        assert!(normalized.contains("scripts seem to be missing"));
     }
 }
 

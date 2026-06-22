@@ -1,4 +1,5 @@
 import { AlertCircle, RefreshCw } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
 import { getUserMessage, logApiError, REPORT_ISSUE_URL, type ApiErrorContext } from "@/lib/apiError";
@@ -13,6 +14,10 @@ interface ApiErrorBannerProps {
 export function ApiErrorBanner({ context, error, onRetry, className = "" }: ApiErrorBannerProps) {
   const parsed = getUserMessage(context, error);
   logApiError(context, parsed.raw);
+  const needsSignIn =
+    !parsed.retryable ||
+    parsed.userMessage.toLowerCase().includes("api key") ||
+    parsed.raw.toLowerCase().includes("invalid api key");
 
   return (
     <div
@@ -27,6 +32,11 @@ export function ApiErrorBanner({ context, error, onRetry, className = "" }: ApiE
             <p className="mt-1 text-sm text-[var(--color-muted)]">{parsed.userMessage}</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {needsSignIn && (
+              <Button size="sm" asChild data-focusable="true">
+                <Link to="/settings">Open Settings</Link>
+              </Button>
+            )}
             {onRetry && parsed.retryable && (
               <Button size="sm" variant="secondary" onClick={onRetry}>
                 <RefreshCw className="h-4 w-4" />

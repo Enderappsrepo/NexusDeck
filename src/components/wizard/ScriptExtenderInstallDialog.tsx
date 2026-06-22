@@ -87,7 +87,8 @@ export function ScriptExtenderInstallDialog({
   const canAutoInstall = info?.supports_auto_download ?? false;
   const canPatchLauncher = info?.supports_steam_launcher_patch ?? false;
   const versionMismatch = status?.version_compatible === false;
-  const canInstall = !status?.installed || versionMismatch;
+  const scriptsMissing = status?.scripts_installed === false;
+  const canInstall = !status?.installed || versionMismatch || scriptsMissing;
 
   return (
     <AppDialog
@@ -101,11 +102,13 @@ export function ScriptExtenderInstallDialog({
           <div className="rounded-xl bg-[var(--color-secondary)] p-4">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5" />
-              <Badge variant={status.installed && !versionMismatch ? "success" : "warning"}>
+              <Badge variant={status.installed && !versionMismatch && !scriptsMissing ? "success" : "warning"}>
                 {status.installed
                   ? versionMismatch
                     ? "Wrong version"
-                    : "Installed"
+                    : scriptsMissing
+                      ? "Scripts missing"
+                      : "Installed"
                   : "Not installed"}
               </Badge>
             </div>
@@ -146,6 +149,12 @@ export function ScriptExtenderInstallDialog({
               <p className="mt-2 text-[var(--color-warning)]">
                 Your {label} build does not match this game version. Re-install to fix MCM, plugins,
                 and launch issues.
+              </p>
+            )}
+            {scriptsMissing && (
+              <p className="mt-2 text-[var(--color-warning)]">
+                {label} loader files are present but Data/Scripts/{label === "F4SE" ? "F4SE.pex" : "required scripts"} is
+                missing. Re-install using the full archive — do not copy only the loader and DLLs.
               </p>
             )}
             {!canAutoInstall && (
@@ -195,7 +204,7 @@ export function ScriptExtenderInstallDialog({
               <Download className="h-5 w-5" />
               {loading
                 ? "Installing..."
-                : versionMismatch
+                : versionMismatch || scriptsMissing
                   ? `Re-install ${label}`
                   : status?.installed
                     ? "Already installed"
@@ -206,7 +215,7 @@ export function ScriptExtenderInstallDialog({
             variant="secondary"
             size="lg"
             onClick={installFromFile}
-            disabled={loading || (status?.installed && !versionMismatch)}
+            disabled={loading || (status?.installed && !versionMismatch && !scriptsMissing)}
             data-focusable="true"
           >
             <FolderOpen className="h-5 w-5" />

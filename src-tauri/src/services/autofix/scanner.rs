@@ -107,6 +107,22 @@ pub fn scan_profile(profile_id: &str) -> Result<DiagnosticScanResult> {
         }
     } else if let Some(ref loader) = se_status.loader_path {
         let _ = loader;
+        if se_status.scripts_installed == Some(false) {
+            let remedy = if profile.game_domain == "fallout4" {
+                "reinstall_script_extender"
+            } else {
+                "reinstall_skse"
+            };
+            findings.push(finding(
+                "script_extender_scripts_missing",
+                "error",
+                &se_status.message,
+                Some(remedy.into()),
+                false,
+                Some("Re-install the script extender using the full archive (loader + Data/Scripts).".into()),
+                serde_json::to_value(&se_status)?,
+            ));
+        }
     }
 
     if cfg!(not(target_os = "windows")) {

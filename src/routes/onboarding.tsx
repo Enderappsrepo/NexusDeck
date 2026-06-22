@@ -111,7 +111,13 @@ function OnboardingPage() {
     }
 
     if (step === "apikey") {
-      await login(apiKey);
+      if (apiKey.trim()) {
+        try {
+          await login(apiKey);
+        } catch {
+          return;
+        }
+      }
       setStep("finish");
       return;
     }
@@ -314,6 +320,9 @@ function OnboardingPage() {
                 Get your API key from Nexus Mods
               </Button>
               {error && <p className="text-[var(--color-danger)]">{error}</p>}
+              <p className="text-xs text-[var(--color-muted)]">
+                You can skip this and add your API key later from Settings.
+              </p>
             </>
           )}
 
@@ -367,11 +376,7 @@ function OnboardingPage() {
             <Button
               size="lg"
               onClick={handleContinue}
-              disabled={
-                loading ||
-                (visibleStep === "apikey" && !apiKey.trim()) ||
-                addingToSteam
-              }
+              disabled={loading || addingToSteam}
               data-focusable="true"
             >
               {loading
@@ -379,7 +384,9 @@ function OnboardingPage() {
                 : visibleStep === "welcome"
                   ? "Get Started"
                   : visibleStep === "apikey"
-                    ? "Connect"
+                    ? apiKey.trim()
+                      ? "Connect"
+                      : "Skip for now"
                     : "Continue"}
             </Button>
           )}

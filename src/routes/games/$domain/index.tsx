@@ -30,6 +30,7 @@ import { ModSearchBar } from "@/components/mod/ModSearchBar";
 import { LaunchButton } from "@/components/launch/LaunchButton";
 import { useLaunchStore } from "@/stores/launchStore";
 import { useAuthStore, useGamesStore } from "@/stores";
+import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { api } from "@/lib/commands";
 import {
   getGameMeta,
@@ -165,6 +166,7 @@ function GameDashboard() {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-5">
+      {!user && <SignInPrompt />}
       <section className="game-banner min-h-[220px] sm:min-h-[260px]">
         <GameArt domain={domain} variant="hero" />
         <div className="game-banner-content">
@@ -220,15 +222,25 @@ function GameDashboard() {
         </div>
       </section>
 
-      {showExtender && extenderStatus && !extenderStatus.installed && (
+      {showExtender &&
+        extenderStatus &&
+        (!extenderStatus.installed ||
+          extenderStatus.version_compatible === false ||
+          extenderStatus.scripts_installed === false) && (
         <Card className="border-[var(--color-warning)]/40 bg-[var(--color-warning)]/8">
           <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
             <div>
-              <Badge variant="warning">{extenderLabel} recommended</Badge>
+              <Badge variant="warning">
+                {extenderStatus.scripts_installed === false
+                  ? `${extenderLabel} scripts missing`
+                  : extenderStatus.version_compatible === false
+                    ? `${extenderLabel} version mismatch`
+                    : `${extenderLabel} recommended`}
+              </Badge>
               <p className="mt-1.5 text-sm">{extenderStatus.message}</p>
             </div>
             <Button onClick={() => setExtenderDialogOpen(true)}>
-              Install {extenderLabel}
+              {extenderStatus.installed ? `Repair ${extenderLabel}` : `Install ${extenderLabel}`}
             </Button>
           </CardContent>
         </Card>

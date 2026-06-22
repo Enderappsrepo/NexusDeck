@@ -121,6 +121,16 @@ pub fn validate_launch(
                     ),
                     "error",
                 ));
+            } else if status.scripts_installed == Some(false) {
+                blockers.push(item(
+                    "script_extender_scripts_missing",
+                    format!(
+                        "{extender_label} loader is installed but its bundled scripts are missing \
+                         (e.g. Data/Scripts/F4SE.pex). Re-install {extender_label} from the game hub \
+                         using the full archive."
+                    ),
+                    "error",
+                ));
             }
         }
     } else if needs_extender {

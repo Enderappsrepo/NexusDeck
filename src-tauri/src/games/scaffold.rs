@@ -55,6 +55,7 @@ impl GamePlugin for SkyrimSeScaffold {
             extender_game_version: None,
             recommended_extender_version: None,
             version_compatible: None,
+            scripts_installed: None,
         }
     }
 
