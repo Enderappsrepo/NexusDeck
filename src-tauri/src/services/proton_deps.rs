@@ -1,15 +1,21 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
 use crate::db::Profile;
 use crate::error::{NexusDeckError, Result};
-use crate::services::host_command::{self, PROTONTRICKS_INSTALL_TIMEOUT_SECS, PROTONTRICKS_PROBE_TIMEOUT_SECS};
+use crate::services::host_command::{
+    self, call_with_timeout, PROTONTRICKS_INSTALL_TIMEOUT_SECS, PROTONTRICKS_PROBE_TIMEOUT_SECS,
+};
 use crate::services::platform;
 use crate::services::proton_log::ProtonLogger;
 
 pub const PROTONTRICKS_FLATPAK_ID: &str = "com.github.Matoking.protontricks";
+const PREPARE_PHASE_TIMEOUT: Duration = Duration::from_secs(90);
+const STEAMLOCATE_TIMEOUT_SECS: u64 = 8;
+const PREFIX_HOST_TIMEOUT_SECS: u64 = 20;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtontricksInfo {
@@ -77,10 +83,19 @@ pub fn detect_protontricks() -> ProtontricksInfo {
     }
 
     if platform::is_flatpak_sandbox() {
-        detect_protontricks_host().unwrap_or_else(protontricks_missing)
-    } else {
-        detect_protontricks_local()
+        return call_with_timeout(PROTONTRICKS_PROBE_TIMEOUT_SECS, detect_protontricks_host)
+            .flatten()
+            .unwrap_or_else(|| ProtontricksInfo {
+                available: false,
+                command: String::new(),
+                message: "Timed out detecting Protontricks on the host. Install it from Discover \
+                    (Protontricks) or run: flatpak install flathub com.github.Matoking.protontricks"
+                    .into(),
+                kind: "none".into(),
+            });
     }
+
+    detect_protontricks_local()
 }
 
 fn protontricks_missing() -> ProtontricksInfo {
@@ -125,10 +140,6 @@ if flatpak info {PROTONTRICKS_FLATPAK_ID} >/dev/null 2>&1; then
   echo "flatpak|{PROTONTRICKS_FLATPAK_ID}"
   exit 0
 fi
-if flatpak list --app --columns=application 2>/dev/null | grep -qx '{PROTONTRICKS_FLATPAK_ID}'; then
-  echo "flatpak|{PROTONTRICKS_FLATPAK_ID}"
-  exit 0
-fi
 exit 1"#
     );
     let output = run_host_bash(&script).ok()?;
@@ -170,6 +181,10 @@ fn flatpak_app_installed(app_id: &str) -> bool {
 
 fn run_host_bash(script: &str) -> Result<Output> {
     host_command::run_bash(script, host_command::DEFAULT_HOST_TIMEOUT_SECS)
+}
+
+fn run_host_bash_probe(script: &str) -> Result<Output> {
+    host_command::run_bash(script, PROTONTRICKS_PROBE_TIMEOUT_SECS)
 }
 
 fn run_on_host_probe(program: &str, args: &[&str], env: &[(&str, &str)]) -> Result<Output> {
@@ -233,11 +248,21 @@ pub fn install_game_deps_with_progress(
     on_progress: &dyn Fn(ProtonDepProgress),
     logger: Option<&ProtonLogger>,
 ) -> Result<ProtonDepsResult> {
+    install_game_deps_with_progress_hint(game_domain, dry_run, None, on_progress, logger)
+}
+
+pub fn install_game_deps_with_progress_hint(
+    game_domain: &str,
+    dry_run: bool,
+    prefix_hint: Option<&str>,
+    on_progress: &dyn Fn(ProtonDepProgress),
+    logger: Option<&ProtonLogger>,
+) -> Result<ProtonDepsResult> {
     let config = load_deps_config(game_domain)?;
     install_packages_with_context(
         config.app_id,
         &config.packages,
-        None,
+        prefix_hint,
         dry_run,
         Some(on_progress),
         logger,
@@ -310,6 +335,19 @@ fn install_packages_with_context(
     }
 
     let total = packages.len();
+    let prepare_started = Instant::now();
+    let check_prepare = || -> Result<()> {
+        if prepare_started.elapsed() > PREPARE_PHASE_TIMEOUT {
+            return Err(NexusDeckError::Other(format!(
+                "Prepare phase timed out after {}s while setting up Protontricks. \
+                 Launch the game once from Steam, then retry. \
+                 If it keeps failing, open Konsole and run: flatpak info {PROTONTRICKS_FLATPAK_ID}",
+                PREPARE_PHASE_TIMEOUT.as_secs()
+            )));
+        }
+        Ok(())
+    };
+
     emit_progress(
         on_progress,
         total,
@@ -319,6 +357,7 @@ fn install_packages_with_context(
         Some("Detecting Protontricks on the host…"),
     );
 
+    check_prepare()?;
     let pt = detect_protontricks();
     if let Some(log) = logger {
         log.info(
@@ -368,6 +407,7 @@ fn install_packages_with_context(
         Some("Locating Proton prefix (compatdata)…"),
     );
 
+    check_prepare()?;
     let compatdata = resolve_compatdata_path(app_id, prefix_hint);
     if compatdata.is_none() {
         if let Some(log) = logger {
@@ -403,10 +443,20 @@ fn install_packages_with_context(
         Some("Configuring Protontricks Flatpak access…"),
     );
 
+    check_prepare()?;
     let _ = ensure_protontricks_flatpak_access();
     if let Some(log) = logger {
         log.info("setup", "Ensured Protontricks Flatpak filesystem access");
     }
+
+    emit_progress(
+        on_progress,
+        total,
+        "preparing",
+        "",
+        0,
+        Some("Starting package installs…"),
+    );
 
     let package_names: Vec<String> = packages.iter().map(|p| p.as_ref().to_string()).collect();
     let mut installed = Vec::new();
@@ -708,11 +758,17 @@ fn resolve_compatdata_path(app_id: u32, prefix_hint: Option<&str>) -> Option<Pat
         }
     }
 
-    if let Some(path) = resolve_compatdata_local(app_id) {
-        return Some(path);
+    // Inside the Flatpak sandbox, Steam lives on the host — skip steamlocate (can hang minutes).
+    if !platform::is_flatpak_sandbox() {
+        if let Some(path) =
+            call_with_timeout(STEAMLOCATE_TIMEOUT_SECS, move || resolve_compatdata_local(app_id))
+                .flatten()
+        {
+            return Some(path);
+        }
     }
 
-    resolve_compatdata_on_host(app_id)
+    call_with_timeout(PREFIX_HOST_TIMEOUT_SECS, move || resolve_compatdata_on_host(app_id)).flatten()
 }
 
 fn compatdata_from_hint(hint: &str) -> Option<PathBuf> {
@@ -778,7 +834,7 @@ exit 1"#
     );
 
     let output = if platform::is_flatpak_sandbox() {
-        run_host_bash(&script).ok()?
+        run_host_bash_probe(&script).ok()?
     } else {
         Command::new("bash")
             .args(["-lc", &script])

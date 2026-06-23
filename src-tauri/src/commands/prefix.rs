@@ -97,13 +97,18 @@ pub async fn install_proton_deps(
     game_domain: String,
     dry_run: bool,
     profile_id: Option<String>,
+    proton_prefix_path: Option<String>,
 ) -> Result<proton_deps::ProtonDepsResult> {
     tokio::task::spawn_blocking(move || {
         let logger = new_proton_logger("deps", &app);
         if let Some(ref log) = logger {
             let _ = log.write_header(
                 "Proton dependency install",
-                &format!("game_domain={game_domain} dry_run={dry_run} profile_id={}", profile_id.as_deref().unwrap_or("(none)")),
+                &format!(
+                    "game_domain={game_domain} dry_run={dry_run} profile_id={} prefix_hint={}",
+                    profile_id.as_deref().unwrap_or("(none)"),
+                    proton_prefix_path.as_deref().unwrap_or("(none)")
+                ),
             );
         }
         let emit = |p: proton_deps::ProtonDepProgress| {
@@ -111,7 +116,17 @@ pub async fn install_proton_deps(
             if let Some(ref log) = logger {
                 log.info(
                     "progress",
-                    &format!("{} {}/{} — {}", p.package, p.index, p.total, p.status),
+                    &format!(
+                        "{} {}/{} — {}{}",
+                        p.package,
+                        p.index,
+                        p.total,
+                        p.status,
+                        p.detail
+                            .as_ref()
+                            .map(|d| format!(" ({d})"))
+                            .unwrap_or_default()
+                    ),
                 );
             }
             let _ = app.emit("proton-deps:progress", p);
@@ -129,7 +144,14 @@ pub async fn install_proton_deps(
                 );
             }
         }
-        proton_deps::install_game_deps_with_progress(&game_domain, dry_run, &emit, logger.as_ref())
+        let hint = proton_prefix_path.as_deref();
+        proton_deps::install_game_deps_with_progress_hint(
+            &game_domain,
+            dry_run,
+            hint,
+            &emit,
+            logger.as_ref(),
+        )
     })
     .await
     .map_err(|e| crate::error::NexusDeckError::Other(format!("Proton deps install failed: {e}")))?

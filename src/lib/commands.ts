@@ -719,11 +719,17 @@ export const api = {
   fixProtontricksError: () =>
     invoke<import("@/lib/autofix-types").ProtontricksFixResult>("fix_protontricks_error"),
 
-  installProtonDeps: (gameDomain: string, dryRun = false, profileId?: string) =>
+  installProtonDeps: (
+    gameDomain: string,
+    dryRun = false,
+    profileId?: string,
+    protonPrefixPath?: string
+  ) =>
     invoke<import("@/lib/autofix-types").ProtonDepsResult>("install_proton_deps", {
       gameDomain,
       dryRun,
       profileId: profileId ?? null,
+      protonPrefixPath: protonPrefixPath ?? null,
     }),
 
   verifyProtonDeps: (profileId?: string, gameDomain?: string) =>

@@ -210,7 +210,12 @@ function SetupWizardPage() {
     setInstallingProton(true);
     setProtonMessage("");
     try {
-      const result = await api.installProtonDeps(domain, false);
+      const result = await api.installProtonDeps(
+        domain,
+        false,
+        undefined,
+        protonPrefixPath || undefined
+      );
       setProtonMessage(result.message);
     } catch (e) {
       setProtonMessage(e instanceof Error ? e.message : String(e));
