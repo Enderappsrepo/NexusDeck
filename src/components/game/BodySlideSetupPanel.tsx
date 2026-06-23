@@ -27,7 +27,15 @@ const STEP_ICONS = {
   pending: Circle,
 };
 
-export function BodySlideSetupPanel({ profileId }: { profileId: string }) {
+const BODYSLIDE_GAMES = new Set(["fallout4", "skyrimspecialedition"]);
+
+export function BodySlideSetupPanel({
+  profileId,
+  gameDomain,
+}: {
+  profileId: string;
+  gameDomain: string;
+}) {
   const profile = useGamesStore((s) => s.profiles.find((p) => p.id === profileId));
   const [status, setStatus] = useState<BodySetupStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,6 +75,10 @@ export function BodySlideSetupPanel({ profileId }: { profileId: string }) {
     return () => window.removeEventListener("nexusdeck-mod-installed", handler);
   }, [refresh]);
 
+  if (!BODYSLIDE_GAMES.has(gameDomain)) {
+    return null;
+  }
+
   if (loading && !status) {
     return (
       <section className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-5">
@@ -96,12 +108,9 @@ export function BodySlideSetupPanel({ profileId }: { profileId: string }) {
 
   if (!status) return null;
 
-  const showPanel =
-    status.can_one_click_install ||
-    status.can_one_click_cbbe ||
-    status.cbbe_installed ||
-    status.bodyslide_installed;
-  if (!showPanel) return null;
+  if (status.applicable === false) {
+    return null;
+  }
 
   const oneClickInstall = async () => {
     setInstalling(true);

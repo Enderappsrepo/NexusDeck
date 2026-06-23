@@ -3,6 +3,7 @@
 //! (built body meshes) lands in the game's Data folder.
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
@@ -10,6 +11,7 @@ use walkdir::WalkDir;
 use crate::db::{self, Profile};
 use crate::error::{NexusDeckError, Result};
 use crate::services::bodyslide_config::{self, BodyslidePathInfo};
+use crate::services::platform;
 use crate::services::steam_launch::{launch_direct_executable, launch_through_proton};
 
 pub const FO4_BODYSLIDE_NEXUS_URL: &str =
@@ -60,13 +62,29 @@ const CBBE_CATALOG: &[CbbeCatalogEntry] = &[
 ];
 
 pub fn bodyslide_catalog(game_domain: &str) -> Option<&'static BodySlideCatalogEntry> {
+    let domain = catalog_domain(game_domain)?;
     BODYSLIDE_CATALOG
         .iter()
-        .find(|e| e.game_domain == game_domain)
+        .find(|e| e.game_domain == domain)
 }
 
 pub fn cbbe_catalog(game_domain: &str) -> Option<&'static CbbeCatalogEntry> {
-    CBBE_CATALOG.iter().find(|e| e.game_domain == game_domain)
+    let domain = catalog_domain(game_domain)?;
+    CBBE_CATALOG.iter().find(|e| e.game_domain == domain)
+}
+
+pub fn game_supports_body_setup(game_domain: &str) -> bool {
+    catalog_domain(game_domain).is_some()
+}
+
+fn catalog_domain(domain: &str) -> Option<&'static str> {
+    match domain.trim().to_ascii_lowercase().as_str() {
+        "fallout4" | "fo4" => Some("fallout4"),
+        "skyrimspecialedition" | "skyrimse" | "skyrim special edition" => {
+            Some("skyrimspecialedition")
+        }
+        _ => None,
+    }
 }
 
 const BODYSLIDE_EXES: [&str; 2] = ["BodySlide x64.exe", "BodySlide.exe"];
@@ -93,6 +111,7 @@ pub struct BodySetupStep {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BodySetupStatus {
+    pub applicable: bool,
     pub cbbe_installed: bool,
     pub bodyslide_installed: bool,
     pub bodyslide_exe: Option<String>,
@@ -140,8 +159,65 @@ fn is_body_mod_name(name: &str) -> bool {
 }
 
 pub fn profile_has_body_mod(profile_id: &str) -> Result<bool> {
+    let profile = load_profile(profile_id)?;
+    let game_root = PathBuf::from(&profile.game_path);
+    let on_disk = cbbe_present_on_disk(&game_root);
+    if on_disk {
+        return Ok(true);
+    }
     let mods = db::list_installed_mods(profile_id)?;
     Ok(mods.iter().any(|m| is_body_mod_name(&m.name)))
+}
+
+fn cbbe_present_on_disk(game_root: &Path) -> bool {
+    [
+        game_root.join("Data").join("Tools").join("BodySlide"),
+        game_root.join("Data").join("CalienteTools"),
+    ]
+    .iter()
+    .any(|p| path_is_dir(p))
+        || find_bodyslide_exe(game_root).is_some()
+}
+
+fn path_is_file(path: &Path) -> bool {
+    path.to_str()
+        .map(host_path_is_file)
+        .unwrap_or(false)
+}
+
+fn path_is_dir(path: &Path) -> bool {
+    if !platform::is_flatpak_sandbox() {
+        return path.is_dir();
+    }
+    let Some(path) = path.to_str() else {
+        return false;
+    };
+    let script = format!("[ -d \"{}\" ] && echo yes", path.replace('"', "\\\""));
+    run_host_bash(&script)
+        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("yes"))
+        .unwrap_or(false)
+}
+
+fn host_path_is_file(path: &str) -> bool {
+    if !platform::is_flatpak_sandbox() {
+        return Path::new(path).is_file();
+    }
+    let script = format!("[ -f \"{}\" ] && echo yes", path.replace('"', "\\\""));
+    run_host_bash(&script)
+        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("yes"))
+        .unwrap_or(false)
+}
+
+fn run_host_bash(script: &str) -> Result<std::process::Output> {
+    let output = if platform::is_flatpak_sandbox() {
+        Command::new("flatpak-spawn")
+            .args(["--host", "bash", "-lc", script])
+            .output()
+    } else {
+        Command::new("bash").args(["-lc", script]).output()
+    }
+    .map_err(|e| NexusDeckError::Other(format!("Host command failed: {e}")))?;
+    Ok(output)
 }
 
 fn find_bodyslide_exe(game_root: &Path) -> Option<(PathBuf, PathBuf)> {
@@ -152,7 +228,7 @@ fn find_bodyslide_exe(game_root: &Path) -> Option<(PathBuf, PathBuf)> {
 
     for exe in BODYSLIDE_EXES {
         let candidate = expected.join(exe);
-        if candidate.is_file() {
+        if path_is_file(&candidate) {
             return Some((candidate, expected.clone()));
         }
     }
@@ -161,7 +237,7 @@ fn find_bodyslide_exe(game_root: &Path) -> Option<(PathBuf, PathBuf)> {
     let legacy = game_root.join("CalienteTools").join("BodySlide");
     for exe in BODYSLIDE_EXES {
         let candidate = legacy.join(exe);
-        if candidate.is_file() {
+        if path_is_file(&candidate) {
             return Some((candidate, legacy));
         }
     }
@@ -170,14 +246,14 @@ fn find_bodyslide_exe(game_root: &Path) -> Option<(PathBuf, PathBuf)> {
     let cbbe_tools = game_root.join("Data").join("Tools").join("BodySlide");
     for exe in BODYSLIDE_EXES {
         let candidate = cbbe_tools.join(exe);
-        if candidate.is_file() {
+        if path_is_file(&candidate) {
             return Some((candidate, cbbe_tools.clone()));
         }
     }
 
     // Case-insensitive walk under Data/ for BodySlide x64.exe.
     let data_root = game_root.join("Data");
-    if data_root.is_dir() {
+    if path_is_dir(&data_root) {
         for entry in WalkDir::new(&data_root).max_depth(6).into_iter().filter_map(|e| e.ok()) {
             if !entry.file_type().is_file() {
                 continue;
@@ -191,14 +267,44 @@ fn find_bodyslide_exe(game_root: &Path) -> Option<(PathBuf, PathBuf)> {
         }
     }
 
-    None
+    find_bodyslide_exe_via_host(game_root)
+}
+
+fn find_bodyslide_exe_via_host(game_root: &Path) -> Option<(PathBuf, PathBuf)> {
+    if !platform::is_flatpak_sandbox() {
+        return None;
+    }
+    let root = game_root.display().to_string().replace('"', "\\\"");
+    let script = format!(
+        r#"game="{root}"
+for exe in "BodySlide x64.exe" "BodySlide.exe"; do
+  for base in "$game/Data/CalienteTools/BodySlide" "$game/Data/Tools/BodySlide" "$game/CalienteTools/BodySlide"; do
+    if [ -f "$base/$exe" ]; then
+      echo "$base/$exe"
+      exit 0
+    fi
+  done
+done
+find "$game/Data" -maxdepth 6 \( -iname 'BodySlide x64.exe' -o -iname 'BodySlide.exe' \) 2>/dev/null | head -n1"#
+    );
+    let output = run_host_bash(&script).ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let hit = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if hit.is_empty() {
+        return None;
+    }
+    let exe = PathBuf::from(&hit);
+    let dir = exe.parent()?.to_path_buf();
+    Some((exe, dir))
 }
 
 fn find_tool_exe(game_root: &Path, exe_names: &[&str]) -> Option<(PathBuf, PathBuf)> {
-    if let Some((exe, dir)) = find_bodyslide_exe(game_root) {
+    if let Some((_, dir)) = find_bodyslide_exe(game_root) {
         for name in exe_names {
             let candidate = dir.join(name);
-            if candidate.is_file() {
+            if path_is_file(&candidate) {
                 return Some((candidate, dir.clone()));
             }
         }
@@ -323,7 +429,7 @@ pub fn get_body_setup_status(profile_id: &str) -> Result<BodySetupStatus> {
             label: "Install BodySlide + Outfit Studio".into(),
             status: step2_status.into(),
             description: Some(
-                "Download BodySlide from Nexus and install it. Files must land in Data/CalienteTools/BodySlide.".into(),
+                "Download BodySlide from Nexus and install it. On Fallout 4, files usually land in Data/Tools/BodySlide or Data/CalienteTools/BodySlide.".into(),
             ),
         },
         BodySetupStep {
@@ -345,6 +451,7 @@ pub fn get_body_setup_status(profile_id: &str) -> Result<BodySetupStatus> {
     ];
 
     Ok(BodySetupStatus {
+        applicable: game_supports_body_setup(&profile.game_domain),
         cbbe_installed,
         bodyslide_installed: bodyslide.installed,
         bodyslide_exe: bodyslide.exe_path,

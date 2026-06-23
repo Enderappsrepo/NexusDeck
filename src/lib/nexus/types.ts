@@ -765,6 +765,7 @@ export interface BodySetupStep {
 }
 
 export interface BodySetupStatus {
+  applicable: boolean;
   cbbe_installed: boolean;
   bodyslide_installed: boolean;
   bodyslide_exe?: string | null;
