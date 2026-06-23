@@ -83,9 +83,9 @@ export function DeckyHostPanel() {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-[var(--color-muted)]">
-          Optional companion for Gaming Mode. Runs on the host (outside Flatpak) to
-          check protontricks, Steam paths, and launch NexusDeck with fewer sandbox
-          issues. Requires{" "}
+          Optional Gaming Mode shortcut. Installs a small Decky plugin that opens NexusDeck
+          from Quick Access and shows whether Protontricks is installed on the host.
+          Requires{" "}
           <a
             className="text-[var(--color-primary)] underline"
             href="https://github.com/SteamDeckHomebrew/decky-loader"
@@ -139,9 +139,8 @@ export function DeckyHostPanel() {
           </div>
         )}
         <p className="text-xs text-[var(--color-muted)]">
-          After install, open Quick Access → NexusDeck for health checks and support
-          log export. You may be prompted for your password when Decky&apos;s plugins
-          folder is read-only.
+          After install, open Quick Access → NexusDeck to launch the app. For Protontricks
+          setup, use the guide in Settings above.
         </p>
       </CardContent>
     </Card>

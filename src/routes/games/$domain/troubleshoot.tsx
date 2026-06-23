@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DiagnosticReport } from "@/components/autofix/DiagnosticReport";
+import { ProtontricksGuidePanel } from "@/components/proton/ProtontricksGuidePanel";
 import { LogViewer } from "@/components/autofix/LogViewer";
 import { Mo2SetupWizard } from "@/components/mo2/Mo2SetupWizard";
 import { ConflictDashboard } from "@/components/library/ConflictDashboard";
@@ -141,6 +142,10 @@ function TroubleshootPage() {
       </div>
 
       {message && <p className="text-sm text-[var(--color-muted)]">{message}</p>}
+
+      {(domain === "fallout4" || domain === "skyrimspecialedition") && (
+        <ProtontricksGuidePanel gameDomain={domain} />
+      )}
 
       {scan && (
         <DiagnosticReport

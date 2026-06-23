@@ -1,14 +1,19 @@
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{NexusDeckError, Result};
+use crate::services::platform;
+
+pub const PROTONTRICKS_FLATPAK_ID: &str = "com.github.Matoking.protontricks";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtontricksInfo {
     pub available: bool,
     pub command: String,
     pub message: String,
+    /// "native", "flatpak", or "none"
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,37 +37,119 @@ pub fn detect_protontricks() -> ProtontricksInfo {
             available: false,
             command: String::new(),
             message: "protontricks is Linux-only (Proton prefixes).".to_string(),
+            kind: "none".into(),
         };
     }
 
+    if platform::is_flatpak_sandbox() {
+        detect_protontricks_host().unwrap_or_else(protontricks_missing)
+    } else {
+        detect_protontricks_local()
+    }
+}
+
+fn protontricks_missing() -> ProtontricksInfo {
+    ProtontricksInfo {
+        available: false,
+        command: String::new(),
+        message: "Install Protontricks from Discover (search \"Protontricks\") or run: flatpak install flathub com.github.Matoking.protontricks".into(),
+        kind: "none".into(),
+    }
+}
+
+fn detect_protontricks_local() -> ProtontricksInfo {
     if which::which("protontricks").is_ok() {
         return ProtontricksInfo {
             available: true,
             command: "protontricks".to_string(),
-            message: "protontricks found on PATH.".to_string(),
+            message: "Protontricks found on PATH.".to_string(),
+            kind: "native".into(),
         };
     }
 
-    if which::which("flatpak").is_ok() {
-        let check = Command::new("flatpak")
-            .args(["info", "com.github.Matoking.protontricks"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if check.map(|s| s.success()).unwrap_or(false) {
-            return ProtontricksInfo {
-                available: true,
-                command: "flatpak run com.github.Matoking.protontricks".to_string(),
-                message: "Protontricks Flatpak detected.".to_string(),
-            };
-        }
+    if flatpak_app_installed(PROTONTRICKS_FLATPAK_ID) {
+        return ProtontricksInfo {
+            available: true,
+            command: format!("flatpak run {PROTONTRICKS_FLATPAK_ID}"),
+            message: "Protontricks Flatpak detected.".to_string(),
+            kind: "flatpak".into(),
+        };
     }
 
-    ProtontricksInfo {
-        available: false,
-        command: String::new(),
-        message: "Install protontricks: pacman -S protontricks or Flatpak com.github.Matoking.protontricks".to_string(),
+    protontricks_missing()
+}
+
+fn detect_protontricks_host() -> Option<ProtontricksInfo> {
+    let script = format!(
+        r#"set -e
+if command -v protontricks >/dev/null 2>&1; then
+  echo "native|$(command -v protontricks)"
+  exit 0
+fi
+if flatpak info {PROTONTRICKS_FLATPAK_ID} >/dev/null 2>&1; then
+  echo "flatpak|{PROTONTRICKS_FLATPAK_ID}"
+  exit 0
+fi
+if flatpak list --app --columns=application 2>/dev/null | grep -qx '{PROTONTRICKS_FLATPAK_ID}'; then
+  echo "flatpak|{PROTONTRICKS_FLATPAK_ID}"
+  exit 0
+fi
+exit 1"#
+    );
+    let output = run_host_bash(&script).ok()?;
+    if !output.status.success() {
+        return None;
     }
+    parse_protontricks_detection(&output)
+}
+
+fn parse_protontricks_detection(output: &Output) -> Option<ProtontricksInfo> {
+    let line = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let (kind, detail) = line.split_once('|')?;
+    match kind {
+        "native" if !detail.is_empty() => Some(ProtontricksInfo {
+            available: true,
+            command: detail.to_string(),
+            message: format!("Protontricks found on the host at {detail}."),
+            kind: "native".into(),
+        }),
+        "flatpak" => Some(ProtontricksInfo {
+            available: true,
+            command: format!("flatpak run {PROTONTRICKS_FLATPAK_ID}"),
+            message: "Protontricks Flatpak detected on the host.".to_string(),
+            kind: "flatpak".into(),
+        }),
+        _ => None,
+    }
+}
+
+fn flatpak_app_installed(app_id: &str) -> bool {
+    Command::new("flatpak")
+        .args(["info", app_id])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn run_host_bash(script: &str) -> Result<Output> {
+    Command::new("flatpak-spawn")
+        .args(["--host", "bash", "-lc", script])
+        .output()
+        .map_err(|e| NexusDeckError::Other(format!("Host command failed: {e}")))
+}
+
+fn run_protontricks_shell(script: &str) -> Result<Output> {
+    let output = if platform::is_flatpak_sandbox() {
+        run_host_bash(script)?
+    } else {
+        Command::new("bash")
+            .args(["-lc", script])
+            .output()
+            .map_err(|e| NexusDeckError::Other(format!("Failed to run protontricks: {e}")))?
+    };
+    Ok(output)
 }
 
 pub fn list_game_deps(game_domain: &str) -> Result<Vec<String>> {
@@ -97,7 +184,7 @@ pub fn install_packages_for_app(app_id: u32, packages: &[&str]) -> Result<Proton
     let mut failed = Vec::new();
 
     for pkg in packages {
-        match run_protontricks(app_id, pkg, &pt.command) {
+        match run_protontricks(app_id, pkg, &pt) {
             Ok(()) => installed.push((*pkg).to_string()),
             Err(e) => {
                 log::warn!("protontricks {pkg} failed: {e}");
@@ -115,9 +202,9 @@ pub fn install_packages_for_app(app_id: u32, packages: &[&str]) -> Result<Proton
         skipped,
         failed,
         message: if success {
-            format!("Installed {installed_count} audio package(s) via protontricks.")
+            format!("Installed {installed_count} package(s) via protontricks.")
         } else {
-            format!("Some audio packages failed: {failed_list}.")
+            format!("Some packages failed: {failed_list}.")
         },
     })
 }
@@ -168,7 +255,7 @@ pub fn install_game_deps(game_domain: &str, dry_run: bool) -> Result<ProtonDepsR
             skipped.push(pkg.clone());
             continue;
         }
-        match run_protontricks(config.app_id, pkg, &pt.command) {
+        match run_protontricks(config.app_id, pkg, &pt) {
             Ok(()) => installed.push(pkg.clone()),
             Err(e) => {
                 log::warn!("protontricks {pkg} failed: {e}");
@@ -223,32 +310,34 @@ fn load_deps_config(game_domain: &str) -> Result<DepsConfig> {
     serde_json::from_str(raw).map_err(|e| NexusDeckError::Other(e.to_string()))
 }
 
-fn run_protontricks(app_id: u32, package: &str, command: &str) -> Result<()> {
-    let mut cmd = if command.starts_with("flatpak run") {
-        let mut c = Command::new("flatpak");
-        c.args(["run", "com.github.Matoking.protontricks"]);
-        c
+fn run_protontricks(app_id: u32, package: &str, pt: &ProtontricksInfo) -> Result<()> {
+    let script = if pt.kind == "flatpak" {
+        format!(
+            "flatpak run -y {PROTONTRICKS_FLATPAK_ID} {app_id} -q {package}"
+        )
     } else {
-        Command::new(command)
+        let cmd = if pt.command.is_empty() {
+            "protontricks".to_string()
+        } else {
+            pt.command.clone()
+        };
+        format!("{cmd} {app_id} -q {package}")
     };
 
-    let status = cmd
-        .arg(app_id.to_string())
-        .arg("-q")
-        .arg(package)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| NexusDeckError::Other(format!("Failed to run protontricks: {e}")))?
-        .wait_with_output()
-        .map_err(|e| NexusDeckError::Other(format!("protontricks wait failed: {e}")))?;
+    let output = run_protontricks_shell(&script)?;
 
-    if status.status.success() {
+    if output.status.success() {
         Ok(())
     } else {
-        let stderr = String::from_utf8_lossy(&status.stderr);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = if stderr.trim().is_empty() {
+            stdout.trim().to_string()
+        } else {
+            stderr.trim().to_string()
+        };
         Err(NexusDeckError::Other(format!(
-            "protontricks {package}: {stderr}"
+            "protontricks {package}: {detail}"
         )))
     }
 }

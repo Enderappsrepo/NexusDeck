@@ -58,6 +58,7 @@ export interface ProtontricksInfo {
   available: boolean;
   command: string;
   message: string;
+  kind: string;
 }
 
 export interface ProtonDepsResult {

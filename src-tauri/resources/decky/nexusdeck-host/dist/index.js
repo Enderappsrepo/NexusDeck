@@ -80,65 +80,33 @@ function FaWrench (props) {
 }
 
 const getStatus = callable("get_status");
-const runHealthCheck = callable("run_health_check");
 const launchNexusdeck = callable("launch_nexusdeck");
-const exportSupportBundle = callable("export_support_bundle");
 function Content() {
     const [status, setStatus] = SP_REACT.useState(null);
-    const [health, setHealth] = SP_REACT.useState([]);
-    const [message, setMessage] = SP_REACT.useState(null);
+    const [action, setAction] = SP_REACT.useState(null);
     const [busy, setBusy] = SP_REACT.useState(false);
     const refresh = SP_REACT.useCallback(() => {
         getStatus()
             .then(setStatus)
-            .catch((e) => setMessage(String(e)));
+            .catch((e) => setAction(String(e)));
     }, []);
     SP_REACT.useEffect(() => {
         refresh();
     }, [refresh]);
-    const onHealth = async () => {
-        setBusy(true);
-        setMessage(null);
-        try {
-            const result = await runHealthCheck();
-            setHealth(result.lines);
-            setMessage(result.ok ? "All critical checks passed." : "Some checks failed — see list.");
-        }
-        catch (e) {
-            setMessage(String(e));
-        }
-        finally {
-            setBusy(false);
-        }
-    };
     const onLaunch = async () => {
         setBusy(true);
-        setMessage(null);
+        setAction(null);
         try {
-            setMessage(await launchNexusdeck());
+            setAction(await launchNexusdeck());
         }
         catch (e) {
-            setMessage(String(e));
+            setAction(String(e));
         }
         finally {
             setBusy(false);
         }
     };
-    const onExport = async () => {
-        setBusy(true);
-        setMessage(null);
-        try {
-            const result = await exportSupportBundle();
-            setMessage(result.message);
-        }
-        catch (e) {
-            setMessage(String(e));
-        }
-        finally {
-            setBusy(false);
-        }
-    };
-    return (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.PanelSection, { title: "NexusDeck Host", children: [SP_JSX.jsx(DFL.Field, { label: "Status", children: status?.message ?? "Loading…" }), message && SP_JSX.jsx(DFL.Field, { label: "Last action", children: message })] }), SP_JSX.jsxs(DFL.PanelSection, { title: "Actions", children: [SP_JSX.jsx(DFL.DialogButton, { onClick: onHealth, disabled: busy, children: "Run health check" }), SP_JSX.jsx(DFL.DialogButton, { onClick: onLaunch, disabled: busy, children: "Launch NexusDeck" }), SP_JSX.jsx(DFL.DialogButton, { onClick: onExport, disabled: busy, children: "Export support bundle" })] }), health.length > 0 && (SP_JSX.jsx(DFL.PanelSection, { title: "Health report", children: health.map((line) => (SP_JSX.jsx("div", { style: { fontSize: 12, marginBottom: 4 }, children: line }, line))) }))] }));
+    return (SP_JSX.jsxs(DFL.PanelSection, { title: "NexusDeck", children: [SP_JSX.jsx(DFL.Field, { label: "Status", children: status?.message ?? "Loading…" }), status && (SP_JSX.jsx(DFL.Field, { label: "Protontricks", children: status.protontricks_ok ? "Installed" : "Not found — use Settings guide in NexusDeck" })), action && SP_JSX.jsx(DFL.Field, { label: "", children: action }), SP_JSX.jsx(DFL.DialogButton, { onClick: onLaunch, disabled: busy, children: "Open NexusDeck" })] }));
 }
 var index = DFL.definePlugin(() => ({
     title: "NexusDeck",

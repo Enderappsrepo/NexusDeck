@@ -4,106 +4,54 @@ import { useCallback, useEffect, useState } from "react";
 import { FaWrench } from "react-icons/fa";
 
 interface HostStatus {
-  decky_installed: boolean;
-  plugin_installed: boolean;
-  plugin_version: string;
+  protontricks_ok: boolean;
+  nexusdeck_installed: boolean;
   message: string;
 }
 
-interface HealthResult {
-  ok: boolean;
-  lines: string[];
-}
-
 const getStatus = callable<[], HostStatus>("get_status");
-const runHealthCheck = callable<[], HealthResult>("run_health_check");
 const launchNexusdeck = callable<[], string>("launch_nexusdeck");
-const exportSupportBundle = callable<[], { path: string; message: string }>(
-  "export_support_bundle"
-);
 
 function Content() {
   const [status, setStatus] = useState<HostStatus | null>(null);
-  const [health, setHealth] = useState<string[]>([]);
-  const [message, setMessage] = useState<string | null>(null);
+  const [action, setAction] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(() => {
     getStatus()
       .then(setStatus)
-      .catch((e) => setMessage(String(e)));
+      .catch((e) => setAction(String(e)));
   }, []);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  const onHealth = async () => {
-    setBusy(true);
-    setMessage(null);
-    try {
-      const result = await runHealthCheck();
-      setHealth(result.lines);
-      setMessage(result.ok ? "All critical checks passed." : "Some checks failed — see list.");
-    } catch (e) {
-      setMessage(String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const onLaunch = async () => {
     setBusy(true);
-    setMessage(null);
+    setAction(null);
     try {
-      setMessage(await launchNexusdeck());
+      setAction(await launchNexusdeck());
     } catch (e) {
-      setMessage(String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onExport = async () => {
-    setBusy(true);
-    setMessage(null);
-    try {
-      const result = await exportSupportBundle();
-      setMessage(result.message);
-    } catch (e) {
-      setMessage(String(e));
+      setAction(String(e));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <>
-      <PanelSection title="NexusDeck Host">
-        <Field label="Status">{status?.message ?? "Loading…"}</Field>
-        {message && <Field label="Last action">{message}</Field>}
-      </PanelSection>
-      <PanelSection title="Actions">
-        <DialogButton onClick={onHealth} disabled={busy}>
-          Run health check
-        </DialogButton>
-        <DialogButton onClick={onLaunch} disabled={busy}>
-          Launch NexusDeck
-        </DialogButton>
-        <DialogButton onClick={onExport} disabled={busy}>
-          Export support bundle
-        </DialogButton>
-      </PanelSection>
-      {health.length > 0 && (
-        <PanelSection title="Health report">
-          {health.map((line) => (
-            <div key={line} style={{ fontSize: 12, marginBottom: 4 }}>
-              {line}
-            </div>
-          ))}
-        </PanelSection>
+    <PanelSection title="NexusDeck">
+      <Field label="Status">{status?.message ?? "Loading…"}</Field>
+      {status && (
+        <Field label="Protontricks">
+          {status.protontricks_ok ? "Installed" : "Not found — use Settings guide in NexusDeck"}
+        </Field>
       )}
-    </>
+      {action && <Field label="">{action}</Field>}
+      <DialogButton onClick={onLaunch} disabled={busy}>
+        Open NexusDeck
+      </DialogButton>
+    </PanelSection>
   );
 }
 

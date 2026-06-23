@@ -14,6 +14,7 @@ import { api } from "@/lib/commands";
 import { GAMEPAD_HINTS } from "@/hooks/useFocusNavigation";
 import { AddToSteamPanel } from "@/components/steam/AddToSteamPanel";
 import { DeckyHostPanel } from "@/components/decky/DeckyHostPanel";
+import { ProtontricksGuidePanel } from "@/components/proton/ProtontricksGuidePanel";
 import { ResetModsDialog } from "@/components/mod/ResetModsDialog";
 import { ResetAppDialog } from "@/components/settings/ResetAppDialog";
 import type { SevenZipInfo } from "@/lib/nexus/types";
@@ -483,6 +484,13 @@ function SettingsPage() {
       <AddToSteamPanel />
 
       <DeckyHostPanel />
+
+      <ProtontricksGuidePanel
+        gameDomain={
+          profiles.find((p) => p.game_domain === "fallout4" || p.game_domain === "skyrimspecialedition")
+            ?.game_domain ?? null
+        }
+      />
 
       <Card>
         <CardHeader>
