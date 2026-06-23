@@ -260,7 +260,7 @@ function GameDashboard() {
           <VoiceAudioPanel profileId={profile.id} gameDomain={domain} />
           <ModUpdatesPanel profileId={profile.id} gameDomain={domain} compact />
           <DeckAdvisorPanel profileId={profile.id} />
-          <BodySlideSetupPanel profileId={profile.id} />
+          <BodySlideSetupPanel profileId={profile.id} gameDomain={domain} />
           <GameModDiscovery domain={domain} signedIn={!!user} sections="hero" />
         </TabsContent>
 
