@@ -156,20 +156,22 @@ pub fn get_load_order_state(profile_id: &str) -> Result<LoadOrderState> {
 
     let data_dir = Path::new(&profile.game_path).join("Data");
     if data_dir.is_dir() {
-        for entry in std::fs::read_dir(&data_dir)?.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            let lower = name.to_lowercase();
-            if (lower.starts_with("cc") || lower.starts_with("creationclub"))
-                && (lower.ends_with(".esl") || lower.ends_with(".esp") || lower.ends_with(".esm"))
-                && !plugin_entries.iter().any(|p| p.name.eq_ignore_ascii_case(&name))
-            {
-                plugin_entries.push(LoadOrderPluginEntry {
-                    name: name.clone(),
-                    kind: "creation_club".into(),
-                    enabled: active_set.contains_key(&lower),
-                    mod_id: None,
-                    mod_name: None,
-                });
+        if let Ok(entries) = std::fs::read_dir(&data_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                let lower = name.to_lowercase();
+                if (lower.starts_with("cc") || lower.starts_with("creationclub"))
+                    && (lower.ends_with(".esl") || lower.ends_with(".esp") || lower.ends_with(".esm"))
+                    && !plugin_entries.iter().any(|p| p.name.eq_ignore_ascii_case(&name))
+                {
+                    plugin_entries.push(LoadOrderPluginEntry {
+                        name: name.clone(),
+                        kind: "creation_club".into(),
+                        enabled: active_set.contains_key(&lower),
+                        mod_id: None,
+                        mod_name: None,
+                    });
+                }
             }
         }
     }

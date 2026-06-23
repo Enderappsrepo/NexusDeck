@@ -11,7 +11,7 @@ from pathlib import Path
 
 import decky
 
-PLUGIN_VERSION = "1.1.11"
+PLUGIN_VERSION = "1.1.12"
 NEXUSDECK_APP_ID = "com.nexusdeck.app"
 PROTONTRICKS_FLATPAK = "com.github.Matoking.protontricks"
 STEAM_FLATPAK = "com.valvesoftware.Steam"

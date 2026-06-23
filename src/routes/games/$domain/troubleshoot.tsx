@@ -9,7 +9,7 @@ import { Mo2SetupWizard } from "@/components/mo2/Mo2SetupWizard";
 import { ConflictDashboard } from "@/components/library/ConflictDashboard";
 import { DeployScanPanel } from "@/components/library/DeployScanPanel";
 import { ModlistImportWizard } from "@/components/wizard/ModlistImportWizard";
-import { useGamesStore } from "@/stores";
+import { useProfile } from "@/stores";
 import { api } from "@/lib/commands";
 import { isSupportedDomain, loadSupportedGames } from "@/lib/games";
 import { resolveGameDomain, usePathname } from "@/lib/routeParams";
@@ -22,8 +22,7 @@ export const Route = createFileRoute("/games/$domain/troubleshoot")({
 function TroubleshootPage() {
   const pathname = usePathname();
   const domain = resolveGameDomain(Route.useParams().domain, pathname);
-  const getProfile = useGamesStore((s) => s.getProfile);
-  const profile = getProfile(domain);
+  const { profile, profilesLoading } = useProfile(domain);
 
   const [scan, setScan] = useState<DiagnosticScanResult | null>(null);
   const [remedies, setRemedies] = useState<RemedyDefinition[]>([]);
@@ -106,6 +105,10 @@ function TroubleshootPage() {
         <Link to="/games">Back to games</Link>
       </div>
     );
+  }
+
+  if (profilesLoading && !profile) {
+    return <p className="text-[var(--color-muted)]">Loading profile…</p>;
   }
 
   if (!profile) {

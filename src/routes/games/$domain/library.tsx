@@ -24,7 +24,7 @@ import { useFocusGroup } from "@/hooks/useFocusGroup";
 import { focusedLibraryModId } from "@/lib/gamepad/domHelpers";
 import { GP } from "@/lib/gamepad/buttons";
 import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
-import { useGamesStore } from "@/stores";
+import { useProfile } from "@/stores";
 import { api } from "@/lib/commands";
 import { triggerHaptic } from "@/lib/haptics";
 import { EXPORT_FORMATS } from "@/lib/nexus/export-formats";
@@ -45,8 +45,7 @@ function LibraryPage() {
   const { domain } = useParams({ from: "/games/$domain/library" });
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
-  const { getProfile } = useGamesStore();
-  const profile = getProfile(domain);
+  const { profile, profilesLoading } = useProfile(domain);
   const listRef = useFocusGroup("library-list");
 
   const [mods, setMods] = useState<InstalledMod[]>([]);
@@ -66,6 +65,8 @@ function LibraryPage() {
   const [sorting, setSorting] = useState(false);
   const [repairing, setRepairing] = useState(false);
   const [repairNote, setRepairNote] = useState<string | null>(null);
+  const [rescanning, setRescanning] = useState(false);
+  const [rescanNote, setRescanNote] = useState<string | null>(null);
   const [deployMode, setDeployMode] = useState<DeployMode | null>(null);
   const [updateProgress, setUpdateProgress] = useState<Record<string, ModUpdateProgress>>({});
   const [safetyPrompt, setSafetyPrompt] = useState<{
@@ -82,7 +83,10 @@ function LibraryPage() {
   }, [profile]);
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profile) {
+      setLoading(profilesLoading);
+      return;
+    }
     setLoading(true);
     reloadLibrary(profile.id)
       .then(async ([installed, updateList]) => {
@@ -93,8 +97,9 @@ function LibraryPage() {
           setMods(refreshed);
         }
       })
+      .catch((e) => setError(e))
       .finally(() => setLoading(false));
-  }, [profile, pathname]);
+  }, [profile, profilesLoading, pathname]);
 
   useEffect(() => {
     const onInstalled = () => {
@@ -406,9 +411,29 @@ function LibraryPage() {
     }
   };
 
+  if (profilesLoading && !profile) {
+    return <p className="text-[var(--color-muted)]">Loading profile…</p>;
+  }
+
   if (!profile) {
     return <p className="text-[var(--color-muted)]">Set up the game first.</p>;
   }
+
+  const rescanFromDisk = async () => {
+    setRescanning(true);
+    setError(null);
+    setRescanNote(null);
+    try {
+      const result = await api.rescanLibraryFromDisk(profile.id);
+      setRescanNote(result.message);
+      await refreshLibrary();
+      void triggerHaptic(result.mods_added > 0 ? "success" : "reorder");
+    } catch (e) {
+      setError(e);
+    } finally {
+      setRescanning(false);
+    }
+  };
 
   return (
     <div className="page-section mx-auto max-w-4xl">
@@ -471,6 +496,9 @@ function LibraryPage() {
           </p>
           {repairNote && (
             <p className="mt-1 text-sm text-[var(--color-success)]">{repairNote}</p>
+          )}
+          {rescanNote && (
+            <p className="mt-1 text-sm text-[var(--color-success)]">{rescanNote}</p>
           )}
           {deployMode && (
             <Badge
@@ -604,12 +632,17 @@ function LibraryPage() {
       {!loading && mods.length === 0 && (
         <EmptyState
           icon={Package}
-          title="No mods installed yet"
-          description="Browse mods and install your first one to see it here."
+          title="No mods in library"
+          description="If mods are already deployed in your game folder, rescan to import them. Otherwise browse and install from Nexus."
           action={
-            <Link to="/games/$domain/mods" params={{ domain }} search={{ modId: undefined }}>
-              <Button>Browse mods</Button>
-            </Link>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button onClick={() => void rescanFromDisk()} loading={rescanning} data-focusable="true">
+                Rescan from game folder
+              </Button>
+              <Link to="/games/$domain/mods" params={{ domain }} search={{ modId: undefined }}>
+                <Button variant="secondary">Browse mods</Button>
+              </Link>
+            </div>
           }
         />
       )}

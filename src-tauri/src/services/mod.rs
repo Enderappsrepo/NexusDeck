@@ -42,6 +42,7 @@ pub mod install_options;
 pub mod mod_metadata;
 pub mod mod_uninstall;
 pub mod load_order;
+pub mod library_rescan;
 pub mod bodyslide_config;
 pub mod tools;
 pub mod repair;

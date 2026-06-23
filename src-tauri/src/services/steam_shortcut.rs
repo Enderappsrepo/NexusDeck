@@ -655,6 +655,114 @@ pub fn resolve_library_path(profile: &Profile, app_id: u32) -> Option<String> {
     None
 }
 
+/// Remove NexusDeck entries from the host Steam `shortcuts.vdf` (Flatpak or native Steam).
+pub fn remove_nexusdeck_from_steam_library() -> Result<bool> {
+    if cfg!(target_os = "windows") {
+        return Ok(false);
+    }
+
+    let script = r#"
+set -euo pipefail
+APP_NAME="NexusDeck"
+APP_ID="com.nexusdeck.app"
+FLATPAK_CMD="flatpak run ${APP_ID}"
+LEGACY_INSTALL_DIR="${NEXUSDECK_INSTALL_DIR:-$HOME/.local/share/nexusdeck}"
+LEGACY_LAUNCHER="${LEGACY_INSTALL_DIR}/nexusdeck-launch.sh"
+LEGACY_APPIMAGE="${LEGACY_INSTALL_DIR}/NexusDeck.AppImage"
+
+find_steam_path() {
+  local candidates=(
+    "${STEAM_COMPAT_CLIENT_INSTALL_PATH:-}"
+    "${HOME}/.steam/steam"
+    "${HOME}/.local/share/Steam"
+    "/usr/share/steam"
+    "/home/deck/.steam/steam"
+    "${HOME}/.var/app/com.valvesoftware.Steam/data/Steam"
+  )
+  for path in "${candidates[@]}"; do
+    [[ -n "$path" && -d "$path" ]] && { echo "$path"; return 0; }
+  done
+  return 1
+}
+
+find_steam_userdata() {
+  local steam_path="$1"
+  local userdata="${steam_path}/userdata"
+  [[ -d "$userdata" ]] || return 1
+  local entry
+  for entry in "$userdata"/*; do
+    [[ -d "$entry/config" ]] && { echo "$entry"; return 0; }
+  done
+  return 1
+}
+
+steam_path="$(find_steam_path)" || { echo "no_steam"; exit 0; }
+userdata="$(find_steam_userdata "$steam_path")" || { echo "no_userdata"; exit 0; }
+shortcuts_path="${userdata}/config/shortcuts.vdf"
+[[ -f "$shortcuts_path" ]] || { echo "no_file"; exit 0; }
+
+if [[ -f "${shortcuts_path}.nexusdeck_backup" ]]; then
+  cp "${shortcuts_path}.nexusdeck_backup" "$shortcuts_path"
+  echo "restored_backup"
+  exit 0
+fi
+
+python3 - "$shortcuts_path" "$APP_NAME" "$FLATPAK_CMD" "$LEGACY_LAUNCHER" "$LEGACY_APPIMAGE" "$LEGACY_INSTALL_DIR" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+needles = [n for n in sys.argv[2:] if n]
+text = path.read_text(encoding="utf-8", errors="replace")
+if '"Shortcuts"' not in text:
+    print("missing")
+    sys.exit(0)
+
+lines = text.splitlines(keepends=True)
+result = []
+removed = False
+i = 0
+
+while i < len(lines):
+    line = lines[i]
+    if line.strip().startswith('"AppName"'):
+        block = []
+        j = i
+        while j < len(lines):
+            block.append(lines[j])
+            if j > i and lines[j].strip().startswith('"AppName"'):
+                block.pop()
+                break
+            if lines[j].strip() == "}" and j > i:
+                break
+            j += 1
+
+        block_text = "".join(block)
+        if any(needle in block_text for needle in needles):
+            removed = True
+            i = j
+            continue
+
+        result.extend(block)
+        i = j
+        continue
+
+    result.append(line)
+    i += 1
+
+if removed:
+    path.write_text("".join(result), encoding="utf-8")
+    print("removed")
+else:
+    print("not_found")
+PY
+"#;
+
+    let output = run_host_bash(script)?;
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok(matches!(stdout.as_str(), "removed" | "restored_backup"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

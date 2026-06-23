@@ -40,6 +40,16 @@ export function formatRelativeDate(timestamp: number): string {
   return `${Math.floor(days / 365)}y ago`;
 }
 
+/** Resolve when `promise` settles or `ms` elapses (whichever comes first). */
+export function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => {
+      window.setTimeout(() => resolve(fallback), ms);
+    }),
+  ]);
+}
+
 export const GAME_GRADIENTS: Record<string, string> = {
   fallout4:
     "from-amber-800/70 via-orange-950/50 to-[var(--color-background)]",

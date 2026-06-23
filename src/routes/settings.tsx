@@ -17,6 +17,7 @@ import { DeckyHostPanel } from "@/components/decky/DeckyHostPanel";
 import { ProtontricksGuidePanel } from "@/components/proton/ProtontricksGuidePanel";
 import { ResetModsDialog } from "@/components/mod/ResetModsDialog";
 import { ResetAppDialog } from "@/components/settings/ResetAppDialog";
+import { UninstallAppDialog } from "@/components/settings/UninstallAppDialog";
 import type { SevenZipInfo } from "@/lib/nexus/types";
 
 export const Route = createFileRoute("/settings")({
@@ -61,6 +62,7 @@ function SettingsPage() {
   );
   const [resetProfile, setResetProfile] = useState<{ id: string; name: string } | null>(null);
   const [resetAppOpen, setResetAppOpen] = useState(false);
+  const [uninstallOpen, setUninstallOpen] = useState(false);
   const [rerunningOnboarding, setRerunningOnboarding] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [logsDir, setLogsDir] = useState<string | null>(null);
@@ -504,6 +506,7 @@ function SettingsPage() {
 
       <ProtontricksGuidePanel
         autoVerify={false}
+        checkHealthOnMount={false}
         gameDomain={
           profiles.find((p) => p.game_domain === "fallout4" || p.game_domain === "skyrimspecialedition")
             ?.game_domain ?? null
@@ -702,6 +705,21 @@ function SettingsPage() {
             </Button>
           </div>
           <div className="border-t border-[var(--color-border)] pt-4">
+            <p className="font-medium text-[var(--color-danger)]">Uninstall NexusDeck</p>
+            <p className="mt-1 text-sm text-[var(--color-muted)]">
+              Remove the app from your system. Choose whether to delete all NexusDeck data and start
+              fresh, or keep your library for a future reinstall.
+            </p>
+            <Button
+              variant="danger"
+              className="mt-3"
+              onClick={() => setUninstallOpen(true)}
+              data-focusable="true"
+            >
+              Uninstall…
+            </Button>
+          </div>
+          <div className="border-t border-[var(--color-border)] pt-4">
             <p className="font-medium text-[var(--color-danger)]">Full app reset</p>
             <p className="mt-1 text-sm text-[var(--color-muted)]">
               Erase all profiles, downloads, launch presets, and your saved API key. Game files and
@@ -742,6 +760,7 @@ function SettingsPage() {
       )}
 
       <ResetAppDialog open={resetAppOpen} onOpenChange={setResetAppOpen} />
+      <UninstallAppDialog open={uninstallOpen} onOpenChange={setUninstallOpen} />
     </div>
   );
 }

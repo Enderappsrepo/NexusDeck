@@ -670,6 +670,12 @@ export interface LoadOrderState {
   loot_issues: LootPluginIssue[];
 }
 
+export interface LibraryRescanResult {
+  mods_added: number;
+  plugins_found: number;
+  message: string;
+}
+
 export interface PluginsSyncResult {
   path: string;
   plugin_count: number;
@@ -925,6 +931,15 @@ export interface AppResetResult {
   api_key_cleared: boolean;
   cache_cleared: boolean;
   onboarding_reset: boolean;
+}
+
+export interface AppUninstallResult {
+  data_cleared: boolean;
+  staging_cleared: boolean;
+  cache_cleared: boolean;
+  steam_shortcut_removed: boolean;
+  uninstall_scheduled: boolean;
+  message: string;
 }
 
 export interface AppUpdateInfo {

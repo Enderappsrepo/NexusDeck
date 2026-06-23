@@ -15,7 +15,7 @@ import { Card } from "@/components/ui/card";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LaunchButton } from "@/components/launch/LaunchButton";
-import { useGamesStore } from "@/stores";
+import { useProfile } from "@/stores";
 import { api } from "@/lib/commands";
 import { triggerHaptic } from "@/lib/haptics";
 import { LoadOrderIssuesPanel } from "@/components/game/LoadOrderIssuesPanel";
@@ -34,14 +34,14 @@ const KIND_LABEL: Record<string, string> = {
 
 function LoadOrderPage() {
   const { domain } = Route.useParams();
-  const { getProfile } = useGamesStore();
-  const profile = getProfile(domain);
+  const { profile, profilesLoading } = useProfile(domain);
 
   const [state, setState] = useState<LoadOrderState | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [sorting, setSorting] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [syncNote, setSyncNote] = useState<string | null>(null);
   const [tab, setTab] = useState<"mods" | "plugins">("mods");
@@ -49,15 +49,47 @@ function LoadOrderPage() {
   const refresh = useCallback(async () => {
     if (!profile) return;
     setError(null);
-    const next = await api.getLoadOrderState(profile.id);
-    setState(next);
+    try {
+      const next = await api.getLoadOrderState(profile.id);
+      setState(next);
+    } catch (e) {
+      setError(e);
+    }
   }, [profile]);
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profile) {
+      setLoading(profilesLoading);
+      return;
+    }
     setLoading(true);
     refresh().finally(() => setLoading(false));
-  }, [profile, refresh]);
+  }, [profile, profilesLoading, refresh]);
+
+  useEffect(() => {
+    const onInstalled = () => {
+      void refresh();
+    };
+    window.addEventListener("nexusdeck-mod-installed", onInstalled);
+    return () => window.removeEventListener("nexusdeck-mod-installed", onInstalled);
+  }, [refresh]);
+
+  const rescanFromDisk = async () => {
+    if (!profile) return;
+    setRescanning(true);
+    setError(null);
+    setSyncNote(null);
+    try {
+      const result = await api.rescanLibraryFromDisk(profile.id);
+      setSyncNote(result.message);
+      await refresh();
+      void triggerHaptic(result.mods_added > 0 ? "success" : "reorder");
+    } catch (e) {
+      setError(e);
+    } finally {
+      setRescanning(false);
+    }
+  };
 
   const syncPlugins = async () => {
     if (!profile) return;
@@ -117,6 +149,10 @@ function LoadOrderPage() {
     }
   };
 
+  if (profilesLoading && !profile) {
+    return <p className="text-[var(--color-muted)]">Loading profile…</p>;
+  }
+
   if (!profile) {
     return <p className="text-[var(--color-muted)]">Set up the game first.</p>;
   }
@@ -142,7 +178,19 @@ function LoadOrderPage() {
             Creations — no manual toggling needed.
           </p>
         </div>
-        <LaunchButton profileId={profile.id} gameDomain={domain} compact />
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void refresh()}
+            loading={loading}
+            data-focusable="true"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+          <LaunchButton profileId={profile.id} gameDomain={domain} compact />
+        </div>
       </div>
 
       {state && state.loot_issues.length > 0 && (
@@ -194,7 +242,7 @@ function LoadOrderPage() {
       )}
 
       {!!error && (
-        <ApiErrorBanner context="generic" error={error} onRetry={() => setError(null)} />
+        <ApiErrorBanner context="generic" error={error} onRetry={() => void refresh()} />
       )}
 
       <div className="flex gap-2">
@@ -221,8 +269,14 @@ function LoadOrderPage() {
       {!loading && state && tab === "mods" && state.mods.length === 0 && (
         <EmptyState
           icon={ListOrdered}
-          title="No mods installed"
-          description="Install mods from Browse, then return here to order them."
+          title="No mods in library"
+          description="If mods are already in your game folder, rescan to import them into NexusDeck."
+          action={
+            <Button onClick={() => void rescanFromDisk()} loading={rescanning} data-focusable="true">
+              <RefreshCw className="h-4 w-4" />
+              Rescan from game folder
+            </Button>
+          }
         />
       )}
 

@@ -5,6 +5,7 @@ use tauri::{AppHandle, State};
 use crate::db;
 use crate::error::Result;
 use crate::services::download_manager::DownloadManager;
+use crate::services::library_rescan;
 use crate::services::load_order;
 use crate::services::mod_uninstall;
 use crate::services::nexus_client::NexusClient;
@@ -90,6 +91,11 @@ pub fn uninstall_mod(mod_id: String) -> Result<mod_uninstall::UninstallResult> {
 #[tauri::command]
 pub fn get_load_order_state(profile_id: String) -> Result<load_order::LoadOrderState> {
     load_order::get_load_order_state(&profile_id)
+}
+
+#[tauri::command]
+pub fn rescan_library_from_disk(profile_id: String) -> Result<library_rescan::LibraryRescanResult> {
+    library_rescan::rescan_library_from_disk(&profile_id)
 }
 
 #[tauri::command]

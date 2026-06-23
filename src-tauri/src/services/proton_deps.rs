@@ -44,8 +44,10 @@ pub struct ProtonDepProgress {
     pub package: String,
     pub index: usize,
     pub total: usize,
-    /// "installing" | "done" | "failed"
+    /// preparing | installing | done | failed
     pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -255,6 +257,25 @@ fn finish_deps_result(mut result: ProtonDepsResult, logger: Option<&ProtonLogger
     result
 }
 
+fn emit_progress(
+    cb: Option<&dyn Fn(ProtonDepProgress)>,
+    total: usize,
+    status: &str,
+    package: &str,
+    index: usize,
+    detail: Option<&str>,
+) {
+    if let Some(cb) = cb {
+        cb(ProtonDepProgress {
+            package: package.to_string(),
+            index,
+            total,
+            status: status.to_string(),
+            detail: detail.map(str::to_string),
+        });
+    }
+}
+
 fn install_packages_with_context(
     app_id: u32,
     packages: &[impl AsRef<str>],
@@ -287,6 +308,16 @@ fn install_packages_with_context(
             logger,
         ));
     }
+
+    let total = packages.len();
+    emit_progress(
+        on_progress,
+        total,
+        "preparing",
+        "",
+        0,
+        Some("Detecting Protontricks on the host…"),
+    );
 
     let pt = detect_protontricks();
     if let Some(log) = logger {
@@ -328,6 +359,15 @@ fn install_packages_with_context(
         ));
     }
 
+    emit_progress(
+        on_progress,
+        total,
+        "preparing",
+        "",
+        0,
+        Some("Locating Proton prefix (compatdata)…"),
+    );
+
     let compatdata = resolve_compatdata_path(app_id, prefix_hint);
     if compatdata.is_none() {
         if let Some(log) = logger {
@@ -354,14 +394,14 @@ fn install_packages_with_context(
         );
     }
 
-    if let Some(cb) = on_progress {
-        cb(ProtonDepProgress {
-            package: String::new(),
-            index: 0,
-            total: packages.len(),
-            status: "preparing".into(),
-        });
-    }
+    emit_progress(
+        on_progress,
+        total,
+        "preparing",
+        "",
+        0,
+        Some("Configuring Protontricks Flatpak access…"),
+    );
 
     let _ = ensure_protontricks_flatpak_access();
     if let Some(log) = logger {
@@ -369,7 +409,6 @@ fn install_packages_with_context(
     }
 
     let package_names: Vec<String> = packages.iter().map(|p| p.as_ref().to_string()).collect();
-    let total = package_names.len();
     let mut installed = Vec::new();
     let mut failed = Vec::new();
     let mut failure_details = Vec::new();
@@ -386,6 +425,7 @@ fn install_packages_with_context(
                 index: idx + 1,
                 total,
                 status: "installing".into(),
+                detail: Some(format!("Running protontricks for {pkg}…")),
             });
         }
         // .NET needs Wine's bundled mono removed first or the installer aborts.
@@ -404,6 +444,7 @@ fn install_packages_with_context(
                         index: idx + 1,
                         total,
                         status: "done".into(),
+                        detail: None,
                     });
                 }
             }
@@ -414,13 +455,14 @@ fn install_packages_with_context(
                     log.warn("package", &format!("Failed {pkg}: {detail}"));
                 }
                 failed.push(pkg.clone());
-                failure_details.push((pkg.clone(), detail));
+                failure_details.push((pkg.clone(), detail.clone()));
                 if let Some(cb) = on_progress {
                     cb(ProtonDepProgress {
                         package: pkg.clone(),
                         index: idx + 1,
                         total,
                         status: "failed".into(),
+                        detail: Some(detail.clone()),
                     });
                 }
             }

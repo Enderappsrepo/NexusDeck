@@ -28,6 +28,7 @@ import type {
   InstallResult,
   InstalledMod,
   LoadOrderState,
+  LibraryRescanResult,
   PluginsSyncResult,
   ModUpdateInfo,
   UninstallResult,
@@ -308,6 +309,9 @@ export const api = {
 
   getLoadOrderState: (profileId: string) =>
     invoke<LoadOrderState>("get_load_order_state", { profileId }),
+
+  rescanLibraryFromDisk: (profileId: string) =>
+    invoke<LibraryRescanResult>("rescan_library_from_disk", { profileId }),
 
   refreshModMetadata: (profileId: string) =>
     invoke<InstalledMod[]>("refresh_mod_metadata", { profileId }),
@@ -781,6 +785,19 @@ export const api = {
     invoke<import("@/lib/nexus/types").AppResetResult>("reset_app", {
       clearCache: clearCache ?? true,
     }),
+
+  uninstallNexusdeck: (options: {
+    clearAllData: boolean;
+    clearStaging: boolean;
+    clearCache: boolean;
+  }) =>
+    invoke<import("@/lib/nexus/types").AppUninstallResult>("uninstall_nexusdeck", {
+      clearAllData: options.clearAllData,
+      clearStaging: options.clearStaging,
+      clearCache: options.clearCache,
+    }),
+
+  exitApp: () => invoke<void>("exit_app"),
 
   checkAppUpdate: () => invoke<import("@/lib/nexus/types").AppUpdateInfo>("check_app_update"),
 

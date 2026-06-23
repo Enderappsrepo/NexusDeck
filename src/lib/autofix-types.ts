@@ -85,6 +85,8 @@ export interface ProtonDepProgress {
   total: number;
   /** preparing | installing | done | failed */
   status: string;
+  /** Human-readable step detail during preparing/installing */
+  detail?: string | null;
 }
 
 export interface ProtontricksHealth {

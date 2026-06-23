@@ -1,5 +1,5 @@
 export { useAuthStore } from "./authStore";
-export { useGamesStore } from "./gamesStore";
+export { useGamesStore, useProfile } from "./gamesStore";
 export { useWizardStore } from "./wizardStore";
 export { useDownloadsStore } from "./downloadsStore";
 export { useInstallQueueStore } from "./installQueueStore";

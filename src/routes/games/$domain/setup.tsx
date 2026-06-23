@@ -57,6 +57,7 @@ function SetupWizardPage() {
   const [prefixMessage, setPrefixMessage] = useState("");
   const [protonMessage, setProtonMessage] = useState("");
   const [installingProton, setInstallingProton] = useState(false);
+  const [stepActivity, setStepActivity] = useState<string | null>(null);
 
   const isSkyrimSe = domain === "skyrimspecialedition";
   const gameMeta = getGameMeta(domain, supportedGames);
@@ -234,17 +235,21 @@ function SetupWizardPage() {
 
       if (isSkyrimSe) {
         if (step === 1) {
+          setStepActivity("Checking Proton prefix…");
           const prefix = await runSkyrimPrefixCheck();
           if (!prefix.success) {
+            setStepActivity("Preparing Proton prefix (launch from Steam if needed)…");
             const boot = await api.runWizardStep(domain, "bootstrap_vanilla", {
               app_id: SKYRIM_APP_ID,
             });
             setPrefixMessage(boot.message);
           }
+          setStepActivity("Checking Proton version…");
           const proton = await api.runWizardStep(domain, "check_proton_version", {
             app_id: SKYRIM_APP_ID,
           });
           setPrefixMessage((m) => `${m}\n${proton.message}`);
+          setStepActivity(null);
         } else if (step === 2) {
           await runSkyrimProtonDeps();
         } else if (step === 4) {
@@ -502,7 +507,12 @@ function SetupWizardPage() {
             Step {step + 1}: {stepLabels[step]}
           </CardTitle>
           <CardDescription>
-            {detecting ? "Scanning for Steam installs…" : message || prefixMessage || protonMessage}
+            {stepActivity ??
+              (detecting
+                ? "Scanning for Steam installs…"
+                : installingProton
+                  ? "Installing Proton dependencies into your prefix…"
+                  : message || prefixMessage || protonMessage)}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -519,14 +529,18 @@ function SetupWizardPage() {
                 Back
               </Button>
             )}
-            <Button size="lg" className="flex-1" onClick={() => void nextStep()} disabled={busy} data-focusable="true">
-              {submitting
-                ? "Working…"
-                : detecting
-                  ? "Scanning…"
-                  : step === finalStep
-                    ? "Finish Setup"
-                    : "Continue"}
+            <Button size="lg" className="flex-1" onClick={() => void nextStep()} disabled={busy || !!stepActivity} data-focusable="true">
+              {stepActivity
+                ? stepActivity
+                : submitting
+                  ? "Working…"
+                  : detecting
+                    ? "Scanning…"
+                    : installingProton
+                      ? "Installing Proton deps…"
+                      : step === finalStep
+                        ? "Finish Setup"
+                        : "Continue"}
             </Button>
           </div>
         </CardContent>
