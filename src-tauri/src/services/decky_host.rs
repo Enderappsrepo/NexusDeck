@@ -130,24 +130,45 @@ if [ ! -f "$STAGING/plugin.json" ]; then
   echo "Staging folder missing plugin.json" >&2
   exit 1
 fi
-mkdir -p "$DECKY_HOME/plugins"
-if [ -d "$PLUGIN_DIR" ] && [ ! -w "$DECKY_HOME/plugins" ]; then
-  if command -v sudo >/dev/null 2>&1; then
-    sudo rm -rf "$PLUGIN_DIR"
-    sudo cp -a "$STAGING" "$PLUGIN_DIR"
-    sudo chown -R root:root "$PLUGIN_DIR" 2>/dev/null || true
-  else
+
+plugins_writable=0
+if [ -d "$DECKY_HOME/plugins" ]; then
+  [ -w "$DECKY_HOME/plugins" ] && plugins_writable=1
+elif [ -d "$DECKY_HOME" ] && [ -w "$DECKY_HOME" ]; then
+  plugins_writable=1
+fi
+
+install_plugin() {{
+  mkdir -p "$DECKY_HOME/plugins"
+  rm -rf "$PLUGIN_DIR"
+  cp -a "$STAGING" "$PLUGIN_DIR"
+}}
+
+install_plugin_sudo() {{
+  if ! command -v sudo >/dev/null 2>&1; then
     echo "plugins directory is read-only and sudo is unavailable" >&2
     exit 2
   fi
+  if ! sudo -n true 2>/dev/null; then
+    echo "sudo requires a password; use manual ZIP install" >&2
+    exit 2
+  fi
+  sudo mkdir -p "$DECKY_HOME/plugins"
+  sudo rm -rf "$PLUGIN_DIR"
+  sudo cp -a "$STAGING" "$PLUGIN_DIR"
+  sudo chown -R "${{USER:-deck}}:${{USER:-deck}}" "$PLUGIN_DIR" 2>/dev/null || true
+}}
+
+if [ "$plugins_writable" = "1" ]; then
+  install_plugin
 else
-  rm -rf "$PLUGIN_DIR"
-  cp -a "$STAGING" "$PLUGIN_DIR"
+  install_plugin_sudo
 fi
+
 RESTARTED=0
 if command -v systemctl >/dev/null 2>&1; then
   if systemctl is-active --quiet plugin_loader.service 2>/dev/null; then
-    if sudo systemctl restart plugin_loader.service 2>/dev/null; then
+    if sudo -n systemctl restart plugin_loader.service 2>/dev/null; then
       RESTARTED=1
     fi
   fi
@@ -161,7 +182,7 @@ echo "OK:$RESTARTED"
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
 
     if !output.status.success() {
-        if output.status.code() == Some(2) || stderr.contains("read-only") {
+        if should_fallback_to_manual_zip(&stderr, output.status.code()) {
             return Ok(fallback_manual_install(&staging));
         }
         let detail = if stderr.is_empty() { stdout } else { stderr };
@@ -192,6 +213,17 @@ echo "OK:$RESTARTED"
     })
 }
 
+fn should_fallback_to_manual_zip(stderr: &str, exit_code: Option<i32>) -> bool {
+    if exit_code == Some(2) {
+        return true;
+    }
+    let lower = stderr.to_ascii_lowercase();
+    lower.contains("read-only")
+        || lower.contains("permission denied")
+        || lower.contains("sudo requires a password")
+        || lower.contains("sudo is unavailable")
+}
+
 fn fallback_manual_install(staging: &Path) -> DeckyHostInstallResult {
     let zip_path = staging
         .parent()
@@ -202,7 +234,7 @@ fn fallback_manual_install(staging: &Path) -> DeckyHostInstallResult {
     DeckyHostInstallResult {
         success: false,
         message: format!(
-            "Could not write to ~/homebrew/plugins automatically. A zip was saved to {} — install it manually in Decky.",
+            "Decky's plugins folder is protected. A zip was saved to {} — install it in Decky (Quick Access → Settings → Developer → Install plugin from ZIP).",
             zip_path.display()
         ),
         needs_decky_restart: true,
@@ -211,6 +243,7 @@ fn fallback_manual_install(staging: &Path) -> DeckyHostInstallResult {
             "Tap \"Install plugin from ZIP\".".into(),
             format!("Select {}", zip_path.display()),
             "Reload Decky when prompted.".into(),
+            "Or in Desktop Mode Konsole: unzip the zip into ~/homebrew/plugins/ (may need sudo).".into(),
         ],
     }
 }
@@ -308,23 +341,23 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 }
 
 fn create_zip_from_dir(src: &Path, zip_path: &Path) -> Result<()> {
-    let output = Command::new("python3")
-        .args([
-            "-c",
-            r#"
-import sys, zipfile
+    let src_s = src.display().to_string();
+    let zip_s = zip_path.display().to_string();
+    let plugin_name = PLUGIN_DIR_NAME;
+    let script = format!(
+        r#"python3 - <<'PY'
+import zipfile
 from pathlib import Path
-src, dest = Path(sys.argv[1]), Path(sys.argv[2])
-with zipfile.ZipFile(dest, 'w', zipfile.ZIP_DEFLATED) as zf:
-    for path in src.rglob('*'):
+src, dest, plugin = Path("{src_s}"), Path("{zip_s}"), "{plugin_name}"
+with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
+    for path in src.rglob("*"):
         if path.is_file():
-            zf.write(path, path.relative_to(src.parent).as_posix())
-"#,
-            &src.display().to_string(),
-            &zip_path.display().to_string(),
-        ])
-        .output()
-        .map_err(|e| NexusDeckError::Other(format!("Could not create plugin zip: {e}")))?;
+            rel = path.relative_to(src).as_posix()
+            zf.write(path, f"{{plugin}}/{{rel}}")
+print("OK")
+PY"#
+    );
+    let output = run_host_bash(&script)?;
     if !output.status.success() {
         return Err(NexusDeckError::Other(
             String::from_utf8_lossy(&output.stderr).to_string(),
