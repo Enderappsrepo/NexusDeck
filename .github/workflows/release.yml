@@ -96,10 +96,16 @@ jobs:
       - name: Build Linux binary
         run: npm run tauri build -- --no-bundle
 
+      - name: Stage Linux artifacts
+        run: |
+          mkdir -p linux-artifact
+          cp src-tauri/target/release/nexusdeck linux-artifact/nexusdeck
+          cp -a src-tauri/resources/decky linux-artifact/decky
+
       - uses: actions/upload-artifact@v4
         with:
           name: nexusdeck-linux-binary
-          path: src-tauri/target/release/nexusdeck
+          path: linux-artifact/
 
   build-flatpak:
     needs: [prepare, build-linux]
@@ -119,6 +125,8 @@ jobs:
       - name: Prepare Flatpak sources
         run: |
           chmod +x flatpak/nexusdeck
+          test -f flatpak/decky/nexusdeck-host/plugin.json
+          test -f flatpak/decky/nexusdeck-host/dist/index.js
           cp src-tauri/icons/32x32.png flatpak/
           cp src-tauri/icons/128x128.png flatpak/
           cp src-tauri/icons/icon.png flatpak/

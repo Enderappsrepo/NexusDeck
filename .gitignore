@@ -33,3 +33,7 @@ playwright/.cache/
 .cache/7zip/
 src-tauri/resources/7zip/*
 !src-tauri/resources/7zip/.gitkeep
+
+# Built Decky plugin bundle (scripts/build-decky-plugin.mjs)
+!src-tauri/resources/decky/
+!src-tauri/resources/decky/**/*

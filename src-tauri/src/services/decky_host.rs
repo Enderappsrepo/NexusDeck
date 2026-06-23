@@ -17,6 +17,7 @@ use crate::services::platform;
 
 pub const PLUGIN_DIR_NAME: &str = "nexusdeck-host";
 pub const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
+const FLATPAK_DECKY_PLUGIN_DIR: &str = "/app/share/nexusdeck/decky/nexusdeck-host";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeckyHostStatus {
@@ -333,11 +334,20 @@ with zipfile.ZipFile(dest, 'w', zipfile.ZIP_DEFLATED) as zf:
 }
 
 pub fn resolve_bundled_plugin_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
-    app.path()
-        .resolve(
-            format!("decky/{PLUGIN_DIR_NAME}"),
-            tauri::path::BaseDirectory::Resource,
-        )
-        .ok()
-        .filter(|p| p.join("plugin.json").is_file())
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    if let Ok(path) = app.path().resolve(
+        format!("decky/{PLUGIN_DIR_NAME}"),
+        tauri::path::BaseDirectory::Resource,
+    ) {
+        candidates.push(path);
+    }
+
+    if platform::is_flatpak_sandbox() {
+        candidates.push(PathBuf::from(FLATPAK_DECKY_PLUGIN_DIR));
+    }
+
+    candidates
+        .into_iter()
+        .find(|p| p.join("plugin.json").is_file())
 }
