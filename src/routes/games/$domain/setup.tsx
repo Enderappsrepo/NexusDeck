@@ -1,5 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -150,7 +152,7 @@ function SetupWizardPage() {
           ? result.message
           : keepPath
             ? "Using your saved game path. Scan again or edit below if needed."
-            : "No Steam install found — enter your game folder path below."
+            : "No Steam install found automatically — use Browse folder or paste the path below."
       );
 
       if (found.length > 0 && !keepPath.trim()) {
@@ -172,10 +174,32 @@ function SetupWizardPage() {
       setMessage(
         e instanceof Error
           ? e.message
-          : "Could not detect the game automatically. Enter the path manually."
+          : "Could not detect the game automatically. Use Browse folder or enter the path manually."
       );
     } finally {
       setDetecting(false);
+    }
+  };
+
+  const browseGameFolder = async () => {
+    setMessage("");
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select your game folder",
+        defaultPath: gamePath.trim() || undefined,
+      });
+      if (typeof selected !== "string") return;
+      await api.validateGamePath(domain, selected);
+      setGamePath(selected);
+      setMessage("Game folder selected.");
+    } catch (e) {
+      setMessage(
+        e instanceof Error
+          ? e.message
+          : "That folder does not look like a valid game install."
+      );
     }
   };
 
@@ -359,20 +383,32 @@ function SetupWizardPage() {
             </div>
           )}
           <Input
-            placeholder="Path to game folder"
+            placeholder="Path to game folder (e.g. …/steamapps/common/Skyrim Special Edition)"
             value={gamePath}
             onChange={(e) => setGamePath(e.target.value)}
             data-focusable="true"
           />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void runDetect()}
-            disabled={detecting || submitting}
-            data-focusable="true"
-          >
-            {detecting ? "Scanning…" : "Scan Steam again"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void browseGameFolder()}
+              disabled={detecting || submitting}
+              data-focusable="true"
+            >
+              <FolderOpen className="h-4 w-4" />
+              Browse folder
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void runDetect()}
+              disabled={detecting || submitting}
+              data-focusable="true"
+            >
+              {detecting ? "Scanning…" : "Scan Steam again"}
+            </Button>
+          </div>
         </>
       );
     }
