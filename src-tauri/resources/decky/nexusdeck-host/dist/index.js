@@ -80,33 +80,74 @@ function FaWrench (props) {
 }
 
 const getStatus = callable("get_status");
+const runHealthCheck = callable("run_health_check");
 const launchNexusdeck = callable("launch_nexusdeck");
+const openStagingFolder = callable("open_staging_folder");
+const exportSupportBundle = callable("export_support_bundle");
+function lineColor(line) {
+    if (line.startsWith("FAIL"))
+        return "#f87171";
+    if (line.startsWith("WARN"))
+        return "#fbbf24";
+    return "#a3e635";
+}
 function Content() {
     const [status, setStatus] = SP_REACT.useState(null);
-    const [action, setAction] = SP_REACT.useState(null);
+    const [health, setHealth] = SP_REACT.useState([]);
+    const [message, setMessage] = SP_REACT.useState(null);
     const [busy, setBusy] = SP_REACT.useState(false);
     const refresh = SP_REACT.useCallback(() => {
         getStatus()
             .then(setStatus)
-            .catch((e) => setAction(String(e)));
+            .catch((e) => setMessage(String(e)));
     }, []);
     SP_REACT.useEffect(() => {
         refresh();
     }, [refresh]);
-    const onLaunch = async () => {
+    const runAction = async (action) => {
         setBusy(true);
-        setAction(null);
+        setMessage(null);
         try {
-            setAction(await launchNexusdeck());
+            const result = await action();
+            if (typeof result === "string") {
+                setMessage(result);
+            }
+            else if ("method" in result && result.method) {
+                setMessage(`${result.message} (${result.method})`);
+            }
+            else {
+                setMessage(result.message);
+            }
         }
         catch (e) {
-            setAction(String(e));
+            setMessage(String(e));
         }
         finally {
             setBusy(false);
         }
     };
-    return (SP_JSX.jsxs(DFL.PanelSection, { title: "NexusDeck", children: [SP_JSX.jsx(DFL.Field, { label: "Status", children: status?.message ?? "Loading…" }), status && (SP_JSX.jsx(DFL.Field, { label: "Protontricks", children: status.protontricks_ok ? "Installed" : "Not found — use Settings guide in NexusDeck" })), action && SP_JSX.jsx(DFL.Field, { label: "", children: action }), SP_JSX.jsx(DFL.DialogButton, { onClick: onLaunch, disabled: busy, children: "Open NexusDeck" })] }));
+    const onHealth = async () => {
+        setBusy(true);
+        setMessage(null);
+        try {
+            const result = await runHealthCheck();
+            setHealth(result.lines);
+            setMessage(result.ok
+                ? "All critical checks passed."
+                : "Some checks failed — review the report below.");
+        }
+        catch (e) {
+            setMessage(String(e));
+        }
+        finally {
+            setBusy(false);
+        }
+    };
+    return (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.PanelSection, { title: "NexusDeck Host", children: [SP_JSX.jsx(DFL.Field, { label: "Status", children: status?.message ?? "Loading…" }), status && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.Field, { label: "Plugin", children: ["v", status.plugin_version] }), SP_JSX.jsx(DFL.Field, { label: "NexusDeck", children: status.flatpak_registered || status.nexusdeck_installed
+                                    ? "Installed"
+                                    : "Not installed" }), SP_JSX.jsx(DFL.Field, { label: "Protontricks", children: status.protontricks_ok ? "Ready" : "Missing — see Settings guide" }), SP_JSX.jsx(DFL.Field, { label: "Steam shortcut", children: status.steam_shortcut_present
+                                    ? "Found"
+                                    : "Not found — add from NexusDeck Settings" })] })), message && (SP_JSX.jsx(DFL.Field, { label: "Last action", children: SP_JSX.jsx("div", { style: { whiteSpace: "pre-wrap", fontSize: 12 }, children: message }) }))] }), SP_JSX.jsxs(DFL.PanelSection, { title: "Launch & folders", children: [SP_JSX.jsx(DFL.DialogButton, { onClick: () => void runAction(launchNexusdeck), disabled: busy, children: "Open NexusDeck" }), SP_JSX.jsx(DFL.DialogButton, { onClick: () => void runAction(openStagingFolder), disabled: busy, children: "Open ~/NexusDeck staging" })] }), SP_JSX.jsxs(DFL.PanelSection, { title: "Diagnostics", children: [SP_JSX.jsx(DFL.DialogButton, { onClick: () => void onHealth(), disabled: busy, children: "Run health check" }), SP_JSX.jsx(DFL.DialogButton, { onClick: () => void runAction(exportSupportBundle), disabled: busy, children: "Export support bundle" }), SP_JSX.jsx(DFL.DialogButton, { onClick: () => refresh(), disabled: busy, children: "Refresh status" })] }), health.length > 0 && (SP_JSX.jsx(DFL.PanelSection, { title: "Health report", children: health.map((line) => (SP_JSX.jsx("div", { style: { fontSize: 12, marginBottom: 4, color: lineColor(line) }, children: line }, line))) }))] }));
 }
 var index = DFL.definePlugin(() => ({
     title: "NexusDeck",

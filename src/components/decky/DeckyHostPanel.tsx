@@ -83,9 +83,9 @@ export function DeckyHostPanel() {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-[var(--color-muted)]">
-          Optional Gaming Mode shortcut. Installs a small Decky plugin that opens NexusDeck
-          from Quick Access and shows whether Protontricks is installed on the host.
-          Requires{" "}
+          Optional Gaming Mode companion. Installs a Decky plugin with health checks,
+          support log export, staging folder access, and a fixed Open NexusDeck launch
+          (uses flatpak-spawn from Gaming Mode). Requires{" "}
           <a
             className="text-[var(--color-primary)] underline"
             href="https://github.com/SteamDeckHomebrew/decky-loader"
@@ -139,8 +139,9 @@ export function DeckyHostPanel() {
           </div>
         )}
         <p className="text-xs text-[var(--color-muted)]">
-          After install, open Quick Access → NexusDeck to launch the app. For Protontricks
-          setup, use the guide in Settings above.
+          After install, open Quick Access → NexusDeck. Tap Reinstall / update after each
+          NexusDeck release. If Open NexusDeck still fails, add a Steam shortcut from
+          Settings and run the health check in the plugin.
         </p>
       </CardContent>
     </Card>

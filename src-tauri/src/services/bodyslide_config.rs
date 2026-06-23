@@ -6,9 +6,12 @@
 
 use std::path::{Path, PathBuf};
 
+use std::process::Command;
+
 use crate::db::Profile;
 use crate::error::{NexusDeckError, Result};
 use crate::games::GameRegistry;
+use crate::services::platform;
 use crate::services::steam::detect_steam;
 
 #[derive(Debug, Clone)]
@@ -112,9 +115,12 @@ pub fn configure_bodyslide(profile: &Profile, bodyslide_dir: &Path) -> Result<Bo
     let config_dirs = bodyslide_config_directories(profile, Some(bodyslide_dir));
 
     if config_dirs.is_empty() {
-        return Err(NexusDeckError::Other(
-            "Couldn't find the game's Proton prefix. Launch Fallout 4 once through Steam, then try again.".into(),
-        ));
+        let hint = if cfg!(target_os = "windows") {
+            "Could not determine where BodySlide stores its settings (AppData)."
+        } else {
+            "Couldn't find the game's Proton prefix. Launch the game once through Steam, then try again."
+        };
+        return Err(NexusDeckError::Other(hint.into()));
     }
 
     let seed = config_dirs
@@ -142,13 +148,12 @@ pub fn configure_bodyslide(profile: &Profile, bodyslide_dir: &Path) -> Result<Bo
     content = set_xml_element_text(&content, "WarnMissingGamePath", "false");
 
     for dir in &config_dirs {
-        std::fs::create_dir_all(dir)?;
-        std::fs::write(dir.join("Config.xml"), &content)?;
+        write_config_file(&dir.join("Config.xml"), &content)?;
     }
 
     // Install dir copy helps if BodySlide is run in debug/portable mode.
     if bodyslide_dir.is_dir() {
-        let _ = std::fs::write(bodyslide_dir.join("Config.xml"), &content);
+        let _ = write_config_file(&bodyslide_dir.join("Config.xml"), &content);
     }
 
     bodyslide_path_info(profile, Some(bodyslide_dir))
@@ -165,6 +170,10 @@ fn browse_hint_for_path(game_data_path: &str) -> String {
 fn bodyslide_config_directories(profile: &Profile, bodyslide_dir: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
+    if cfg!(target_os = "windows") {
+        dirs.extend(windows_native_config_dirs());
+    }
+
     if let Some(prefix) = resolve_prefix_pfx(profile) {
         dirs.extend(discover_existing_config_dirs(&prefix));
         dirs.extend(default_appdata_config_dirs(&prefix));
@@ -176,6 +185,16 @@ fn bodyslide_config_directories(profile: &Profile, bodyslide_dir: Option<&Path>)
 
     dirs.sort();
     dirs.dedup();
+    dirs
+}
+
+fn windows_native_config_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(roaming) = dirs::data_dir() {
+        for name in APPDATA_DIR_NAMES {
+            dirs.push(roaming.join(name));
+        }
+    }
     dirs
 }
 
@@ -232,15 +251,39 @@ fn resolve_prefix_pfx(profile: &Profile) -> Option<PathBuf> {
 
     let plugin = GameRegistry::get(&profile.game_domain).ok()?;
     let app_id = plugin.steam_app_id()?;
-    let steam = detect_steam().ok().flatten()?;
-    steam.library_folders.into_iter().find_map(|lib| {
-        let candidate = Path::new(&lib)
+
+    let mut library_roots: Vec<PathBuf> = Vec::new();
+    if let Some(steam) = detect_steam().ok().flatten() {
+        library_roots.extend(steam.library_folders.into_iter().map(PathBuf::from));
+    }
+    library_roots.extend(fallback_steam_roots());
+
+    for lib in library_roots {
+        let candidate = lib
             .join("steamapps")
             .join("compatdata")
             .join(app_id.to_string())
             .join("pfx");
-        candidate.join("drive_c").is_dir().then_some(candidate)
-    })
+        if candidate.join("drive_c").is_dir() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn fallback_steam_roots() -> Vec<PathBuf> {
+    let Ok(home) = std::env::var("HOME") else {
+        return Vec::new();
+    };
+    [
+        format!("{home}/.steam/steam"),
+        format!("{home}/.local/share/Steam"),
+        format!("{home}/.var/app/com.valvesoftware.Steam/data/Steam"),
+    ]
+    .into_iter()
+    .map(PathBuf::from)
+    .filter(|p| p.is_dir())
+    .collect()
 }
 
 #[cfg(unix)]
@@ -251,9 +294,37 @@ fn ensure_steam_common_symlink(profile: &Profile, prefix: &Path) -> Result<()> {
     })?;
 
     let link_parent = prefix.join(STEAM_COMMON_REL);
-    std::fs::create_dir_all(&link_parent)?;
-
     let link_path = link_parent.join(game_name);
+    let target = std::fs::canonicalize(&game_root).unwrap_or(game_root);
+
+    if platform::is_flatpak_sandbox() {
+        let link_parent_s = link_parent.display().to_string().replace('"', "\\\"");
+        let link_path_s = link_path.display().to_string().replace('"', "\\\"");
+        let target_s = target.display().to_string().replace('"', "\\\"");
+        let script = format!(
+            r#"link_parent="{link_parent_s}"
+link_path="{link_path_s}"
+target="{target_s}"
+mkdir -p "$link_parent"
+if [ -e "$link_path" ] && [ ! -d "$link_path/Data" ]; then
+  rm -rf "$link_path"
+fi
+if [ -d "$link_path/Data" ]; then
+  exit 0
+fi
+ln -sfn "$target" "$link_path""#
+        );
+        let output = run_host_bash(&script)?;
+        if !output.status.success() {
+            return Err(NexusDeckError::Other(format!(
+                "Could not link game into Proton prefix for BodySlide: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(&link_parent)?;
     if link_path.exists() {
         if link_path.join("Data").is_dir() {
             return Ok(());
@@ -263,12 +334,59 @@ fn ensure_steam_common_symlink(profile: &Profile, prefix: &Path) -> Result<()> {
         }
     }
 
-    let target = std::fs::canonicalize(&game_root).unwrap_or(game_root);
     std::os::unix::fs::symlink(&target, &link_path).map_err(|e| {
         NexusDeckError::Other(format!(
             "Could not link game into Proton prefix for BodySlide: {e}"
         ))
     })
+}
+
+fn run_host_bash(script: &str) -> Result<std::process::Output> {
+    let output = if platform::is_flatpak_sandbox() {
+        Command::new("flatpak-spawn")
+            .args(["--host", "bash", "-lc", script])
+            .output()
+    } else {
+        Command::new("bash").args(["-lc", script]).output()
+    }
+    .map_err(|e| NexusDeckError::Other(format!("Host command failed: {e}")))?;
+    Ok(output)
+}
+
+fn write_config_file(path: &Path, content: &str) -> Result<()> {
+    if platform::is_flatpak_sandbox() {
+        let tmp = crate::services::paths::data_dir().join(format!(
+            "bodyslide_config_{}.xml",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::write(&tmp, content)?;
+        let tmp_s = shell_escape(&tmp.display().to_string());
+        let path_s = shell_escape(&path.display().to_string());
+        let script = format!("mkdir -p \"$(dirname {path_s})\" && cp {tmp_s} {path_s}");
+        let output = run_host_bash(&script)?;
+        let _ = std::fs::remove_file(&tmp);
+        if !output.status.success() {
+            return Err(NexusDeckError::Other(format!(
+                "Could not write BodySlide Config.xml to {}: {}",
+                path.display(),
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+        return Ok(());
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, content)?;
+    Ok(())
+}
+
+fn shell_escape(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 #[cfg(not(unix))]

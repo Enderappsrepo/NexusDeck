@@ -816,8 +816,11 @@ export interface SteamShortcutInfo {
 export interface NexusDeckSteamShortcutResult {
   display_name: string;
   executable: string;
+  launch_options: string;
   shortcuts_path: string;
   app_id_generated: number;
+  already_existed: boolean;
+  launch_method: string;
 }
 
 export interface PlatformInfo {

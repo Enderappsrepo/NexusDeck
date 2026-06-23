@@ -302,6 +302,17 @@ export function BodySlideSetupPanel({
         </div>
       )}
 
+      {status.bodyslide_installed && !status.bodyslide_config_ready && (
+        <div className="border-b border-[var(--color-border)] bg-[var(--color-danger)]/10 px-5 py-3 text-sm">
+          <p className="font-medium text-[var(--color-danger)]">BodySlide may look empty</p>
+          <p className="mt-1 text-[var(--color-muted)]">
+            BodySlide needs your game&apos;s <span className="font-mono">Data</span> folder in its
+            settings. Tap <strong>Fix BodySlide path</strong> below, then use{" "}
+            <strong>Launch BodySlide</strong> again — do not open BodySlide from Steam directly.
+          </p>
+        </div>
+      )}
+
       {status.bodyslide_installed && !status.presets_built && (
         <div className="border-b border-[var(--color-border)] bg-[var(--color-warning)]/10 px-5 py-3 text-sm">
           <p className="font-medium text-[var(--color-warning)]">Next: Batch Build</p>

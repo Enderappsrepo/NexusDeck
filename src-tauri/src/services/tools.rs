@@ -536,9 +536,6 @@ pub fn configure_bodyslide_paths(profile_id: &str) -> Result<BodyslidePathInfo> 
 
 fn prepare_bodyslide_launch(profile_id: &str, cwd: &str) -> Result<BodyslidePathInfo> {
     let profile = load_profile(profile_id)?;
-    if std::env::consts::OS == "windows" {
-        return bodyslide_config::bodyslide_path_info(&profile, Some(Path::new(cwd)));
-    }
     bodyslide_config::configure_bodyslide(&profile, Path::new(cwd))
 }
 
