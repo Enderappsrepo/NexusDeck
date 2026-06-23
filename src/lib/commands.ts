@@ -594,6 +594,16 @@ export const api = {
   addNexusDeckToSteam: (name?: string) =>
     invoke<NexusDeckSteamShortcutResult>("add_nexusdeck_to_steam", { name: name ?? null }),
 
+  isSteamRunning: () => invoke<boolean>("is_steam_running"),
+
+  quitSteamClient: () => invoke<void>("quit_steam_client"),
+
+  addNexusDeckToSteamWhenReady: (name?: string, timeoutSecs?: number) =>
+    invoke<NexusDeckSteamShortcutResult>("add_nexusdeck_to_steam_when_ready", {
+      name: name ?? null,
+      timeoutSecs: timeoutSecs ?? null,
+    }),
+
   getGameSettingsSchema: (profileId: string) =>
     invoke<GameSettingsSchema>("get_game_settings_schema", { profileId }),
 
@@ -699,12 +709,27 @@ export const api = {
   detectProtontricks: () =>
     invoke<import("@/lib/autofix-types").ProtontricksInfo>("detect_protontricks"),
 
+  checkProtontricksHealth: () =>
+    invoke<import("@/lib/autofix-types").ProtontricksHealth>("check_protontricks_health"),
+
+  fixProtontricksError: () =>
+    invoke<import("@/lib/autofix-types").ProtontricksFixResult>("fix_protontricks_error"),
+
   installProtonDeps: (gameDomain: string, dryRun = false, profileId?: string) =>
     invoke<import("@/lib/autofix-types").ProtonDepsResult>("install_proton_deps", {
       gameDomain,
       dryRun,
       profileId: profileId ?? null,
     }),
+
+  verifyProtonDeps: (profileId?: string, gameDomain?: string) =>
+    invoke<import("@/lib/autofix-types").DepsVerification>("verify_proton_deps", {
+      profileId: profileId ?? null,
+      gameDomain: gameDomain ?? null,
+    }),
+
+  collectProtonDiagnostics: (profileId: string) =>
+    invoke<string>("collect_proton_diagnostics", { profileId }),
 
   getBethesdaAudioStatus: (profileId: string) =>
     invoke<import("@/lib/nexus/types").BethesdaAudioStatus>("get_bethesda_audio_status", {
@@ -790,6 +815,22 @@ export const api = {
       lastN: params.lastN ?? null,
       includeArchive: params.includeArchive ?? null,
     }),
+
+  listProtonLogs: (limit?: number) =>
+    invoke<import("@/lib/nexus/types").LogFileInfo[]>("list_proton_logs", {
+      limit: limit ?? null,
+    }),
+
+  readProtonLog: (path: string, maxBytes?: number) =>
+    invoke<string>("read_proton_log", { path, maxBytes: maxBytes ?? null }),
+
+  getProtonMasterLogPath: () => invoke<string>("get_proton_master_log_path"),
+
+  acquireWakeLock: (reason: string) => invoke<void>("acquire_wake_lock", { reason }),
+
+  releaseWakeLock: () => invoke<void>("release_wake_lock"),
+
+  isWakeLockActive: () => invoke<boolean>("is_wake_lock_active"),
 
   diffCollectionInstall: (profileId: string, collectionMods: CollectionModInput[]) =>
     invoke<CollectionDiffResult>("diff_collection_install", { profileId, collectionMods }),

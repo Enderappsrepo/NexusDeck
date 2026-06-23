@@ -5,7 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StepIndicator } from "@/components/wizard/StepIndicator";
 import { ScriptExtenderInstallDialog } from "@/components/wizard/ScriptExtenderInstallDialog";
+import { ProtonDepsInstallProgress } from "@/components/proton/ProtonDepsInstallProgress";
 import { useGamepadBackHandler } from "@/hooks/useGamepadRouter";
+import { PROTON_DEPS_PACKAGES } from "@/lib/autofix-types";
 import { useWizardStore, useGamesStore } from "@/stores";
 import { api } from "@/lib/commands";
 import {
@@ -54,6 +56,7 @@ function SetupWizardPage() {
   const [supportedGames, setSupportedGames] = useState<SupportedGameInfo[]>([]);
   const [prefixMessage, setPrefixMessage] = useState("");
   const [protonMessage, setProtonMessage] = useState("");
+  const [installingProton, setInstallingProton] = useState(false);
 
   const isSkyrimSe = domain === "skyrimspecialedition";
   const gameMeta = getGameMeta(domain, supportedGames);
@@ -203,8 +206,16 @@ function SetupWizardPage() {
       setProtonMessage(pt.message);
       return;
     }
-    const result = await api.installProtonDeps(domain, false);
-    setProtonMessage(result.message);
+    setInstallingProton(true);
+    setProtonMessage("");
+    try {
+      const result = await api.installProtonDeps(domain, false);
+      setProtonMessage(result.message);
+    } catch (e) {
+      setProtonMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstallingProton(false);
+    }
   };
 
   const nextStep = async () => {
@@ -375,10 +386,22 @@ function SetupWizardPage() {
       return (
         <div className="space-y-3 rounded-xl bg-[var(--color-secondary)] p-4 text-sm">
           <p>Installs vcrun2019, .NET 4.8, and DirectX into the Proton prefix via protontricks.</p>
-          {protonMessage && <p>{protonMessage}</p>}
-          <Button variant="outline" size="sm" onClick={() => void runSkyrimProtonDeps()} data-focusable="true">
-            Install dependencies now
+          {protonMessage && !installingProton && <p>{protonMessage}</p>}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void runSkyrimProtonDeps()}
+            disabled={installingProton}
+            data-focusable="true"
+          >
+            {installingProton ? "Installing…" : "Install dependencies now"}
           </Button>
+          {installingProton && (
+            <ProtonDepsInstallProgress
+              active={installingProton}
+              packages={PROTON_DEPS_PACKAGES[domain] ?? []}
+            />
+          )}
         </div>
       );
     }

@@ -628,6 +628,7 @@ export interface BethesdaAudioStatus {
   dll_override_applied: boolean;
   xact_installed: boolean;
   message?: string | null;
+  log_path?: string | null;
 }
 
 export interface SupportedGameInfo {
@@ -784,6 +785,9 @@ export interface BodySetupStatus {
   bodyslide_linux_data_path?: string | null;
   bodyslide_config_ready?: boolean;
   bodyslide_browse_hint?: string | null;
+  bodyslide_preset_file_count?: number;
+  bodyslide_uses_z_drive?: boolean;
+  bodyslide_path_warning?: string | null;
 }
 
 export interface InstallPreset {

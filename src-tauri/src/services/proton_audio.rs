@@ -10,6 +10,7 @@ use crate::db::Profile;
 use crate::error::{NexusDeckError, Result};
 use crate::games::GameRegistry;
 use crate::services::proton_deps::{detect_protontricks, install_packages_for_app};
+use crate::services::proton_log::ProtonLogger;
 use crate::services::steam::detect_steam;
 
 pub const WINE_XAUDIO_OVERRIDES: &str = r"xaudio2_7=n,b;xaudio2_6=n,b";
@@ -24,6 +25,8 @@ pub struct BethesdaAudioStatus {
     pub dll_override_applied: bool,
     pub xact_installed: bool,
     pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_path: Option<String>,
 }
 
 pub fn is_bethesda_game(game_domain: &str) -> bool {
@@ -38,6 +41,7 @@ pub fn get_bethesda_audio_status(profile: &Profile) -> Result<BethesdaAudioStatu
             dll_override_applied: true,
             xact_installed: true,
             message: None,
+            log_path: None,
         });
     }
 
@@ -50,6 +54,7 @@ pub fn get_bethesda_audio_status(profile: &Profile) -> Result<BethesdaAudioStatu
             message: Some(
                 "Proton prefix not found. Launch the game once through Steam, then try again.".into(),
             ),
+            log_path: None,
         });
     };
 
@@ -70,49 +75,102 @@ pub fn get_bethesda_audio_status(profile: &Profile) -> Result<BethesdaAudioStatu
                 "NPC voices and music need a Proton audio fix (XACT + xaudio2). Tap Fix voice audio.".into(),
             )
         },
+        log_path: None,
     })
 }
 
 /// Apply persistent prefix audio fix + install XACT. Safe to call before every launch.
-pub fn ensure_bethesda_audio(profile: &Profile) -> Result<BethesdaAudioStatus> {
+pub fn ensure_bethesda_audio(
+    profile: &Profile,
+    logger: Option<&ProtonLogger>,
+) -> Result<BethesdaAudioStatus> {
+    if let Some(log) = logger {
+        let _ = log.write_header(
+            "Bethesda voice & music audio fix",
+            &format!(
+                "game={} profile={}\npath={}",
+                profile.game_domain,
+                profile.id,
+                profile.game_path
+            ),
+        );
+    }
+
     if cfg!(target_os = "windows") || !is_bethesda_game(&profile.game_domain) {
         return get_bethesda_audio_status(profile);
     }
 
     let pfx = resolve_prefix_pfx(profile).ok_or_else(|| {
+        if let Some(log) = logger {
+            log.error("prefix", "Proton prefix not found");
+        }
         NexusDeckError::Other(
             "Proton prefix not found. Launch Fallout 4 once through Steam first.".into(),
         )
     })?;
 
-    apply_xaudio_dll_override(&pfx)?;
+    if let Some(log) = logger {
+        log.info("prefix", &format!("Using prefix at {}", pfx.display()));
+    }
+
+    apply_xaudio_dll_override(&pfx, logger)?;
 
     let plugin = GameRegistry::get(&profile.game_domain)?;
     let app_id = plugin.steam_app_id().unwrap_or(377160);
 
     if !has_audio_marker(&pfx) {
         let pt = detect_protontricks();
+        if let Some(log) = logger {
+            log.info(
+                "protontricks",
+                &format!("available={} — installing XACT packages", pt.available),
+            );
+        }
         if pt.available {
-            match install_packages_for_app(app_id, &AUDIO_PACKAGES) {
+            match install_packages_for_app(app_id, &AUDIO_PACKAGES, logger) {
                 Ok(result) if result.failed.is_empty() => {
                     let _ = mark_audio_ready(&pfx);
+                    if let Some(log) = logger {
+                        log.info("xact", "XACT packages installed and marker written");
+                    }
                 }
                 Ok(result) => {
-                    log::warn!(
+                    let msg = format!(
                         "Some audio packages failed: {} — DLL override still applied.",
                         result.failed.join(", ")
                     );
+                    log::warn!("{msg}");
+                    if let Some(log) = logger {
+                        log.warn("xact", &msg);
+                    }
                 }
                 Err(e) => {
-                    log::warn!("protontricks audio install failed: {e} — DLL override still applied.");
+                    let msg = format!("protontricks audio install failed: {e} — DLL override still applied.");
+                    log::warn!("{msg}");
+                    if let Some(log) = logger {
+                        log.warn("xact", &msg);
+                    }
                 }
             }
-        } else {
-            log::info!("protontricks unavailable; applied xaudio DLL override only.");
+        } else if let Some(log) = logger {
+            log.warn("protontricks", "Unavailable; applied xaudio DLL override only");
         }
+    } else if let Some(log) = logger {
+        log.info("xact", "Audio marker already present — skipping XACT install");
     }
 
-    get_bethesda_audio_status(profile)
+    let mut status = get_bethesda_audio_status(profile)?;
+    if let Some(log) = logger {
+        status.log_path = Some(log.log_path_string());
+        log.info(
+            "result",
+            &format!(
+                "ready={} dll_override={} xact={}",
+                status.ready, status.dll_override_applied, status.xact_installed
+            ),
+        );
+    }
+    Ok(status)
 }
 
 pub fn apply_bethesda_audio_env(cmd: &mut Command, game_domain: &str, flatpak_spawn: bool) {
@@ -171,7 +229,7 @@ fn has_xaudio_dll_override(pfx: &Path) -> bool {
         || content.contains(r#""xaudio2_7"="native, builtin""#)
 }
 
-fn apply_xaudio_dll_override(pfx: &Path) -> Result<()> {
+fn apply_xaudio_dll_override(pfx: &Path, logger: Option<&ProtonLogger>) -> Result<()> {
     let user_reg = pfx.join("user.reg");
     if !user_reg.is_file() {
         return Err(NexusDeckError::Other(
@@ -181,7 +239,14 @@ fn apply_xaudio_dll_override(pfx: &Path) -> Result<()> {
 
     let mut content = std::fs::read_to_string(&user_reg)?;
     if has_xaudio_dll_override(pfx) {
+        if let Some(log) = logger {
+            log.info("dll_override", "xaudio2 overrides already present in user.reg");
+        }
         return Ok(());
+    }
+
+    if let Some(log) = logger {
+        log.info("dll_override", "Applying xaudio2_7/xaudio2_6 native,builtin overrides");
     }
 
     let entries = [

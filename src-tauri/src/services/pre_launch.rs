@@ -9,6 +9,7 @@ use crate::services::game_settings::{is_archive_invalidation_enabled, resolve_my
 use crate::services::load_order;
 use crate::services::mod_state::installed_file_paths;
 use crate::services::process_monitor::ProcessMonitor;
+use crate::services::proton_deps;
 use crate::services::steam::detect_steam;
 use crate::services::steam_launch::detect_steam_launch_info;
 
@@ -186,6 +187,22 @@ pub fn validate_launch(
         warnings.push(item(
             "proton_prefix_missing",
             "Proton prefix not set. First launch may take longer while Steam creates it.",
+            "warning",
+        ));
+    }
+
+    // Proton runtime dependencies (.NET / DirectX). Missing deps are the usual
+    // cause of script-extender plugins, MCM menus, and BodySlide silently failing
+    // — warn (don't block) so the player can fix it before a confusing in-game bug.
+    if cfg!(target_os = "linux")
+        && proton_deps::game_has_deps_list(&profile.game_domain)
+        && !proton_deps::deps_installed_for_profile(profile)
+    {
+        warnings.push(item(
+            "proton_deps_missing",
+            "Proton dependencies (.NET / DirectX) aren't installed in this game's prefix. \
+             Script-extender plugins, MCM menus, and BodySlide may not work until they are. \
+             Install them from the Troubleshoot tab.",
             "warning",
         ));
     }

@@ -11,7 +11,7 @@ use crate::services::steam::find_game_by_app_id;
 use crate::services::steam_launch::detect_steam_launch_info;
 
 const NEXUSDECK_APP_ID: &str = "com.nexusdeck.app";
-const FLATPAK_SPAWN_BIN: &str = "/usr/bin/flatpak-spawn";
+const FLATPAK_BIN: &str = "/usr/bin/flatpak";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SteamShortcutInfo {
@@ -57,14 +57,11 @@ pub struct NexusDeckSteamShortcutResult {
 }
 
 pub fn add_nexusdeck_to_steam(display_name: Option<String>) -> Result<NexusDeckSteamShortcutResult> {
-    let steam = crate::services::steam::detect_steam()?;
-    let steam_path = steam.as_ref().map(|s| s.steam_path.as_str());
     let name = display_name.unwrap_or_else(|| "NexusDeck".to_string());
-    let spec = resolve_nexusdeck_launch_spec(steam_path)?;
-    let userdata = resolve_steam_userdata(steam_path)?;
-    let shortcuts_path = userdata.join("config").join("shortcuts.vdf");
+    let spec = resolve_nexusdeck_launch_spec()?;
+    let shortcuts_path = resolve_steam_shortcuts_path()?;
 
-    if shortcut_exists(&shortcuts_path, &spec.exe, &name) {
+    if shortcut_exists_on_host(&shortcuts_path, &spec.exe, &name, &spec.launch_options)? {
         let app_id = generate_shortcut_app_id(&name, &spec.exe);
         return Ok(NexusDeckSteamShortcutResult {
             display_name: name,
@@ -77,14 +74,7 @@ pub fn add_nexusdeck_to_steam(display_name: Option<String>) -> Result<NexusDeckS
         });
     }
 
-    if shortcuts_path.exists() {
-        let backup = shortcuts_path.with_extension("vdf.nexusdeck_backup");
-        if !backup.exists() {
-            std::fs::copy(&shortcuts_path, &backup)?;
-        }
-    }
-
-    append_shortcut_vdf_text(
+    append_shortcut_on_host(
         &shortcuts_path,
         &name,
         &spec.exe,
@@ -111,24 +101,17 @@ fn running_as_flatpak() -> bool {
             .unwrap_or(false)
 }
 
-fn resolve_nexusdeck_launch_spec(steam_path: Option<&str>) -> Result<NexusDeckLaunchSpec> {
+fn resolve_nexusdeck_launch_spec() -> Result<NexusDeckLaunchSpec> {
     let home = home_dir().ok_or_else(|| NexusDeckError::Other("HOME not set".into()))?;
 
-    if running_as_flatpak() {
-        let flatpak_cmd = format!("flatpak run {NEXUSDECK_APP_ID}");
-        if steam_is_flatpak(steam_path) {
-            return Ok(NexusDeckLaunchSpec {
-                exe: FLATPAK_SPAWN_BIN.to_string(),
-                launch_options: format!("--host flatpak run {NEXUSDECK_APP_ID}"),
-                start_dir: home,
-                launch_method: "flatpak-spawn".to_string(),
-            });
-        }
+    if running_as_flatpak() || which::which("flatpak").is_ok() {
+        // Match the install script and Steam Deck community guidance: flatpak as exe,
+        // run com.nexusdeck.app as launch options. Works from native and Flatpak Steam.
         return Ok(NexusDeckLaunchSpec {
-            exe: flatpak_cmd,
-            launch_options: String::new(),
+            exe: resolve_flatpak_bin(),
+            launch_options: format!("run {NEXUSDECK_APP_ID}"),
             start_dir: home,
-            launch_method: "flatpak-run".to_string(),
+            launch_method: "flatpak".to_string(),
         });
     }
 
@@ -147,6 +130,185 @@ fn resolve_nexusdeck_launch_spec(steam_path: Option<&str>) -> Result<NexusDeckLa
         start_dir,
         launch_method: "native".to_string(),
     })
+}
+
+fn resolve_flatpak_bin() -> String {
+    if Path::new(FLATPAK_BIN).is_file() {
+        return FLATPAK_BIN.to_string();
+    }
+    which::which("flatpak")
+        .ok()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "flatpak".to_string())
+}
+
+fn resolve_steam_shortcuts_path() -> Result<PathBuf> {
+    let script = r#"
+for root in \
+  "$HOME/.steam/steam" \
+  "$HOME/.local/share/Steam" \
+  "$HOME/.var/app/com.valvesoftware.Steam/data/Steam"; do
+  ud="$root/userdata"
+  [ -d "$ud" ] || continue
+  for entry in "$ud"/*; do
+    [ -d "$entry/config" ] || continue
+    echo "$entry/config/shortcuts.vdf"
+    exit 0
+  done
+done
+exit 1
+"#;
+    let output = run_host_bash(script)?;
+    if !output.status.success() {
+        return Err(NexusDeckError::SteamNotFound(
+            "Steam userdata folder not found. Launch Steam once while signed in, then try again."
+                .into(),
+        ));
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if path.is_empty() {
+        return Err(NexusDeckError::SteamNotFound(
+            "Steam shortcuts.vdf path not found".into(),
+        ));
+    }
+    Ok(PathBuf::from(path))
+}
+
+fn shortcut_exists_on_host(
+    path: &Path,
+    exe: &str,
+    name: &str,
+    launch_options: &str,
+) -> Result<bool> {
+    let path_s = shell_escape(path.display().to_string());
+    let exe_s = shell_escape(exe.to_string());
+    let name_s = shell_escape(name.to_string());
+    let opts_s = shell_escape(launch_options.to_string());
+    let script = format!(
+        r#"p={path_s}
+if [ ! -f "$p" ]; then exit 1; fi
+grep -Fq "\"Exe\"\t\t\"{exe_s}\"" "$p" && exit 0
+grep -Fq "\"AppName\"\t\t\"{name_s}\"" "$p" && exit 0
+grep -Fq "com.nexusdeck.app" "$p" && exit 0
+grep -Fq "{opts_s}" "$p" && exit 0
+exit 1"#
+    );
+    let output = run_host_bash(&script)?;
+    Ok(output.status.success())
+}
+
+fn append_shortcut_on_host(
+    path: &Path,
+    name: &str,
+    exe: &str,
+    launch_options: &str,
+    start_dir: &str,
+) -> Result<()> {
+    let app_id = generate_shortcut_app_id(name, exe);
+    let block = format!(
+        r#"
+"AppName"		"{name}"
+"Exe"		"{exe}"
+"StartDir"		"{start_dir}"
+"LaunchOptions"		"{launch_options}"
+"icon"		""
+"ShortcutPath"		""
+"IsHidden"		"0"
+"AllowDesktopConfig"		"1"
+"AllowOverlay"		"1"
+"OpenVR"		"0"
+"Devkit"		"0"
+"DevkitGameID"		""
+"DevkitOverrideAppID"		"0"
+"LastPlayTime"		"0"
+"tags"		"{{}}"
+"appid"		"{app_id}"
+"Playtime"		"0"
+"Playtime2wks"		"0"
+"SortAs"		""
+"UseLaunchOptions"		"1"
+"LastUpdated"		"0"
+"FlatpakAppID"		""
+"GameID"		"{app_id}"
+"#,
+        name = name.replace('"', "\\\""),
+        exe = exe.replace('"', "\\\""),
+        start_dir = start_dir.replace('"', "\\\""),
+        launch_options = launch_options.replace('"', "\\\""),
+        app_id = app_id,
+    );
+
+    let path_s = shell_escape(path.display().to_string());
+    let exe_s = shell_escape(exe.to_string());
+    let block_b64 = base64_encode(block.as_bytes());
+    let script = format!(
+        r#"set -e
+python3 - <<'PY'
+import base64, pathlib, sys
+path = pathlib.Path({path_s})
+exe = {exe_s}
+block = base64.b64decode("{block_b64}").decode("utf-8")
+backup = path.parent / (path.name + ".nexusdeck_backup")
+path.parent.mkdir(parents=True, exist_ok=True)
+if path.is_file() and not backup.is_file():
+    backup.write_bytes(path.read_bytes())
+needle = '"Exe"\t\t"' + exe + '"'
+if path.is_file():
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if needle in text:
+        print("ok")
+        sys.exit(0)
+    if '"Shortcuts"' in text:
+        stripped = text.rstrip()
+        if stripped.endswith("}}"):
+            text = stripped[:-1] + block + "\n}}\n"
+        else:
+            text = text + block + "\n"
+    else:
+        text = '"Shortcuts"\n{{\n' + block + "\n}}\n"
+else:
+    text = '"Shortcuts"\n{{\n' + block + "\n}}\n"
+path.write_text(text, encoding="utf-8")
+print("ok")
+PY"#
+    );
+    let output = run_host_bash(&script)?;
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        return Err(NexusDeckError::Other(format!(
+            "Could not write Steam shortcut on host: {}",
+            err.trim()
+        )));
+    }
+    Ok(())
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(TABLE[((n >> 18) & 63) as usize] as char);
+        out.push(TABLE[((n >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            TABLE[((n >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[(n & 63) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+fn shell_escape(value: String) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn home_dir() -> Option<String> {
@@ -239,6 +401,57 @@ fn run_host_bash(script: &str) -> Result<std::process::Output> {
     Ok(output)
 }
 
+/// True when the Steam client is running on the host (native or Flatpak).
+pub fn is_steam_client_running() -> Result<bool> {
+    if cfg!(target_os = "windows") {
+        return Ok(false);
+    }
+    let script = r#"
+if pgrep -x steam >/dev/null 2>&1; then exit 0; fi
+if pgrep -f '[s]team.sh' >/dev/null 2>&1; then exit 0; fi
+if pgrep -f 'com.valvesoftware.Steam' >/dev/null 2>&1; then exit 0; fi
+if command -v flatpak >/dev/null 2>&1 && flatpak ps 2>/dev/null | grep -q com.valvesoftware.Steam; then exit 0; fi
+exit 1
+"#;
+    Ok(run_host_bash(script)?.status.success())
+}
+
+/// Ask Steam to shut down gracefully (works for native and Flatpak Steam on Deck).
+pub fn request_steam_shutdown() -> Result<()> {
+    if cfg!(target_os = "windows") {
+        return Ok(());
+    }
+    let script = r#"
+if command -v flatpak >/dev/null 2>&1 && flatpak info com.valvesoftware.Steam >/dev/null 2>&1; then
+  flatpak run com.valvesoftware.Steam -shutdown >/dev/null 2>&1 || true
+fi
+if command -v steam >/dev/null 2>&1; then
+  steam -shutdown >/dev/null 2>&1 || true
+fi
+exit 0
+"#;
+    let _ = run_host_bash(script)?;
+    Ok(())
+}
+
+/// Wait until Steam exits, then write the NexusDeck shortcut.
+pub async fn add_nexusdeck_to_steam_when_ready(
+    display_name: Option<String>,
+    timeout_secs: u64,
+) -> Result<NexusDeckSteamShortcutResult> {
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs.max(10));
+    while is_steam_client_running()? {
+        if std::time::Instant::now() >= deadline {
+            return Err(NexusDeckError::Other(
+                "Steam is still running. Use the Steam menu → Exit (or Power → Exit on Deck), then try again.".into(),
+            ));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    }
+    add_nexusdeck_to_steam(display_name)
+}
+
 pub fn create_steam_shortcut(
     profile: &Profile,
     config: &LaunchConfig,
@@ -311,7 +524,7 @@ pub fn write_shortcut_to_steam_vdf(
     config: &LaunchConfig,
     display_name: &str,
 ) -> Result<String> {
-    let steam = crate::services::steam::detect_steam()?
+    let _steam = crate::services::steam::detect_steam()?
         .ok_or_else(|| NexusDeckError::SteamNotFound("Steam not found".into()))?;
 
     let plugin = GameRegistry::get(&profile.game_domain)?;
@@ -326,28 +539,19 @@ pub fn write_shortcut_to_steam_vdf(
     }
     .ok_or_else(|| NexusDeckError::LaunchFailed("No launch target".into()))?;
 
-    let userdata = resolve_steam_userdata(Some(&steam.steam_path))?;
-    let shortcuts_path = userdata.join("config").join("shortcuts.vdf");
-
-    if shortcuts_path.exists() {
-        let backup = shortcuts_path.with_extension("vdf.nexusdeck_backup");
-        if !backup.exists() {
-            std::fs::copy(&shortcuts_path, &backup)?;
-        }
-    }
-
+    let userdata = resolve_steam_shortcuts_path()?;
     let args: Vec<String> = serde_json::from_str(&config.args_json).unwrap_or_default();
     let launch_options = args.join(" ");
 
-    append_shortcut_vdf_text(
-        &shortcuts_path,
+    append_shortcut_on_host(
+        &userdata,
         display_name,
         &exe.executable,
         &launch_options,
         &profile.game_path,
     )?;
 
-    Ok(shortcuts_path.display().to_string())
+    Ok(userdata.display().to_string())
 }
 
 fn find_steam_userdata(steam_path: &str) -> Result<std::path::PathBuf> {
@@ -456,20 +660,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn shortcut_app_id_matches_install_script() {
-        let exe = format!("flatpak run {NEXUSDECK_APP_ID}");
-        let id = generate_shortcut_app_id("NexusDeck", &exe);
-        assert_ne!(id, 0);
-        assert_eq!(id & 0x80000000, 0x80000000);
-    }
-
-    #[test]
-    fn flatpak_sandbox_uses_host_flatpak_command() {
-        if !running_as_flatpak() {
-            return;
+    fn flatpak_launch_spec_uses_flatpak_binary() {
+        let spec = resolve_nexusdeck_launch_spec().unwrap();
+        if which::which("flatpak").is_ok() || running_as_flatpak() {
+            assert!(spec.exe.contains("flatpak"));
+            assert!(spec.launch_options.contains("com.nexusdeck.app"));
+            assert!(!spec.exe.contains("/app/bin"));
         }
-        let spec = resolve_nexusdeck_launch_spec(None).unwrap();
-        assert!(spec.exe.contains("com.nexusdeck.app"));
-        assert!(!spec.exe.contains("/app/bin"));
     }
 }

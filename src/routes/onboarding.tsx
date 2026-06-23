@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { OnboardingStepIndicator } from "@/components/wizard/OnboardingStepIndicator";
+import { AddToSteamDialog } from "@/components/steam/AddToSteamDialog";
 import { useGamepadBackHandler } from "@/hooks/useGamepadRouter";
 import { useAuthStore } from "@/stores";
 import { api } from "@/lib/commands";
@@ -90,9 +91,8 @@ function OnboardingPage() {
   const [apiKey, setApiKey] = useState("");
   const [apiSkipped, setApiSkipped] = useState(false);
   const [steamName, setSteamName] = useState("NexusDeck");
-  const [addingToSteam, setAddingToSteam] = useState(false);
+  const [steamDialogOpen, setSteamDialogOpen] = useState(false);
   const [steamAdded, setSteamAdded] = useState(false);
-  const [steamError, setSteamError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
 
   const activeSteps = useMemo(
@@ -219,19 +219,6 @@ function OnboardingPage() {
         setApiSkipped(true);
       }
       setStep("finish");
-    }
-  };
-
-  const addToSteam = async () => {
-    setAddingToSteam(true);
-    setSteamError(null);
-    try {
-      await api.addNexusDeckToSteam(steamName.trim() || "NexusDeck");
-      setSteamAdded(true);
-    } catch (e) {
-      setSteamError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setAddingToSteam(false);
     }
   };
 
@@ -394,7 +381,8 @@ function OnboardingPage() {
             <div className="space-y-4">
               <p className="text-sm text-[var(--color-muted)]">
                 Adding NexusDeck to Steam lets you launch it from Big Picture or Gaming Mode with
-                full controller support.
+                full controller support. NexusDeck will ask you to close Steam first, then adds
+                the shortcut automatically.
               </p>
               <div>
                 <label htmlFor="onboarding-steam-name" className="text-sm font-medium">
@@ -410,22 +398,26 @@ function OnboardingPage() {
               </div>
               {steamAdded ? (
                 <p className="rounded-xl bg-[var(--color-success)]/10 p-4 text-sm text-[var(--color-success)]">
-                  Added to Steam. Restart Steam for the shortcut to appear.
+                  Added to Steam. Open Steam from Desktop Mode to launch NexusDeck.
                 </p>
               ) : (
                 <Button
-                  loading={addingToSteam}
-                  onClick={() => void addToSteam()}
+                  onClick={() => setSteamDialogOpen(true)}
                   variant="secondary"
                   data-focusable="true"
                 >
                   Add NexusDeck to Steam
                 </Button>
               )}
-              {steamError && <p className="text-sm text-[var(--color-danger)]">{steamError}</p>}
               <p className="text-xs text-[var(--color-muted)]">
                 You can skip this and add it later from Settings.
               </p>
+              <AddToSteamDialog
+                open={steamDialogOpen}
+                onOpenChange={setSteamDialogOpen}
+                displayName={steamName}
+                onSuccess={() => setSteamAdded(true)}
+              />
             </div>
           )}
 
@@ -549,7 +541,7 @@ function OnboardingPage() {
                 <Button
                   variant="outline"
                   onClick={goBackStep}
-                  disabled={loading || addingToSteam || scanning}
+                  disabled={loading || steamDialogOpen || scanning}
                   data-focusable="true"
                 >
                   <ArrowLeft className="h-4 w-4" />
@@ -560,7 +552,7 @@ function OnboardingPage() {
                 size="lg"
                 className="flex-1"
                 onClick={() => void handleContinue()}
-                disabled={loading || addingToSteam || scanning}
+                disabled={loading || steamDialogOpen || scanning}
                 data-focusable="true"
               >
                 {loading ? (

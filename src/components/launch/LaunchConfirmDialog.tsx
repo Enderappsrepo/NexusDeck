@@ -32,6 +32,7 @@ export function LaunchConfirmDialog({
   const showLoadOrder = checks.some(
     (c) => c.code.startsWith("plugin") || c.code.startsWith("loot") || c.code.startsWith("missing")
   );
+  const showDepsFix = checks.some((c) => c.code === "proton_deps_missing");
 
   return (
     <AppDialog open={open} onOpenChange={onOpenChange} title="Ready to launch?">
@@ -55,6 +56,13 @@ export function LaunchConfirmDialog({
           <Button variant="secondary" asChild data-focusable="true">
             <Link to="/games/$domain/load-order" params={{ domain: gameDomain }}>
               Open Load Order
+            </Link>
+          </Button>
+        )}
+        {showDepsFix && gameDomain && (
+          <Button variant="secondary" asChild data-focusable="true">
+            <Link to="/games/$domain/troubleshoot" params={{ domain: gameDomain }}>
+              Install dependencies
             </Link>
           </Button>
         )}

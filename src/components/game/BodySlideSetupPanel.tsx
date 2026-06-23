@@ -14,7 +14,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ProtonDepsInstallProgress } from "@/components/proton/ProtonDepsInstallProgress";
 import { api } from "@/lib/commands";
+import { PROTON_DEPS_PACKAGES } from "@/lib/autofix-types";
 import type { BodySetupStatus } from "@/lib/nexus/types";
 import { useDownloadsStore, useInstallQueueStore } from "@/stores";
 import { cn } from "@/lib/utils";
@@ -48,6 +50,7 @@ export function BodySlideSetupPanel({
   const [error, setError] = useState<string | null>(null);
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [installingDeps, setInstallingDeps] = useState(false);
 
   const setProgress = useDownloadsStore((s) => s.setProgress);
   const registerPendingInstall = useInstallQueueStore((s) => s.registerPendingInstall);
@@ -188,6 +191,23 @@ export function BodySlideSetupPanel({
     }
   };
 
+  const installDeps = async () => {
+    setInstallingDeps(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await api.installProtonDeps(gameDomain, false, profileId);
+      setMessage(result.message);
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstallingDeps(false);
+    }
+  };
+
+  const depsStep = status.steps.find((s) => s.id === "proton_deps");
+
   return (
     <section className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)]">
       <div className="border-b border-[var(--color-border)] p-5">
@@ -265,6 +285,36 @@ export function BodySlideSetupPanel({
         </div>
       </div>
 
+      {depsStep?.status === "action_needed" && (
+        <div className="border-b border-[var(--color-border)] bg-[var(--color-warning)]/10 px-5 py-3 text-sm">
+          <p className="font-medium text-[var(--color-warning)]">Proton dependencies needed</p>
+          <p className="mt-1 text-[var(--color-muted)]">
+            BodySlide needs .NET and DirectX in this game&apos;s Proton prefix to load — without
+            them the Outfits and Presets lists come up empty. This can take several minutes;
+            Desktop Mode is the most reliable place to run it.
+          </p>
+          <Button
+            size="sm"
+            className="mt-2"
+            onClick={installDeps}
+            loading={installingDeps}
+            disabled={installingDeps}
+            data-focusable="true"
+          >
+            <Download className="h-4 w-4" />
+            {installingDeps ? "Installing…" : "Install Proton dependencies"}
+          </Button>
+          {installingDeps && (
+            <div className="mt-3">
+              <ProtonDepsInstallProgress
+                active={installingDeps}
+                packages={PROTON_DEPS_PACKAGES[gameDomain] ?? []}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {status.bodyslide_installed && status.bodyslide_game_data_path && (
         <div className="border-b border-[var(--color-border)] bg-[var(--color-secondary)]/20 px-5 py-3 text-sm">
           <p className="font-medium">Game Data folder</p>
@@ -280,7 +330,7 @@ export function BodySlideSetupPanel({
               <Copy className="h-4 w-4" />
               {copiedPath ? "Copied" : "Copy path"}
             </Button>
-            {!status.bodyslide_config_ready && (
+            {(!status.bodyslide_config_ready || status.bodyslide_uses_z_drive) && (
               <Button
                 variant="secondary"
                 size="sm"
@@ -291,10 +341,19 @@ export function BodySlideSetupPanel({
                 Fix BodySlide path
               </Button>
             )}
-            {status.bodyslide_config_ready && (
+            {status.bodyslide_config_ready && !status.bodyslide_uses_z_drive && (
               <Badge variant="success">Path configured</Badge>
             )}
+            {(status.bodyslide_preset_file_count ?? 0) > 0 && (
+              <Badge variant="muted">
+                {status.bodyslide_preset_file_count} preset file
+                {(status.bodyslide_preset_file_count ?? 0) === 1 ? "" : "s"}
+              </Badge>
+            )}
           </div>
+          {status.bodyslide_path_warning && (
+            <p className="mt-2 text-xs text-[var(--color-warning)]">{status.bodyslide_path_warning}</p>
+          )}
           <p className="mt-2 text-xs text-[var(--color-muted)]">
             If BodySlide still asks: click <strong>Launch BodySlide</strong> again (not from Steam
             directly), or tap <strong>Fix BodySlide path</strong> above, then relaunch.
@@ -306,12 +365,27 @@ export function BodySlideSetupPanel({
         <div className="border-b border-[var(--color-border)] bg-[var(--color-danger)]/10 px-5 py-3 text-sm">
           <p className="font-medium text-[var(--color-danger)]">BodySlide may look empty</p>
           <p className="mt-1 text-[var(--color-muted)]">
-            BodySlide needs your game&apos;s <span className="font-mono">Data</span> folder in its
-            settings. Tap <strong>Fix BodySlide path</strong> below, then use{" "}
-            <strong>Launch BodySlide</strong> again — do not open BodySlide from Steam directly.
+            BodySlide needs your game&apos;s <span className="font-mono">Data</span> folder on the
+            Proton <span className="font-mono">C:</span> drive layout — not a{" "}
+            <span className="font-mono">Z:</span> path. Tap <strong>Fix BodySlide path</strong>,
+            then use <strong>Launch BodySlide</strong> again.
           </p>
         </div>
       )}
+
+      {status.bodyslide_installed &&
+        status.bodyslide_config_ready &&
+        (status.bodyslide_preset_file_count ?? 0) === 0 && (
+          <div className="border-b border-[var(--color-border)] bg-[var(--color-warning)]/10 px-5 py-3 text-sm">
+            <p className="font-medium text-[var(--color-warning)]">Presets dropdown empty?</p>
+            <p className="mt-1 text-[var(--color-muted)]">
+              BodySlide needs XML files in{" "}
+              <span className="font-mono">SliderGroups</span> (from CBBE or your body mod&apos;s
+              preset pack). Reinstall CBBE with the BodySlide presets option, then tap{" "}
+              <strong>Fix BodySlide path</strong> and relaunch.
+            </p>
+          </div>
+        )}
 
       {status.bodyslide_installed && !status.presets_built && (
         <div className="border-b border-[var(--color-border)] bg-[var(--color-warning)]/10 px-5 py-3 text-sm">

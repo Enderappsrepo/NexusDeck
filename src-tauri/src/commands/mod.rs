@@ -25,6 +25,7 @@ mod app_update;
 mod profile_insights;
 mod logs;
 mod decky_host;
+mod wake;
 
 pub use auth::*;
 pub use nexus::*;
@@ -53,3 +54,4 @@ pub use app_update::*;
 pub use profile_insights::*;
 pub use logs::*;
 pub use decky_host::*;
+pub use wake::*;

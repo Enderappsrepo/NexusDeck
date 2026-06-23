@@ -66,6 +66,9 @@ function SettingsPage() {
   const [logsDir, setLogsDir] = useState<string | null>(null);
   const [verboseLogging, setVerboseLogging] = useState(false);
   const [exportingLogs, setExportingLogs] = useState(false);
+  const [protonMasterLogPath, setProtonMasterLogPath] = useState<string | null>(null);
+  const [protonLogPreview, setProtonLogPreview] = useState<string | null>(null);
+  const [loadingProtonLog, setLoadingProtonLog] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [sevenZip, setSevenZip] = useState<SevenZipInfo | null>(null);
   const [downloadSaveState, setDownloadSaveState] = useState<"idle" | "saving" | "saved">("idle");
@@ -90,6 +93,7 @@ function SettingsPage() {
     api.getPlatformInfo().then((p) => setAppVersion(p.app_version)).catch(() => {});
     api.getLogsDir().then(setLogsDir).catch(() => {});
     api.getVerboseLogging().then(setVerboseLogging).catch(() => {});
+    api.getProtonMasterLogPath().then(setProtonMasterLogPath).catch(() => {});
     api.getSevenZipInfo().then(setSevenZip).catch(() => setSevenZip(null));
   }, [loadProfiles, loadSettings, loadLaunchSettings]);
 
@@ -166,6 +170,19 @@ function SettingsPage() {
   const toggleVerboseLogging = async (enabled: boolean) => {
     setVerboseLogging(enabled);
     await api.setVerboseLogging(enabled);
+  };
+
+  const viewProtonLog = async () => {
+    if (!protonMasterLogPath) return;
+    setLoadingProtonLog(true);
+    try {
+      const text = await api.readProtonLog(protonMasterLogPath);
+      setProtonLogPreview(text || "(Proton log is empty — run a Proton fix or dependency install first.)");
+    } catch (e) {
+      setProtonLogPreview(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingProtonLog(false);
+    }
   };
 
   const backup = async (profileId: string) => {
@@ -490,6 +507,10 @@ function SettingsPage() {
           profiles.find((p) => p.game_domain === "fallout4" || p.game_domain === "skyrimspecialedition")
             ?.game_domain ?? null
         }
+        profileId={
+          profiles.find((p) => p.game_domain === "fallout4" || p.game_domain === "skyrimspecialedition")
+            ?.id ?? null
+        }
       />
 
       <Card>
@@ -584,9 +605,9 @@ function SettingsPage() {
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <Label>Verbose install logging</Label>
+              <Label>Verbose logging</Label>
               <p className="text-sm text-[var(--color-muted)]">
-                Writes JSONL logs with extra detail for debugging installs
+                Extra detail for mod installs and Proton operations (JSONL + command output)
               </p>
             </div>
             <Switch
@@ -599,9 +620,29 @@ function SettingsPage() {
               Logs folder: <span className="font-mono text-xs">{logsDir}</span>
             </p>
           )}
-          <Button variant="outline" onClick={() => void exportLogs()} disabled={exportingLogs} data-focusable="true">
-            {exportingLogs ? "Exporting…" : "Export install logs (zip)"}
-          </Button>
+          {protonMasterLogPath && (
+            <p className="text-sm text-[var(--color-muted)]">
+              Proton master log: <span className="font-mono text-xs">{protonMasterLogPath}</span>
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => void exportLogs()} disabled={exportingLogs} data-focusable="true">
+              {exportingLogs ? "Exporting…" : "Export all logs (zip)"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void viewProtonLog()}
+              disabled={loadingProtonLog || !protonMasterLogPath}
+              data-focusable="true"
+            >
+              {loadingProtonLog ? "Loading…" : "View proton log"}
+            </Button>
+          </div>
+          {protonLogPreview && (
+            <pre className="max-h-64 overflow-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-secondary)]/30 p-3 font-mono text-xs whitespace-pre-wrap">
+              {protonLogPreview}
+            </pre>
+          )}
         </CardContent>
       </Card>
 

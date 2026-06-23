@@ -102,7 +102,10 @@ pub fn launch_game(
     #[cfg(target_os = "linux")]
     if crate::services::proton_audio::is_bethesda_game(&profile.game_domain) {
         emit_progress(app, profile_id, "preparing_audio");
-        let _ = crate::services::proton_audio::ensure_bethesda_audio(&profile);
+        let _ = crate::services::proton_audio::ensure_bethesda_audio(
+            &profile,
+            crate::services::proton_log::ProtonLogger::new("audio", None).ok().as_ref(),
+        );
     }
 
     if pre_actions.iter().any(|a| a == "ensure_archive_invalidation")

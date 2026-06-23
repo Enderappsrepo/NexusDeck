@@ -121,7 +121,7 @@ fn apply_bethesda_audio(
     remedy_id: &str,
     backup_path: Option<String>,
 ) -> FixResult {
-    match proton_audio::ensure_bethesda_audio(profile) {
+    match proton_audio::ensure_bethesda_audio(profile, None) {
         Ok(status) => FixResult {
             remedy_id: remedy_id.to_string(),
             applied: status.ready,

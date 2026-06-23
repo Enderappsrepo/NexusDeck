@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Volume2, VolumeX, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ProtonLogPanel } from "@/components/proton/ProtonLogPanel";
+import { useWakeLock } from "@/hooks/useWakeLock";
 import { api } from "@/lib/commands";
 import type { BethesdaAudioStatus } from "@/lib/nexus/types";
 
@@ -18,6 +20,9 @@ export function VoiceAudioPanel({
   const [fixing, setFixing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [logPath, setLogPath] = useState<string | null>(null);
+  const { lines: protonLogLines, clear: clearProtonLog } = useProtonLogger(fixing, "audio");
+  useWakeLock(fixing, "Applying voice audio fix");
 
   const refresh = useCallback(() => {
     if (!BETHESDA_DOMAINS.has(gameDomain)) {
@@ -40,9 +45,12 @@ export function VoiceAudioPanel({
     setFixing(true);
     setError(null);
     setMessage(null);
+    setLogPath(null);
+    clearProtonLog();
     try {
       const result = await api.fixBethesdaAudio(profileId);
       setStatus(result);
+      if (result.log_path) setLogPath(result.log_path);
       setMessage(
         result.ready
           ? "Voice audio fix applied. Launch the game to test NPC dialogue."
@@ -102,6 +110,17 @@ export function VoiceAudioPanel({
               {message}
             </p>
           )}
+        </div>
+      )}
+
+      {(fixing || protonLogLines.length > 0 || logPath) && (
+        <div className="border-t border-[var(--color-border)] px-5 py-3">
+          <ProtonLogPanel
+            lines={protonLogLines}
+            logPath={logPath}
+            defaultOpen={fixing}
+            title="Audio fix log"
+          />
         </div>
       )}
     </section>

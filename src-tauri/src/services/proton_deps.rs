@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::Profile;
 use crate::error::{NexusDeckError, Result};
 use crate::services::platform;
+use crate::services::proton_log::ProtonLogger;
 
 pub const PROTONTRICKS_FLATPAK_ID: &str = "com.github.Matoking.protontricks";
 
@@ -27,12 +28,33 @@ pub struct ProtonDepsResult {
     pub message: String,
     /// Per-package stderr/stdout snippets when a verb fails.
     pub failure_details: Vec<(String, String)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct DepsConfig {
     app_id: u32,
     packages: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtonDepProgress {
+    pub package: String,
+    pub index: usize,
+    pub total: usize,
+    /// "installing" | "done" | "failed"
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DepsVerification {
+    pub satisfied: bool,
+    pub present: Vec<String>,
+    pub missing: Vec<String>,
+    pub protontricks_available: bool,
+    /// True when we actually queried the prefix; false means we fell back to the marker file.
+    pub checked_against_prefix: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -182,16 +204,69 @@ pub fn install_game_deps_for_profile(profile: &Profile, dry_run: bool) -> Result
         &config.packages,
         profile.proton_prefix_path.as_deref(),
         dry_run,
+        None,
+        None,
     )
 }
 
-pub fn install_packages_for_app(app_id: u32, packages: &[&str]) -> Result<ProtonDepsResult> {
-    install_packages_with_context(app_id, packages, None, false)
+pub fn install_game_deps_for_profile_with_progress(
+    profile: &Profile,
+    dry_run: bool,
+    on_progress: &dyn Fn(ProtonDepProgress),
+    logger: Option<&ProtonLogger>,
+) -> Result<ProtonDepsResult> {
+    let config = load_deps_config(&profile.game_domain)?;
+    install_packages_with_context(
+        config.app_id,
+        &config.packages,
+        profile.proton_prefix_path.as_deref(),
+        dry_run,
+        Some(on_progress),
+        logger,
+    )
+}
+
+pub fn install_packages_for_app(
+    app_id: u32,
+    packages: &[&str],
+    logger: Option<&ProtonLogger>,
+) -> Result<ProtonDepsResult> {
+    install_packages_with_context(app_id, packages, None, false, None, logger)
 }
 
 pub fn install_game_deps(game_domain: &str, dry_run: bool) -> Result<ProtonDepsResult> {
     let config = load_deps_config(game_domain)?;
-    install_packages_with_context(config.app_id, &config.packages, None, dry_run)
+    install_packages_with_context(config.app_id, &config.packages, None, dry_run, None, None)
+}
+
+pub fn install_game_deps_with_progress(
+    game_domain: &str,
+    dry_run: bool,
+    on_progress: &dyn Fn(ProtonDepProgress),
+    logger: Option<&ProtonLogger>,
+) -> Result<ProtonDepsResult> {
+    let config = load_deps_config(game_domain)?;
+    install_packages_with_context(
+        config.app_id,
+        &config.packages,
+        None,
+        dry_run,
+        Some(on_progress),
+        logger,
+    )
+}
+
+fn finish_deps_result(mut result: ProtonDepsResult, logger: Option<&ProtonLogger>) -> ProtonDepsResult {
+    if let Some(log) = logger {
+        result.log_path = Some(log.log_path_string());
+        let level = if result.success {
+            crate::services::install_log::LogLevel::Info
+        } else {
+            crate::services::install_log::LogLevel::Warn
+        };
+        log.log(level, "result", &result.message);
+    }
+    result
 }
 
 fn install_packages_with_context(
@@ -199,106 +274,197 @@ fn install_packages_with_context(
     packages: &[impl AsRef<str>],
     prefix_hint: Option<&str>,
     dry_run: bool,
+    on_progress: Option<&dyn Fn(ProtonDepProgress)>,
+    logger: Option<&ProtonLogger>,
 ) -> Result<ProtonDepsResult> {
+    if let Some(log) = logger {
+        log.info(
+            "setup",
+            &format!(
+                "Installing {} packages for Steam app {app_id} (dry_run={dry_run})",
+                packages.len()
+            ),
+        );
+    }
+
     if cfg!(target_os = "windows") {
-        return Ok(ProtonDepsResult {
-            success: true,
-            installed: vec![],
-            skipped: packages.iter().map(|p| p.as_ref().to_string()).collect(),
-            failed: vec![],
-            message: "Proton dependencies are not required on Windows.".to_string(),
-            failure_details: vec![],
-        });
+        return Ok(finish_deps_result(
+            ProtonDepsResult {
+                success: true,
+                installed: vec![],
+                skipped: packages.iter().map(|p| p.as_ref().to_string()).collect(),
+                failed: vec![],
+                message: "Proton dependencies are not required on Windows.".to_string(),
+                failure_details: vec![],
+                log_path: None,
+            },
+            logger,
+        ));
     }
 
     let pt = detect_protontricks();
+    if let Some(log) = logger {
+        log.info(
+            "protontricks",
+            &format!("Detected: available={} kind={} cmd={}", pt.available, pt.kind, pt.command),
+        );
+    }
     if !pt.available {
-        return Ok(ProtonDepsResult {
-            success: false,
-            installed: vec![],
-            skipped: vec![],
-            failed: packages.iter().map(|p| p.as_ref().to_string()).collect(),
-            message: pt.message,
-            failure_details: vec![],
-        });
+        return Ok(finish_deps_result(
+            ProtonDepsResult {
+                success: false,
+                installed: vec![],
+                skipped: vec![],
+                failed: packages.iter().map(|p| p.as_ref().to_string()).collect(),
+                message: pt.message,
+                failure_details: vec![],
+                log_path: None,
+            },
+            logger,
+        ));
     }
 
     if dry_run {
-        return Ok(ProtonDepsResult {
-            success: true,
-            installed: vec![],
-            skipped: packages.iter().map(|p| p.as_ref().to_string()).collect(),
-            failed: vec![],
-            message: format!(
-                "Would install {} packages via protontricks for app {app_id}.",
-                packages.len()
-            ),
-            failure_details: vec![],
-        });
+        return Ok(finish_deps_result(
+            ProtonDepsResult {
+                success: true,
+                installed: vec![],
+                skipped: packages.iter().map(|p| p.as_ref().to_string()).collect(),
+                failed: vec![],
+                message: format!(
+                    "Would install {} packages via protontricks for app {app_id}.",
+                    packages.len()
+                ),
+                failure_details: vec![],
+                log_path: None,
+            },
+            logger,
+        ));
     }
 
     let compatdata = resolve_compatdata_path(app_id, prefix_hint);
     if compatdata.is_none() {
-        return Ok(ProtonDepsResult {
-            success: false,
-            installed: vec![],
-            skipped: vec![],
-            failed: packages.iter().map(|p| p.as_ref().to_string()).collect(),
-            message: prefix_missing_message(app_id),
-            failure_details: vec![],
-        });
+        if let Some(log) = logger {
+            log.warn("prefix", &prefix_missing_message(app_id));
+        }
+        return Ok(finish_deps_result(
+            ProtonDepsResult {
+                success: false,
+                installed: vec![],
+                skipped: vec![],
+                failed: packages.iter().map(|p| p.as_ref().to_string()).collect(),
+                message: prefix_missing_message(app_id),
+                failure_details: vec![],
+                log_path: None,
+            },
+            logger,
+        ));
     }
     let compatdata = compatdata.unwrap();
+    if let Some(log) = logger {
+        log.info(
+            "prefix",
+            &format!("Using compatdata at {}", compatdata.display()),
+        );
+    }
+
+    if let Some(cb) = on_progress {
+        cb(ProtonDepProgress {
+            package: String::new(),
+            index: 0,
+            total: packages.len(),
+            status: "preparing".into(),
+        });
+    }
 
     let _ = ensure_protontricks_flatpak_access();
+    if let Some(log) = logger {
+        log.info("setup", "Ensured Protontricks Flatpak filesystem access");
+    }
 
     let package_names: Vec<String> = packages.iter().map(|p| p.as_ref().to_string()).collect();
+    let total = package_names.len();
     let mut installed = Vec::new();
     let mut failed = Vec::new();
     let mut failure_details = Vec::new();
 
-    if package_names.iter().any(|p| p == "dotnet48") {
-        let _ = run_protontricks_verbs(app_id, &compatdata, &["remove_mono"], &pt);
-    }
-
-    match run_protontricks_verbs(app_id, &compatdata, &package_names, &pt) {
-        Ok(()) => {
-            installed.extend(package_names.clone());
+    // Install per-package so the UI can report live progress (which one, x of n)
+    // instead of one long blocking call that looks hung for several minutes.
+    for (idx, pkg) in package_names.iter().enumerate() {
+        if let Some(log) = logger {
+            log.info("package", &format!("Installing {pkg} ({}/{total})", idx + 1));
         }
-        Err(batch_err) => {
-            log::warn!("Batch protontricks install failed, retrying per package: {batch_err}");
-            for pkg in &package_names {
-                if pkg == "dotnet48" {
-                    let _ = run_protontricks_verbs(app_id, &compatdata, &["remove_mono"], &pt);
+        if let Some(cb) = on_progress {
+            cb(ProtonDepProgress {
+                package: pkg.clone(),
+                index: idx + 1,
+                total,
+                status: "installing".into(),
+            });
+        }
+        // .NET needs Wine's bundled mono removed first or the installer aborts.
+        if pkg == "dotnet48" {
+            let _ = run_protontricks_verbs(app_id, &compatdata, &["remove_mono"], &pt, logger);
+        }
+        match run_protontricks_verbs(app_id, &compatdata, std::slice::from_ref(pkg), &pt, logger) {
+            Ok(()) => {
+                installed.push(pkg.clone());
+                if let Some(log) = logger {
+                    log.info("package", &format!("Installed {pkg}"));
                 }
-                match run_protontricks_verbs(app_id, &compatdata, std::slice::from_ref(pkg), &pt)
-                {
-                    Ok(()) => installed.push(pkg.clone()),
-                    Err(e) => {
-                        let detail = e.to_string();
-                        log::warn!("protontricks {pkg} failed: {detail}");
-                        failed.push(pkg.clone());
-                        failure_details.push((pkg.clone(), detail));
-                    }
+                if let Some(cb) = on_progress {
+                    cb(ProtonDepProgress {
+                        package: pkg.clone(),
+                        index: idx + 1,
+                        total,
+                        status: "done".into(),
+                    });
+                }
+            }
+            Err(e) => {
+                let detail = e.to_string();
+                log::warn!("protontricks {pkg} failed: {detail}");
+                if let Some(log) = logger {
+                    log.warn("package", &format!("Failed {pkg}: {detail}"));
+                }
+                failed.push(pkg.clone());
+                failure_details.push((pkg.clone(), detail));
+                if let Some(cb) = on_progress {
+                    cb(ProtonDepProgress {
+                        package: pkg.clone(),
+                        index: idx + 1,
+                        total,
+                        status: "failed".into(),
+                    });
                 }
             }
         }
     }
 
-    if !installed.is_empty() {
+    // Only mark the prefix "ready" when every dependency installed. A partial
+    // install (e.g. vcrun ok but dotnet48 failed) must not report deps as done —
+    // otherwise the UI shows a green check while BodySlide still launches empty.
+    if failed.is_empty() && !installed.is_empty() {
         let _ = mark_deps_installed(app_id, &compatdata);
+        if let Some(log) = logger {
+            log.info("marker", "Marked deps as installed on prefix");
+        }
     }
 
     let success = failed.is_empty();
     let message = format_deps_message(&installed, &[], &failed, &failure_details);
-    Ok(ProtonDepsResult {
-        success,
-        installed,
-        skipped: vec![],
-        failed,
-        message,
-        failure_details,
-    })
+    Ok(finish_deps_result(
+        ProtonDepsResult {
+            success,
+            installed,
+            skipped: vec![],
+            failed,
+            message,
+            failure_details,
+            log_path: None,
+        },
+        logger,
+    ))
 }
 
 fn load_deps_config(game_domain: &str) -> Result<DepsConfig> {
@@ -346,6 +512,7 @@ fn run_protontricks_verbs(
     compatdata: &Path,
     packages: &[impl AsRef<str>],
     pt: &ProtontricksInfo,
+    logger: Option<&ProtonLogger>,
 ) -> Result<()> {
     let app_id_str = app_id.to_string();
     let package_names: Vec<String> = packages.iter().map(|p| p.as_ref().to_string()).collect();
@@ -354,11 +521,12 @@ fn run_protontricks_verbs(
 
     let mut last_error = String::new();
     for runner in runners_for(pt) {
-        let output = match runner {
+        let (command_label, output) = match runner {
             ProtontricksRunner::Native(ref cmd) => {
                 let mut args = vec!["--no-term", app_id_str.as_str(), "-q"];
                 args.extend(package_names.iter().map(String::as_str));
-                run_on_host(cmd, &args, &env_refs)
+                let label = format!("{cmd} {}", args.join(" "));
+                (label, run_on_host(cmd, &args, &env_refs))
             }
             ProtontricksRunner::Flatpak => {
                 let mut args = vec![
@@ -369,18 +537,42 @@ fn run_protontricks_verbs(
                     "-q",
                 ];
                 args.extend(package_names.iter().map(String::as_str));
-                run_on_host("flatpak", &args, &env_refs)
+                let label = format!("flatpak {}", args.join(" "));
+                (label, run_on_host("flatpak", &args, &env_refs))
             }
         };
 
         match output {
-            Ok(out) if out.status.success() => return Ok(()),
+            Ok(out) if out.status.success() => {
+                if let Some(log) = logger {
+                    log.log_command(
+                        "protontricks",
+                        &command_label,
+                        &String::from_utf8_lossy(&out.stdout),
+                        &String::from_utf8_lossy(&out.stderr),
+                        true,
+                    );
+                }
+                return Ok(());
+            }
             Ok(out) => {
                 last_error = format_command_error(&package_names, &out);
+                if let Some(log) = logger {
+                    log.log_command(
+                        "protontricks",
+                        &command_label,
+                        &String::from_utf8_lossy(&out.stdout),
+                        &String::from_utf8_lossy(&out.stderr),
+                        false,
+                    );
+                }
                 log::warn!("protontricks runner {:?} failed: {last_error}", runner);
             }
             Err(e) => {
                 last_error = e.to_string();
+                if let Some(log) = logger {
+                    log.warn("protontricks", &format!("Runner {:?} error: {last_error}", runner));
+                }
                 log::warn!("protontricks runner {:?} error: {last_error}", runner);
             }
         }
@@ -404,7 +596,63 @@ fn format_command_error(packages: &[String], output: &Output) -> String {
     format!("protontricks {}: {detail}", packages.join(", "))
 }
 
-fn ensure_protontricks_flatpak_access() -> Result<()> {
+/// List the winetricks verbs actually installed in the prefix via
+/// `protontricks <appid> list-installed`, so we can verify deps against reality
+/// instead of trusting the marker file.
+fn installed_verbs(app_id: u32, compatdata: &Path, pt: &ProtontricksInfo) -> Result<Vec<String>> {
+    let app_id_str = app_id.to_string();
+    let env = [(
+        "STEAM_COMPAT_DATA_PATH",
+        compatdata.to_string_lossy().into_owned(),
+    )];
+    let env_refs: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+
+    let mut last_error = String::new();
+    for runner in runners_for(pt) {
+        let output = match runner {
+            ProtontricksRunner::Native(ref cmd) => run_on_host(
+                cmd,
+                &["--no-term", app_id_str.as_str(), "list-installed"],
+                &env_refs,
+            ),
+            ProtontricksRunner::Flatpak => run_on_host(
+                "flatpak",
+                &[
+                    "run",
+                    PROTONTRICKS_FLATPAK_ID,
+                    "--no-term",
+                    app_id_str.as_str(),
+                    "list-installed",
+                ],
+                &env_refs,
+            ),
+        };
+        match output {
+            Ok(out) if out.status.success() => {
+                let text = String::from_utf8_lossy(&out.stdout);
+                // winetricks prints one verb per line; ignore protontricks log noise
+                // (lines with spaces) and blanks.
+                let verbs = text
+                    .lines()
+                    .map(|l| l.trim())
+                    .filter(|l| !l.is_empty() && !l.contains(char::is_whitespace))
+                    .map(|l| l.to_string())
+                    .collect();
+                return Ok(verbs);
+            }
+            Ok(out) => last_error = format_command_error(&["list-installed".to_string()], &out),
+            Err(e) => last_error = e.to_string(),
+        }
+    }
+
+    Err(NexusDeckError::Other(if last_error.is_empty() {
+        "protontricks list-installed failed".to_string()
+    } else {
+        last_error
+    }))
+}
+
+pub fn ensure_protontricks_flatpak_access() -> Result<()> {
     if cfg!(target_os = "windows") {
         return Ok(());
     }
@@ -592,12 +840,128 @@ fn default_prefix_path(app_id: u32) -> PathBuf {
         })
 }
 
+/// True when the Proton-dependency marker exists in the game's prefix (written
+/// after a successful dependency install). Used to warn before launching tools
+/// like BodySlide that need .NET/DirectX in the prefix to function.
+pub fn deps_marker_present(app_id: u32, prefix_hint: Option<&str>) -> bool {
+    resolve_compatdata_path(app_id, prefix_hint)
+        .map(|compat| compat.join("pfx").join(".deckmodfix_deps").is_file())
+        .unwrap_or(false)
+}
+
+pub fn deps_installed_for_profile(profile: &Profile) -> bool {
+    let Ok(config) = load_deps_config(&profile.game_domain) else {
+        return false;
+    };
+    deps_marker_present(config.app_id, profile.proton_prefix_path.as_deref())
+}
+
+/// True when we ship a Proton dependency list for this game (so a missing-deps
+/// warning is meaningful rather than just "unsupported game").
+pub fn game_has_deps_list(game_domain: &str) -> bool {
+    load_deps_config(game_domain).is_ok()
+}
+
+fn marker_verification(
+    app_id: u32,
+    hint: Option<&str>,
+    required: &[String],
+    available: bool,
+) -> DepsVerification {
+    let marker = deps_marker_present(app_id, hint);
+    DepsVerification {
+        satisfied: marker,
+        present: if marker { required.to_vec() } else { Vec::new() },
+        missing: if marker { Vec::new() } else { required.to_vec() },
+        protontricks_available: available,
+        checked_against_prefix: false,
+    }
+}
+
+/// Verify the required deps against the actual prefix (via `list-installed`) and
+/// reconcile the fast-path marker with reality, so a prefix reset, Proton upgrade,
+/// or partial install can't leave the UI reporting a stale "installed" state.
+/// Falls back to the marker file when protontricks can't be queried.
+pub fn verify_deps_for_profile(profile: &Profile) -> Result<DepsVerification> {
+    verify_deps_for_domain_with_hint(&profile.game_domain, profile.proton_prefix_path.as_deref())
+}
+
+pub fn verify_deps_for_domain(game_domain: &str, prefix_hint: Option<&str>) -> Result<DepsVerification> {
+    verify_deps_for_domain_with_hint(game_domain, prefix_hint)
+}
+
+fn verify_deps_for_domain_with_hint(
+    game_domain: &str,
+    prefix_hint: Option<&str>,
+) -> Result<DepsVerification> {
+    let config = load_deps_config(game_domain)?;
+    let required = config.packages.clone();
+    let pt = detect_protontricks();
+
+    if !pt.available {
+        return Ok(marker_verification(config.app_id, prefix_hint, &required, false));
+    }
+
+    let compatdata = match resolve_compatdata_path(config.app_id, prefix_hint) {
+        Some(c) => c,
+        None => {
+            return Ok(DepsVerification {
+                satisfied: false,
+                present: Vec::new(),
+                missing: required,
+                protontricks_available: true,
+                checked_against_prefix: false,
+            })
+        }
+    };
+
+    let verbs = match installed_verbs(config.app_id, &compatdata, &pt) {
+        Ok(v) => v,
+        Err(_) => return Ok(marker_verification(config.app_id, prefix_hint, &required, true)),
+    };
+
+    let verb_set: std::collections::HashSet<&str> = verbs.iter().map(|s| s.as_str()).collect();
+    let mut present = Vec::new();
+    let mut missing = Vec::new();
+    for pkg in &required {
+        if verb_set.contains(pkg.as_str()) {
+            present.push(pkg.clone());
+        } else {
+            missing.push(pkg.clone());
+        }
+    }
+    let satisfied = missing.is_empty();
+
+    if satisfied {
+        let _ = mark_deps_installed(config.app_id, &compatdata);
+    } else {
+        let _ = clear_deps_marker(config.app_id, &compatdata);
+    }
+
+    Ok(DepsVerification {
+        satisfied,
+        present,
+        missing,
+        protontricks_available: true,
+        checked_against_prefix: true,
+    })
+}
+
 pub fn mark_deps_installed(app_id: u32, compatdata: &Path) -> Result<()> {
     let marker = compatdata.join("pfx").join(".deckmodfix_deps");
     if let Some(parent) = marker.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(&marker, chrono::Utc::now().to_rfc3339())?;
+    let _ = app_id;
+    Ok(())
+}
+
+pub fn clear_deps_marker(app_id: u32, compatdata: &Path) -> Result<()> {
+    let marker = compatdata.join("pfx").join(".deckmodfix_deps");
+    if marker.exists() {
+        std::fs::remove_file(&marker)?;
+    }
     let _ = app_id;
     Ok(())
 }

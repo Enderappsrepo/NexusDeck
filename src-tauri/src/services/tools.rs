@@ -130,6 +130,9 @@ pub struct BodySetupStatus {
     pub bodyslide_linux_data_path: Option<String>,
     pub bodyslide_config_ready: bool,
     pub bodyslide_browse_hint: Option<String>,
+    pub bodyslide_preset_file_count: usize,
+    pub bodyslide_uses_z_drive: bool,
+    pub bodyslide_path_warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -377,6 +380,7 @@ pub fn get_body_setup_status(profile_id: &str) -> Result<BodySetupStatus> {
     let catalog = bodyslide_catalog(&profile.game_domain);
     let cbbe = cbbe_catalog(&profile.game_domain);
     let outfit_studio = outfit_studio_available(profile_id).unwrap_or(false);
+    let deps_installed = crate::services::proton_deps::deps_installed_for_profile(&profile);
 
     let nexus_url = catalog.map(|c| c.nexus_url.to_string());
     let nexus_mod_id = catalog.map(|c| c.mod_id);
@@ -415,7 +419,7 @@ pub fn get_body_setup_status(profile_id: &str) -> Result<BodySetupStatus> {
     };
     let step4_status = if presets_built { "done" } else { "pending" };
 
-    let steps = vec![
+    let mut steps = vec![
         BodySetupStep {
             id: "cbbe".into(),
             label: "Install CBBE or body mod".into(),
@@ -450,6 +454,29 @@ pub fn get_body_setup_status(profile_id: &str) -> Result<BodySetupStatus> {
         },
     ];
 
+    // Proton deps are the usual cause of empty BodySlide dropdowns; show them as
+    // an explicit, gating step (Linux/Proton only).
+    if std::env::consts::OS != "windows" {
+        steps.insert(
+            2,
+            BodySetupStep {
+                id: "proton_deps".into(),
+                label: "Install Proton dependencies (.NET / DirectX)".into(),
+                status: if deps_installed {
+                    "done"
+                } else if bodyslide.installed {
+                    "action_needed"
+                } else {
+                    "pending"
+                }
+                .into(),
+                description: Some(
+                    "BodySlide needs .NET and DirectX in this game's Proton prefix to load its data — without them the Outfits and Presets lists stay empty. Install them here or from the game's Fix tab.".into(),
+                ),
+            },
+        );
+    }
+
     Ok(BodySetupStatus {
         applicable: game_supports_body_setup(&profile.game_domain),
         cbbe_installed,
@@ -470,6 +497,23 @@ pub fn get_body_setup_status(profile_id: &str) -> Result<BodySetupStatus> {
         bodyslide_linux_data_path: path_info.as_ref().map(|p| p.linux_data_path.clone()),
         bodyslide_config_ready: path_info.as_ref().is_some_and(|p| p.config_matches),
         bodyslide_browse_hint: path_info.as_ref().and_then(|p| p.browse_hint.clone()),
+        bodyslide_preset_file_count: path_info.as_ref().map(|p| p.preset_file_count).unwrap_or(0),
+        bodyslide_uses_z_drive: path_info.as_ref().is_some_and(|p| p.uses_z_drive),
+        bodyslide_path_warning: path_info.as_ref().and_then(|p| {
+            if p.uses_z_drive {
+                Some(
+                    "BodySlide is using a Z: drive path — preset and outfit dropdowns often stay empty. Tap Fix BodySlide path, then relaunch."
+                        .into(),
+                )
+            } else if p.preset_file_count == 0 && bodyslide.installed {
+                Some(
+                    "No preset files found in SliderGroups. Install CBBE (or your body mod) with its BodySlide preset pack, then relaunch BodySlide."
+                        .into(),
+                )
+            } else {
+                None
+            }
+        }),
     })
 }
 
@@ -557,10 +601,19 @@ pub fn launch_bodyslide(profile_id: &str) -> Result<String> {
 
     let profile = load_profile(profile_id)?;
     launch_through_proton(&profile, Path::new(&exe), Path::new(&cwd), &[])?;
-    Ok(format!(
+    let mut message = format!(
         "Configured BodySlide game path and launched through Proton. If prompted, use: {}",
         path_info.game_data_path
-    ))
+    );
+    // Empty outfit/preset lists are almost always a missing-.NET prefix, not a
+    // path problem — surface that instead of leaving the user staring at an
+    // empty BodySlide.
+    if !crate::services::proton_deps::deps_installed_for_profile(&profile) {
+        message.push_str(
+            "\n\nHeads up: this game's Proton prefix doesn't have its dependencies (.NET / DirectX) installed — that's the usual reason BodySlide's Outfits and Presets dropdowns come up empty. Install Proton dependencies from the game's Fix tab, then relaunch BodySlide.",
+        );
+    }
+    Ok(message)
 }
 
 pub fn launch_outfit_studio(profile_id: &str) -> Result<String> {

@@ -68,7 +68,55 @@ export interface ProtonDepsResult {
   failed: string[];
   message: string;
   failure_details: [string, string][];
+  log_path?: string | null;
 }
+
+export interface DepsVerification {
+  satisfied: boolean;
+  present: string[];
+  missing: string[];
+  protontricks_available: boolean;
+  checked_against_prefix: boolean;
+}
+
+export interface ProtonDepProgress {
+  package: string;
+  index: number;
+  total: number;
+  /** preparing | installing | done | failed */
+  status: string;
+}
+
+export interface ProtontricksHealth {
+  healthy: boolean;
+  shortcuts_path: string | null;
+  shortcuts_corrupted: boolean;
+  backup_available: boolean;
+  protontricks_responds: boolean;
+  message: string;
+}
+
+export interface ProtontricksFixResult {
+  success: boolean;
+  action: string;
+  message: string;
+  shortcuts_path: string | null;
+  log_path?: string | null;
+}
+
+export interface ProtonLogLine {
+  session_id: string;
+  category: string;
+  ts: string;
+  level: "DEBUG" | "INFO" | "WARN" | "ERROR";
+  phase: string;
+  message: string;
+}
+
+export const PROTON_DEPS_PACKAGES: Record<string, string[]> = {
+  skyrimspecialedition: ["vcrun2019", "dotnet48", "d3dx9_43", "xact", "xact_64", "xinput"],
+  fallout4: ["vcrun2019", "dotnet48", "d3dx9_43", "xact", "xact_64", "xinput"],
+};
 
 export interface GameManifestEntry {
   domain: string;

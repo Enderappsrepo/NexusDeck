@@ -16,7 +16,11 @@ use crate::services::pre_launch::LaunchValidationResult;
 use crate::services::process_monitor::{GameRunningState, ProcessMonitor};
 use crate::services::steam_shortcut::{
     add_nexusdeck_to_steam as run_add_nexusdeck_to_steam,
-    create_steam_shortcut as run_create_steam_shortcut, list_steam_shortcut_infos,
+    add_nexusdeck_to_steam_when_ready as run_add_when_ready,
+    create_steam_shortcut as run_create_steam_shortcut,
+    is_steam_client_running,
+    list_steam_shortcut_infos,
+    request_steam_shutdown,
     write_shortcut_to_steam_vdf, NexusDeckSteamShortcutResult, SteamShortcutInfo,
 };
 use crate::services::tools::{
@@ -197,6 +201,24 @@ pub fn delete_steam_shortcut(id: String) -> Result<()> {
 #[tauri::command]
 pub fn add_nexusdeck_to_steam(name: Option<String>) -> Result<NexusDeckSteamShortcutResult> {
     run_add_nexusdeck_to_steam(name)
+}
+
+#[tauri::command]
+pub fn is_steam_running() -> Result<bool> {
+    is_steam_client_running()
+}
+
+#[tauri::command]
+pub fn quit_steam_client() -> Result<()> {
+    request_steam_shutdown()
+}
+
+#[tauri::command]
+pub async fn add_nexusdeck_to_steam_when_ready(
+    name: Option<String>,
+    timeout_secs: Option<u64>,
+) -> Result<NexusDeckSteamShortcutResult> {
+    run_add_when_ready(name, timeout_secs.unwrap_or(180)).await
 }
 
 #[tauri::command]

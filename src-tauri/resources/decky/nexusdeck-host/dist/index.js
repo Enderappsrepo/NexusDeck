@@ -75,8 +75,12 @@ function IconBase(props) {
 }
 
 // THIS FILE IS AUTO GENERATED
-function FaWrench (props) {
+function FaSteam (props) {
+  return GenIcon({"attr":{"viewBox":"0 0 496 512"},"child":[{"tag":"path","attr":{"d":"M496 256c0 137-111.2 248-248.4 248-113.8 0-209.6-76.3-239-180.4l95.2 39.3c6.4 32.1 34.9 56.4 68.9 56.4 39.2 0 71.9-32.4 70.2-73.5l84.5-60.2c52.1 1.3 95.8-40.9 95.8-93.5 0-51.6-42-93.5-93.7-93.5s-93.7 42-93.7 93.5v1.2L176.6 279c-15.5-.9-30.7 3.4-43.5 12.1L0 236.1C10.2 108.4 117.1 8 247.6 8 384.8 8 496 119 496 256zM155.7 384.3l-30.5-12.6a52.79 52.79 0 0 0 27.2 25.8c26.9 11.2 57.8-1.6 69-28.4 5.4-13 5.5-27.3.1-40.3-5.4-13-15.5-23.2-28.5-28.6-12.9-5.4-26.7-5.2-38.9-.6l31.5 13c19.8 8.2 29.2 30.9 20.9 50.7-8.3 19.9-31 29.2-50.8 21zm173.8-129.9c-34.4 0-62.4-28-62.4-62.3s28-62.3 62.4-62.3 62.4 28 62.4 62.3-27.9 62.3-62.4 62.3zm.1-15.6c25.9 0 46.9-21 46.9-46.8 0-25.9-21-46.8-46.9-46.8s-46.9 21-46.9 46.8c.1 25.8 21.1 46.8 46.9 46.8z"},"child":[]}]})(props);
+}function FaWrench (props) {
   return GenIcon({"attr":{"viewBox":"0 0 512 512"},"child":[{"tag":"path","attr":{"d":"M507.73 109.1c-2.24-9.03-13.54-12.09-20.12-5.51l-74.36 74.36-67.88-11.31-11.31-67.88 74.36-74.36c6.62-6.62 3.43-17.9-5.66-20.16-47.38-11.74-99.55.91-136.58 37.93-39.64 39.64-50.55 97.1-34.05 147.2L18.74 402.76c-24.99 24.99-24.99 65.51 0 90.5 24.99 24.99 65.51 24.99 90.5 0l213.21-213.21c50.12 16.71 107.47 5.68 147.37-34.22 37.07-37.07 49.7-89.32 37.91-136.73zM64 472c-13.25 0-24-10.75-24-24 0-13.26 10.75-24 24-24s24 10.74 24 24c0 13.25-10.75 24-24 24z"},"child":[]}]})(props);
+}function FaGamepad (props) {
+  return GenIcon({"attr":{"viewBox":"0 0 640 512"},"child":[{"tag":"path","attr":{"d":"M480.07 96H160a160 160 0 1 0 114.24 272h91.52A160 160 0 1 0 480.07 96zM248 268a12 12 0 0 1-12 12h-52v52a12 12 0 0 1-12 12h-24a12 12 0 0 1-12-12v-52H84a12 12 0 0 1-12-12v-24a12 12 0 0 1 12-12h52v-52a12 12 0 0 1 12-12h24a12 12 0 0 1 12 12v52h52a12 12 0 0 1 12 12zm216 76a40 40 0 1 1 40-40 40 40 0 0 1-40 40zm64-96a40 40 0 1 1 40-40 40 40 0 0 1-40 40z"},"child":[]}]})(props);
 }
 
 const getStatus = callable("get_status");
@@ -84,18 +88,28 @@ const runHealthCheck = callable("run_health_check");
 const launchNexusdeck = callable("launch_nexusdeck");
 const openStagingFolder = callable("open_staging_folder");
 const exportSupportBundle = callable("export_support_bundle");
+callable("add_steam_shortcut");
+const addSteamShortcutWhenReady = callable("add_steam_shortcut_when_ready");
+const quitSteamClient = callable("quit_steam_client");
+const fixGamingModeLaunch = callable("fix_gaming_mode_launch");
 function lineColor(line) {
     if (line.startsWith("FAIL"))
         return "#f87171";
     if (line.startsWith("WARN"))
         return "#fbbf24";
+    if (line.startsWith("INFO"))
+        return "#94a3b8";
     return "#a3e635";
+}
+function StatusBadge({ ok, label }) {
+    return (SP_JSX.jsxs("span", { style: { color: ok ? "#a3e635" : "#fbbf24", fontWeight: 600 }, children: [ok ? "✓" : "!", " ", label] }));
 }
 function Content() {
     const [status, setStatus] = SP_REACT.useState(null);
     const [health, setHealth] = SP_REACT.useState([]);
     const [message, setMessage] = SP_REACT.useState(null);
     const [busy, setBusy] = SP_REACT.useState(false);
+    const [showHealth, setShowHealth] = SP_REACT.useState(false);
     const refresh = SP_REACT.useCallback(() => {
         getStatus()
             .then(setStatus)
@@ -104,6 +118,35 @@ function Content() {
     SP_REACT.useEffect(() => {
         refresh();
     }, [refresh]);
+    const [steamBusy, setSteamBusy] = SP_REACT.useState(false);
+    const addToSteam = async () => {
+        setSteamBusy(true);
+        setMessage(null);
+        try {
+            const result = await addSteamShortcutWhenReady(180);
+            setMessage(result.message);
+            refresh();
+        }
+        catch (e) {
+            setMessage(String(e));
+        }
+        finally {
+            setSteamBusy(false);
+        }
+    };
+    const quitSteam = async () => {
+        setSteamBusy(true);
+        try {
+            const result = await quitSteamClient();
+            setMessage(result.message);
+        }
+        catch (e) {
+            setMessage(String(e));
+        }
+        finally {
+            setSteamBusy(false);
+        }
+    };
     const runAction = async (action) => {
         setBusy(true);
         setMessage(null);
@@ -118,6 +161,7 @@ function Content() {
             else {
                 setMessage(result.message);
             }
+            refresh();
         }
         catch (e) {
             setMessage(String(e));
@@ -132,6 +176,7 @@ function Content() {
         try {
             const result = await runHealthCheck();
             setHealth(result.lines);
+            setShowHealth(true);
             setMessage(result.ok
                 ? "All critical checks passed."
                 : "Some checks failed — review the report below.");
@@ -143,11 +188,10 @@ function Content() {
             setBusy(false);
         }
     };
-    return (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.PanelSection, { title: "NexusDeck Host", children: [SP_JSX.jsx(DFL.Field, { label: "Status", children: status?.message ?? "Loading…" }), status && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.Field, { label: "Plugin", children: ["v", status.plugin_version] }), SP_JSX.jsx(DFL.Field, { label: "NexusDeck", children: status.flatpak_registered || status.nexusdeck_installed
-                                    ? "Installed"
-                                    : "Not installed" }), SP_JSX.jsx(DFL.Field, { label: "Protontricks", children: status.protontricks_ok ? "Ready" : "Missing — see Settings guide" }), SP_JSX.jsx(DFL.Field, { label: "Steam shortcut", children: status.steam_shortcut_present
-                                    ? "Found"
-                                    : "Not found — add from NexusDeck Settings" })] })), message && (SP_JSX.jsx(DFL.Field, { label: "Last action", children: SP_JSX.jsx("div", { style: { whiteSpace: "pre-wrap", fontSize: 12 }, children: message }) }))] }), SP_JSX.jsxs(DFL.PanelSection, { title: "Launch & folders", children: [SP_JSX.jsx(DFL.DialogButton, { onClick: () => void runAction(launchNexusdeck), disabled: busy, children: "Open NexusDeck" }), SP_JSX.jsx(DFL.DialogButton, { onClick: () => void runAction(openStagingFolder), disabled: busy, children: "Open ~/NexusDeck staging" })] }), SP_JSX.jsxs(DFL.PanelSection, { title: "Diagnostics", children: [SP_JSX.jsx(DFL.DialogButton, { onClick: () => void onHealth(), disabled: busy, children: "Run health check" }), SP_JSX.jsx(DFL.DialogButton, { onClick: () => void runAction(exportSupportBundle), disabled: busy, children: "Export support bundle" }), SP_JSX.jsx(DFL.DialogButton, { onClick: () => refresh(), disabled: busy, children: "Refresh status" })] }), health.length > 0 && (SP_JSX.jsx(DFL.PanelSection, { title: "Health report", children: health.map((line) => (SP_JSX.jsx("div", { style: { fontSize: 12, marginBottom: 4, color: lineColor(line) }, children: line }, line))) }))] }));
+    const ready = status &&
+        (status.flatpak_registered || status.nexusdeck_installed) &&
+        status.steam_shortcut_present;
+    return (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.PanelSection, { title: "NexusDeck", children: [SP_JSX.jsx(DFL.Field, { label: "Status", children: status?.message ?? "Loading…" }), status && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.Field, { label: "Version", children: ["v", status.plugin_version] }), SP_JSX.jsx(DFL.Field, { label: "Checks", children: SP_JSX.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }, children: [SP_JSX.jsx(StatusBadge, { ok: status.flatpak_registered || status.nexusdeck_installed, label: "NexusDeck installed" }), SP_JSX.jsx(StatusBadge, { ok: status.steam_shortcut_present, label: "Steam shortcut" }), SP_JSX.jsx(StatusBadge, { ok: status.protontricks_ok, label: "Protontricks" })] }) })] })), message && (SP_JSX.jsx(DFL.Field, { label: "Last action", children: SP_JSX.jsx("div", { style: { whiteSpace: "pre-wrap", fontSize: 12 }, children: message }) }))] }), SP_JSX.jsxs(DFL.PanelSection, { title: "Launch", children: [SP_JSX.jsxs(DFL.DialogButton, { onClick: () => void runAction(launchNexusdeck), disabled: busy, children: [SP_JSX.jsx(FaGamepad, { style: { marginRight: 6 } }), "Open NexusDeck"] }), !status?.steam_shortcut_present && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.DialogButton, { onClick: () => void addToSteam(), disabled: busy || steamBusy, children: [SP_JSX.jsx(FaSteam, { style: { marginRight: 6 } }), "Add to Steam (auto)"] }), SP_JSX.jsx(DFL.DialogButton, { onClick: () => void quitSteam(), disabled: busy || steamBusy, children: "Quit Steam" })] })), SP_JSX.jsx(DFL.DialogButton, { onClick: () => void runAction(fixGamingModeLaunch), disabled: busy, children: "Fix Gaming Mode launch" }), SP_JSX.jsx(DFL.DialogButton, { onClick: () => void runAction(openStagingFolder), disabled: busy, children: "Open ~/NexusDeck staging" }), !ready && (SP_JSX.jsx("div", { style: { fontSize: 11, color: "#94a3b8", marginTop: 6 }, children: "Add to Steam (auto) closes Steam if needed, writes the shortcut, then you can reopen Steam." }))] }), SP_JSX.jsxs(DFL.PanelSection, { title: "Diagnostics", children: [SP_JSX.jsx(DFL.DialogButton, { onClick: () => void onHealth(), disabled: busy, children: "Run health check" }), SP_JSX.jsx(DFL.DialogButton, { onClick: () => void runAction(exportSupportBundle), disabled: busy, children: "Export support bundle" }), SP_JSX.jsx(DFL.DialogButton, { onClick: () => refresh(), disabled: busy, children: "Refresh status" }), SP_JSX.jsx(DFL.ToggleField, { label: "Show health report", checked: showHealth, onChange: (v) => setShowHealth(v) })] }), showHealth && health.length > 0 && (SP_JSX.jsx(DFL.PanelSection, { title: "Health report", children: health.map((line) => (SP_JSX.jsx("div", { style: { fontSize: 12, marginBottom: 4, color: lineColor(line) }, children: line }, line))) }))] }));
 }
 var index = DFL.definePlugin(() => ({
     title: "NexusDeck",

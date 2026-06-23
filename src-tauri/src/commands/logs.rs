@@ -66,6 +66,21 @@ pub fn export_install_logs_to(
 }
 
 #[tauri::command]
+pub fn list_proton_logs(limit: Option<usize>) -> Result<Vec<LogFileInfo>> {
+    crate::services::proton_log::list_proton_logs(limit.unwrap_or(20))
+}
+
+#[tauri::command]
+pub fn read_proton_log(path: String, max_bytes: Option<usize>) -> Result<String> {
+    crate::services::proton_log::read_tail(&path, max_bytes.unwrap_or(256_000))
+}
+
+#[tauri::command]
+pub fn get_proton_master_log_path() -> Result<String> {
+    Ok(crate::services::proton_log::master_log_path()?.display().to_string())
+}
+
+#[tauri::command]
 pub fn get_install_log_path_for_session(session_log_hint: String) -> Result<String> {
     let dir = crate::services::paths::logs_dir()?;
     if PathBuf::from(&session_log_hint).is_absolute() {

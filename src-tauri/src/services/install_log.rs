@@ -22,7 +22,7 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             LogLevel::Debug => "DEBUG",
             LogLevel::Info => "INFO",
@@ -263,12 +263,20 @@ pub fn list_recent_logs(limit: usize) -> Result<Vec<LogFileInfo>> {
                 .and_then(|n| n.to_str())
                 .unwrap_or("")
                 .to_string();
-            if name == "session.log" || name.starts_with("install_mod_") {
+            if name == "session.log" || name.starts_with("install_mod_") || name == "proton.log" || name.starts_with("proton_") {
                 let meta = entry.metadata().ok();
                 let kind = if name.ends_with(".jsonl") {
-                    "jsonl".to_string()
+                    if name.starts_with("proton_") {
+                        "proton_jsonl".to_string()
+                    } else {
+                        "jsonl".to_string()
+                    }
                 } else if name == "session.log" {
                     "session".to_string()
+                } else if name == "proton.log" {
+                    "proton_master".to_string()
+                } else if name.starts_with("proton_") {
+                    "proton".to_string()
                 } else {
                     "install".to_string()
                 };
@@ -328,6 +336,21 @@ pub fn export_install_logs_zip(
         .filter(|f| f.kind != "jsonl" || is_verbose_logging_enabled())
         .map(|f| PathBuf::from(&f.path))
         .collect();
+
+    let recent_proton = crate::services::proton_log::list_proton_logs(last_n)?;
+    for f in recent_proton {
+        let p = PathBuf::from(&f.path);
+        if p.is_file() && !paths.iter().any(|existing| existing == &p) {
+            if f.kind != "proton_jsonl" || is_verbose_logging_enabled() {
+                paths.push(p);
+            }
+        }
+    }
+
+    let proton_master = dir.join("proton.log");
+    if proton_master.exists() && !paths.iter().any(|p| p == &proton_master) {
+        paths.push(proton_master);
+    }
 
     let session = dir.join("session.log");
     if session.exists() && !paths.iter().any(|p| p == &session) {

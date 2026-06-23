@@ -30,6 +30,10 @@ pub struct BodyslidePathInfo {
     pub config_matches: bool,
     /// How to navigate in BodySlide's folder picker if it still prompts.
     pub browse_hint: Option<String>,
+    /// True when the configured path uses Proton's Z: drive (dropdowns often break).
+    pub uses_z_drive: bool,
+    /// XML files under SliderGroups/SliderSets in the BodySlide install folder.
+    pub preset_file_count: usize,
 }
 
 const STEAM_COMMON_REL: &str = "drive_c/Program Files (x86)/Steam/steamapps/common";
@@ -74,7 +78,10 @@ pub fn bodyslide_game_data_path(profile: &Profile) -> Result<String> {
 
     if let Some(prefix) = resolve_prefix_pfx(profile) {
         ensure_steam_common_symlink(profile, &prefix)?;
-        if let Some(path) = steam_layout_path_in_prefix(&prefix, &data) {
+        // Always prefer the C: steamapps layout after symlinking. The Flatpak sandbox
+        // often cannot stat compatdata on external SD, which previously forced a Z:
+        // path that BodySlide displays but cannot scan for presets/outfits.
+        if let Some(path) = windows_data_path_for_prefix(&prefix, profile) {
             return Ok(path);
         }
     }
@@ -88,11 +95,15 @@ pub fn bodyslide_path_info(profile: &Profile, bodyslide_dir: Option<&Path>) -> R
     let config_dirs = bodyslide_config_directories(profile, bodyslide_dir);
     let config_matches = config_dirs.iter().any(|dir| {
         let config = dir.join("Config.xml");
-        config.is_file() && config_contains_path(&config, &game_data_path)
+        host_path_is_file(&config.display().to_string())
+            && config_contains_path(&config, &game_data_path)
     });
     let primary_config = config_dirs
         .first()
         .map(|d| d.join("Config.xml").display().to_string());
+    let preset_file_count = bodyslide_dir
+        .map(count_preset_files)
+        .unwrap_or(0);
 
     Ok(BodyslidePathInfo {
         game_data_path: game_data_path.clone(),
@@ -100,6 +111,8 @@ pub fn bodyslide_path_info(profile: &Profile, bodyslide_dir: Option<&Path>) -> R
         config_path: primary_config,
         config_matches,
         browse_hint: Some(browse_hint_for_path(&game_data_path)),
+        uses_z_drive: game_data_path.starts_with("Z:\\") || game_data_path.starts_with("z:\\"),
+        preset_file_count,
     })
 }
 
@@ -312,7 +325,8 @@ fi
 if [ -d "$link_path/Data" ]; then
   exit 0
 fi
-ln -sfn "$target" "$link_path""#
+ln -sfn "$target" "$link_path"
+[ -d "$link_path/Data" ] || {{ echo "Symlink missing Data folder" >&2; exit 1; }}""#
         );
         let output = run_host_bash(&script)?;
         if !output.status.success() {
@@ -460,11 +474,67 @@ fn xml_escape(value: &str) -> String {
 }
 
 fn config_contains_path(config_path: &Path, expected: &str) -> bool {
-    let Ok(content) = std::fs::read_to_string(config_path) else {
+    let path_s = config_path.display().to_string();
+    let script = format!(
+        r#"if [ -f "{path}" ]; then cat "{path}"; else exit 1; fi"#,
+        path = path_s.replace('"', "\\\"")
+    );
+    let content = if platform::is_flatpak_sandbox() {
+        run_host_bash(&script)
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+    } else {
+        std::fs::read_to_string(config_path).ok()
+    };
+    let Some(content) = content else {
         return false;
     };
     let normalized = expected.trim_end_matches('\\').to_lowercase();
     content.to_lowercase().contains(&normalized)
+}
+
+pub fn count_preset_files(bodyslide_dir: &Path) -> usize {
+    let mut count = 0;
+    for sub in ["SliderGroups", "SliderSets", "SliderPresets"] {
+        let dir = bodyslide_dir.join(sub);
+        if !host_path_is_dir(&dir.display().to_string()) {
+            continue;
+        }
+        count += count_xml_files_host(&dir);
+    }
+    count
+}
+
+fn count_xml_files_host(dir: &Path) -> usize {
+    let dir_s = dir.display().to_string().replace('"', "\\\"");
+    let script = format!(
+        r#"find "{dir_s}" -maxdepth 2 -type f \( -iname '*.xml' -o -iname '*.osp' \) 2>/dev/null | wc -l"#
+    );
+    run_host_bash(&script)
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .parse::<usize>()
+                .ok()
+        })
+        .unwrap_or(0)
+}
+
+fn host_path_is_file(path: &str) -> bool {
+    let script = format!(r#"[ -f "{}" ] && echo yes"#, path.replace('"', "\\\""));
+    run_host_bash(&script)
+        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("yes"))
+        .unwrap_or_else(|_| Path::new(path).is_file())
+}
+
+fn host_path_is_dir(path: &str) -> bool {
+    let script = format!(r#"[ -d "{}" ] && echo yes"#, path.replace('"', "\\\""));
+    run_host_bash(&script)
+        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("yes"))
+        .unwrap_or_else(|_| Path::new(path).is_dir())
 }
 
 fn proton_z_drive_path(linux_path: &Path) -> String {
@@ -488,20 +558,30 @@ fn to_windows_path(path: &Path) -> String {
     s
 }
 
-fn steam_layout_path_in_prefix(prefix: &Path, data_path: &Path) -> Option<String> {
-    let game_root = data_path.parent()?;
-    let game_name = game_root.file_name()?.to_string_lossy();
-
+fn windows_data_path_for_prefix(prefix: &Path, profile: &Profile) -> Option<String> {
+    let game_name = Path::new(&profile.game_path).file_name()?;
     for rel in [
         STEAM_COMMON_REL,
         "drive_c/Program Files/Steam/steamapps/common",
     ] {
-        let candidate = prefix.join(rel).join(game_name.as_ref()).join("Data");
-        if candidate.is_dir() {
-            return Some(to_windows_path(&candidate));
+        let data_rel = prefix.join(rel).join(game_name).join("Data");
+        if let Some(win) = prefix_path_to_c_drive(&data_rel, prefix) {
+            return Some(win);
         }
     }
     None
+}
+
+fn prefix_path_to_c_drive(path: &Path, prefix: &Path) -> Option<String> {
+    let path_s = path.to_string_lossy().replace('\\', "/");
+    let prefix_s = prefix.to_string_lossy().replace('\\', "/");
+    let rel = path_s.strip_prefix(prefix_s.as_str())?.trim_start_matches('/');
+    let rel = rel.strip_prefix("drive_c/")?;
+    let mut win = rel.replace('/', "\\");
+    if !win.ends_with('\\') {
+        win.push('\\');
+    }
+    Some(format!("C:\\{win}"))
 }
 
 #[cfg(test)]
@@ -536,5 +616,13 @@ mod tests {
         let hint = browse_hint_for_path(r"C:\Program Files (x86)\Steam\steamapps\common\Fallout 4\Data\");
         assert!(hint.contains("Program Files"));
         assert!(hint.contains(".steam"));
+    }
+
+    #[test]
+    fn prefix_path_to_c_drive_maps_steam_layout() {
+        let prefix = PathBuf::from("/home/deck/.steam/steam/steamapps/compatdata/489830/pfx");
+        let data = prefix.join(STEAM_COMMON_REL).join("Fallout 4").join("Data");
+        let win = prefix_path_to_c_drive(&data, &prefix).unwrap();
+        assert!(win.starts_with("C:\\Program Files (x86)\\Steam\\steamapps\\common\\Fallout 4\\Data\\"));
     }
 }
