@@ -250,6 +250,11 @@ exe = {exe_s}
 block = base64.b64decode("{block_b64}").decode("utf-8")
 backup = path.parent / (path.name + ".nexusdeck_backup")
 path.parent.mkdir(parents=True, exist_ok=True)
+if path.is_file():
+    head = path.read_bytes()[:2]
+    if len(head) >= 2 and head[0] == 0 and head[1] == 1:
+        print("binary_vdf")
+        sys.exit(3)
 if path.is_file() and not backup.is_file():
     backup.write_bytes(path.read_bytes())
 needle = '"Exe"\t\t"' + exe + '"'
@@ -275,6 +280,15 @@ PY"#
     let output = run_host_bash(&script)?;
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.trim() == "binary_vdf" {
+            return Err(NexusDeckError::Other(
+                "Steam shortcuts.vdf is in binary format. Quit Steam completely, then use \
+                 \"Add to Steam (auto)\" in Settings — or launch NexusDeck with: \
+                 flatpak run com.nexusdeck.app"
+                    .into(),
+            ));
+        }
         return Err(NexusDeckError::Other(format!(
             "Could not write Steam shortcut on host: {}",
             err.trim()

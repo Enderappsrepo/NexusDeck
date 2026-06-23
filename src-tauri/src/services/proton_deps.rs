@@ -11,6 +11,7 @@ use crate::services::host_command::{
 };
 use crate::services::platform;
 use crate::services::proton_log::ProtonLogger;
+use crate::services::protontricks_health;
 
 pub const PROTONTRICKS_FLATPAK_ID: &str = "com.github.Matoking.protontricks";
 const PREPARE_PHASE_TIMEOUT: Duration = Duration::from_secs(90);
@@ -342,6 +343,8 @@ fn install_packages_with_context(
             logger,
         ));
     }
+
+    let _ = protontricks_health::ensure_shortcuts_for_protontricks(logger);
 
     let total = packages.len();
     let prepare_started = Instant::now();

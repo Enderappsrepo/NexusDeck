@@ -237,6 +237,12 @@ EOF
 
   mkdir -p "$(dirname "$shortcuts_path")"
   if [[ -f "$shortcuts_path" ]]; then
+    magic=$(head -c 2 "$shortcuts_path" | xxd -p 2>/dev/null || echo "")
+    if [[ "$magic" == "0001" ]]; then
+      warn "shortcuts.vdf is Steam binary format — skipping text shortcut write"
+      warn "Launch NexusDeck with: flatpak run ${APP_ID}"
+      return 0
+    fi
     if grep -Fq "\"Exe\"		\"${exe_path}\"" "$shortcuts_path" 2>/dev/null; then
       warn "NexusDeck shortcut already exists in Steam"
       return 0

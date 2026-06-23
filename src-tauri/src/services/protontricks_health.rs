@@ -153,6 +153,41 @@ pub fn check_protontricks_health(logger: Option<&ProtonLogger>) -> Result<Proton
     })
 }
 
+/// Repair corrupted `shortcuts.vdf` before any Protontricks install/verify call.
+/// NexusDeck's text shortcut writer (and the Deck installer) can corrupt binary VDF;
+/// Protontricks then crashes with `Unterminated cstring` on every subsequent run.
+pub fn ensure_shortcuts_for_protontricks(logger: Option<&ProtonLogger>) -> Result<()> {
+    if cfg!(target_os = "windows") {
+        return Ok(());
+    }
+    let Some(path) = resolve_shortcuts_path()? else {
+        if let Some(log) = logger {
+            log.info("shortcuts", "No shortcuts.vdf — Protontricks should be fine");
+        }
+        return Ok(());
+    };
+    if !is_shortcuts_corrupted(&path)? {
+        if let Some(log) = logger {
+            log.info("shortcuts", "shortcuts.vdf looks valid");
+        }
+        return Ok(());
+    }
+    if let Some(log) = logger {
+        log.warn(
+            "shortcuts",
+            &format!(
+                "Corrupted shortcuts.vdf at {} — repairing before Protontricks runs",
+                path.display()
+            ),
+        );
+    }
+    let action = repair_shortcuts_on_host(&path)?;
+    if let Some(log) = logger {
+        log.info("shortcuts", &format!("Repaired shortcuts.vdf ({action})"));
+    }
+    Ok(())
+}
+
 pub fn fix_protontricks_shortcuts(logger: Option<&ProtonLogger>) -> Result<ProtontricksFixResult> {
     if let Some(log) = logger {
         log.info("fix", "Starting Protontricks shortcuts repair");
@@ -482,7 +517,14 @@ fn repair_shortcuts_on_host(shortcuts: &Path) -> Result<String> {
 p="{path_s}"
 backup="{backup_s}"
 ts=$(date +%s)
-if [ -f "$backup" ]; then
+backup_ok() {{
+  [ -f "$1" ] || return 1
+  first=$(head -c 1 "$1" | od -An -t u1 | tr -d ' ')
+  [ "$first" != "34" ] || return 1
+  hex=$(head -c 2 "$1" | xxd -p 2>/dev/null || echo "")
+  [ -z "$hex" ] || [ "$hex" = "0001" ]
+}}
+if [ -f "$backup" ] && backup_ok "$backup"; then
   [ -f "$p" ] && cp "$p" "${{p}}.broken.$ts" || true
   cp "$backup" "$p"
   echo restored_backup
