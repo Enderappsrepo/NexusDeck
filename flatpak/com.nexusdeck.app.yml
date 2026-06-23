@@ -56,7 +56,7 @@ modules:
       - install -Dm644 128x128.png /app/share/icons/hicolor/128x128/apps/com.nexusdeck.app.png
       - install -Dm644 icon.png /app/share/icons/hicolor/256x256/apps/com.nexusdeck.app.png
       - mkdir -p /app/share/nexusdeck/decky/nexusdeck-host
-      - cp -a decky/nexusdeck-host/. /app/share/nexusdeck/decky/nexusdeck-host/
+      - cp -a nexusdeck-host/. /app/share/nexusdeck/decky/nexusdeck-host/
     sources:
       - type: file
         path: nexusdeck
@@ -71,4 +71,4 @@ modules:
       - type: file
         path: icon.png
       - type: dir
-        path: decky
+        path: decky/nexusdeck-host
