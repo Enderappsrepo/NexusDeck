@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::Profile;
 use crate::error::{NexusDeckError, Result};
+use crate::services::host_command::{self, PROTONTRICKS_INSTALL_TIMEOUT_SECS, PROTONTRICKS_PROBE_TIMEOUT_SECS};
 use crate::services::platform;
 use crate::services::proton_log::ProtonLogger;
 
@@ -166,30 +167,15 @@ fn flatpak_app_installed(app_id: &str) -> bool {
 }
 
 fn run_host_bash(script: &str) -> Result<Output> {
-    Command::new("flatpak-spawn")
-        .args(["--host", "bash", "-lc", script])
-        .output()
-        .map_err(|e| NexusDeckError::Other(format!("Host command failed: {e}")))
+    host_command::run_bash(script, host_command::DEFAULT_HOST_TIMEOUT_SECS)
 }
 
-fn run_on_host(program: &str, args: &[&str], env: &[(&str, &str)]) -> Result<Output> {
-    let output = if platform::is_flatpak_sandbox() {
-        let mut cmd = Command::new("flatpak-spawn");
-        cmd.arg("--host");
-        for (key, value) in env {
-            cmd.arg(format!("--env={key}={value}"));
-        }
-        cmd.arg(program).args(args);
-        cmd.output()
-    } else {
-        let mut cmd = Command::new(program);
-        for (key, value) in env {
-            cmd.env(key, value);
-        }
-        cmd.args(args).output()
-    }
-    .map_err(|e| NexusDeckError::Other(format!("Failed to run {program}: {e}")))?;
-    Ok(output)
+fn run_on_host_probe(program: &str, args: &[&str], env: &[(&str, &str)]) -> Result<Output> {
+    host_command::run_program(program, args, env, PROTONTRICKS_PROBE_TIMEOUT_SECS)
+}
+
+fn run_on_host_install(program: &str, args: &[&str], env: &[(&str, &str)]) -> Result<Output> {
+    host_command::run_program(program, args, env, PROTONTRICKS_INSTALL_TIMEOUT_SECS)
 }
 
 pub fn list_game_deps(game_domain: &str) -> Result<Vec<String>> {
@@ -526,7 +512,7 @@ fn run_protontricks_verbs(
                 let mut args = vec!["--no-term", app_id_str.as_str(), "-q"];
                 args.extend(package_names.iter().map(String::as_str));
                 let label = format!("{cmd} {}", args.join(" "));
-                (label, run_on_host(cmd, &args, &env_refs))
+                (label, run_on_host_install(cmd, &args, &env_refs))
             }
             ProtontricksRunner::Flatpak => {
                 let mut args = vec![
@@ -538,7 +524,7 @@ fn run_protontricks_verbs(
                 ];
                 args.extend(package_names.iter().map(String::as_str));
                 let label = format!("flatpak {}", args.join(" "));
-                (label, run_on_host("flatpak", &args, &env_refs))
+                (label, run_on_host_install("flatpak", &args, &env_refs))
             }
         };
 
@@ -610,12 +596,12 @@ fn installed_verbs(app_id: u32, compatdata: &Path, pt: &ProtontricksInfo) -> Res
     let mut last_error = String::new();
     for runner in runners_for(pt) {
         let output = match runner {
-            ProtontricksRunner::Native(ref cmd) => run_on_host(
+            ProtontricksRunner::Native(ref cmd) => run_on_host_probe(
                 cmd,
                 &["--no-term", app_id_str.as_str(), "list-installed"],
                 &env_refs,
             ),
-            ProtontricksRunner::Flatpak => run_on_host(
+            ProtontricksRunner::Flatpak => run_on_host_probe(
                 "flatpak",
                 &[
                     "run",

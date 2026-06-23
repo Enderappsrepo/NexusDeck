@@ -58,5 +58,6 @@ pub mod profile_reset;
 pub mod app_reset;
 pub mod app_update;
 pub mod decky_host;
+pub mod host_command;
 
 pub use archive_options::MergeOptions;

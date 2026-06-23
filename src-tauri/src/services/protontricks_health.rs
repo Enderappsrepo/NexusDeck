@@ -4,12 +4,11 @@
 //! text VDF file. Protontricks reads binary VDF and crashes with `Unterminated cstring`.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{NexusDeckError, Result};
-use crate::services::platform;
+use crate::services::host_command::{self, PROTONTRICKS_PROBE_TIMEOUT_SECS};
 use crate::services::proton_deps::{self, PROTONTRICKS_FLATPAK_ID};
 use crate::services::proton_log::ProtonLogger;
 
@@ -242,7 +241,7 @@ for root in "$HOME/.steam/steam" "$HOME/.local/share/Steam" "$HOME/.var/app/com.
 done
 exit 0
 "#;
-    let output = run_host_bash(script)?;
+    let output = run_host_bash(script, host_command::DEFAULT_HOST_TIMEOUT_SECS)?;
     let line = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if line.is_empty() {
         Ok(None)
@@ -262,7 +261,7 @@ hex=$(head -c 2 "$p" | xxd -p 2>/dev/null || echo "")
 if [ -n "$hex" ] && [ "$hex" != "0001" ]; then echo corrupted_binary; exit 0; fi
 echo ok"#
     );
-    let output = run_host_bash(&script)?;
+    let output = run_host_bash(&script, host_command::DEFAULT_HOST_TIMEOUT_SECS)?;
     let status = String::from_utf8_lossy(&output.stdout).trim().to_string();
     Ok(status.starts_with("corrupted"))
 }
@@ -296,7 +295,7 @@ if [ -f "$p" ]; then
 fi
 echo already_ok"#
     );
-    let output = run_host_bash(&script)?;
+    let output = run_host_bash(&script, host_command::DEFAULT_HOST_TIMEOUT_SECS)?;
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
         return Err(NexusDeckError::Other(format!(
@@ -318,7 +317,7 @@ fn probe_protontricks(pt: &proton_deps::ProtontricksInfo, logger: Option<&Proton
         };
         format!("{cmd} --no-term -l 2>/dev/null | head -c 1")
     };
-    let result = run_host_bash(&script)
+    let result = run_host_bash(&script, PROTONTRICKS_PROBE_TIMEOUT_SECS)
         .map(|o| {
             let ok = o.status.success() && !o.stdout.is_empty();
             if let Some(log) = logger {
@@ -336,16 +335,8 @@ fn probe_protontricks(pt: &proton_deps::ProtontricksInfo, logger: Option<&Proton
     result
 }
 
-fn run_host_bash(script: &str) -> Result<std::process::Output> {
-    let output = if platform::is_flatpak_sandbox() {
-        Command::new("flatpak-spawn")
-            .args(["--host", "bash", "-lc", script])
-            .output()
-    } else {
-        Command::new("bash").args(["-lc", script]).output()
-    }
-    .map_err(|e| NexusDeckError::Other(format!("Host command failed: {e}")))?;
-    Ok(output)
+fn run_host_bash(script: &str, timeout_secs: u64) -> Result<std::process::Output> {
+    host_command::run_bash(script, timeout_secs)
 }
 
 #[cfg(test)]

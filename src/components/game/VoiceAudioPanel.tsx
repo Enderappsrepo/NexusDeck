@@ -3,6 +3,7 @@ import { Volume2, VolumeX, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProtonLogPanel } from "@/components/proton/ProtonLogPanel";
+import { useProtonLogger } from "@/hooks/useProtonLogger";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { api } from "@/lib/commands";
 import type { BethesdaAudioStatus } from "@/lib/nexus/types";

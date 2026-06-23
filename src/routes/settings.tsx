@@ -503,6 +503,7 @@ function SettingsPage() {
       <DeckyHostPanel />
 
       <ProtontricksGuidePanel
+        autoVerify={false}
         gameDomain={
           profiles.find((p) => p.game_domain === "fallout4" || p.game_domain === "skyrimspecialedition")
             ?.game_domain ?? null

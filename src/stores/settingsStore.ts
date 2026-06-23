@@ -55,6 +55,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   loading: false,
 
   loadSettings: async () => {
+    if (get().loading) return;
     set({ loading: true });
     try {
       const downloadSettings = await api.getDownloadSettings();

@@ -25,10 +25,13 @@ export function ProtontricksGuidePanel({
   gameDomain,
   profileId,
   compact = false,
+  autoVerify = true,
 }: {
   gameDomain?: string | null;
   profileId?: string | null;
   compact?: boolean;
+  /** When false, skip automatic dependency verification on mount (Settings page). */
+  autoVerify?: boolean;
 }) {
   const [status, setStatus] = useState<ProtontricksInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -80,8 +83,16 @@ export function ProtontricksGuidePanel({
   }, [refresh]);
 
   useEffect(() => {
-    if (status?.available) void verifyDeps();
-  }, [status?.available, verifyDeps]);
+    if (status?.available && autoVerify) void verifyDeps();
+  }, [status?.available, verifyDeps, autoVerify]);
+
+  const installPackages = useMemo(() => {
+    if (!gameDomain) return [];
+    if (verification && (verification.present.length > 0 || verification.missing.length > 0)) {
+      return [...verification.present, ...verification.missing];
+    }
+    return PROTON_DEPS_PACKAGES[gameDomain] ?? [];
+  }, [gameDomain, verification]);
 
   const installDeps = async () => {
     if (!gameDomain || !PROTON_DEPS_GAMES.has(gameDomain)) return;
@@ -157,14 +168,6 @@ export function ProtontricksGuidePanel({
   }
 
   const available = status?.available ?? false;
-
-  const installPackages = useMemo(() => {
-    if (!gameDomain) return [];
-    if (verification && (verification.present.length > 0 || verification.missing.length > 0)) {
-      return [...verification.present, ...verification.missing];
-    }
-    return PROTON_DEPS_PACKAGES[gameDomain] ?? [];
-  }, [gameDomain, verification]);
 
   return (
     <Card>

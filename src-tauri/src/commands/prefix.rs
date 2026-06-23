@@ -52,17 +52,30 @@ pub fn restore_proton_prefix(proton_prefix: String, src_zip: String) -> Result<S
 }
 
 #[tauri::command]
-pub fn detect_protontricks() -> proton_deps::ProtontricksInfo {
-    proton_deps::detect_protontricks()
+pub async fn detect_protontricks() -> proton_deps::ProtontricksInfo {
+    tokio::task::spawn_blocking(proton_deps::detect_protontricks)
+        .await
+        .unwrap_or_else(|_| proton_deps::ProtontricksInfo {
+            available: false,
+            command: String::new(),
+            message: "Protontricks detection failed.".into(),
+            kind: "none".into(),
+        })
 }
 
 #[tauri::command]
-pub fn check_protontricks_health(app: tauri::AppHandle) -> Result<protontricks_health::ProtontricksHealth> {
-    let logger = new_proton_logger("health", &app);
-    if let Some(ref log) = logger {
-        let _ = log.write_header("Protontricks health check", "");
-    }
-    protontricks_health::check_protontricks_health(logger.as_ref())
+pub async fn check_protontricks_health(
+    app: tauri::AppHandle,
+) -> Result<protontricks_health::ProtontricksHealth> {
+    tokio::task::spawn_blocking(move || {
+        let logger = new_proton_logger("health", &app);
+        if let Some(ref log) = logger {
+            let _ = log.write_header("Protontricks health check", "");
+        }
+        protontricks_health::check_protontricks_health(logger.as_ref())
+    })
+    .await
+    .map_err(|e| crate::error::NexusDeckError::Other(format!("Health check failed: {e}")))?
 }
 
 #[tauri::command]
