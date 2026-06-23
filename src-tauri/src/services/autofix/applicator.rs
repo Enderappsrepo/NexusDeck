@@ -146,7 +146,7 @@ fn apply_proton_deps(
     remedy_id: &str,
     backup_path: Option<String>,
 ) -> FixResult {
-    match proton_deps::install_game_deps(&profile.game_domain, false) {
+    match proton_deps::install_game_deps_for_profile(profile, false) {
         Ok(r) => FixResult {
             remedy_id: remedy_id.to_string(),
             applied: r.success,

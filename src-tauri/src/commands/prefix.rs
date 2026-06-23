@@ -47,8 +47,20 @@ pub fn detect_protontricks() -> proton_deps::ProtontricksInfo {
 }
 
 #[tauri::command]
-pub fn install_proton_deps(game_domain: String, dry_run: bool) -> Result<proton_deps::ProtonDepsResult> {
-    proton_deps::install_game_deps(&game_domain, dry_run)
+pub async fn install_proton_deps(
+    game_domain: String,
+    dry_run: bool,
+    profile_id: Option<String>,
+) -> Result<proton_deps::ProtonDepsResult> {
+    tokio::task::spawn_blocking(move || {
+        if let Some(id) = profile_id {
+            let profile = load_profile(&id)?;
+            return proton_deps::install_game_deps_for_profile(&profile, dry_run);
+        }
+        proton_deps::install_game_deps(&game_domain, dry_run)
+    })
+    .await
+    .map_err(|e| crate::error::NexusDeckError::Other(format!("Proton deps install failed: {e}")))?
 }
 
 #[tauri::command]

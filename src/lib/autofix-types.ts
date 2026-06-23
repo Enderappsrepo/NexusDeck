@@ -67,6 +67,7 @@ export interface ProtonDepsResult {
   skipped: string[];
   failed: string[];
   message: string;
+  failure_details: [string, string][];
 }
 
 export interface GameManifestEntry {

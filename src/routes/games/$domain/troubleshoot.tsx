@@ -144,7 +144,7 @@ function TroubleshootPage() {
       {message && <p className="text-sm text-[var(--color-muted)]">{message}</p>}
 
       {(domain === "fallout4" || domain === "skyrimspecialedition") && (
-        <ProtontricksGuidePanel gameDomain={domain} />
+        <ProtontricksGuidePanel gameDomain={domain} profileId={profile.id} />
       )}
 
       {scan && (

@@ -699,10 +699,11 @@ export const api = {
   detectProtontricks: () =>
     invoke<import("@/lib/autofix-types").ProtontricksInfo>("detect_protontricks"),
 
-  installProtonDeps: (gameDomain: string, dryRun = false) =>
+  installProtonDeps: (gameDomain: string, dryRun = false, profileId?: string) =>
     invoke<import("@/lib/autofix-types").ProtonDepsResult>("install_proton_deps", {
       gameDomain,
       dryRun,
+      profileId: profileId ?? null,
     }),
 
   getBethesdaAudioStatus: (profileId: string) =>

@@ -19,9 +19,11 @@ const INSTALL_STEPS = [
 
 export function ProtontricksGuidePanel({
   gameDomain,
+  profileId,
   compact = false,
 }: {
   gameDomain?: string | null;
+  profileId?: string | null;
   compact?: boolean;
 }) {
   const [status, setStatus] = useState<ProtontricksInfo | null>(null);
@@ -52,9 +54,9 @@ export function ProtontricksGuidePanel({
   const installDeps = async () => {
     if (!gameDomain || !PROTON_DEPS_GAMES.has(gameDomain)) return;
     setInstalling(true);
-    setMessage(null);
+    setMessage("Installing Proton dependencies… this can take 5–15 minutes. Keep NexusDeck open.");
     try {
-      const result = await api.installProtonDeps(gameDomain, false);
+      const result = await api.installProtonDeps(gameDomain, false, profileId ?? undefined);
       setMessage(result.message);
       refresh();
     } catch (e) {
@@ -168,13 +170,13 @@ export function ProtontricksGuidePanel({
           )}
           {available && gameDomain && PROTON_DEPS_GAMES.has(gameDomain) && (
             <Button size="sm" onClick={installDeps} loading={installing} data-focusable="true">
-              Install game dependencies
+              {installing ? "Installing… (5–15 min)" : "Install game dependencies"}
             </Button>
           )}
         </div>
 
         {message && (
-          <p className={cn("text-sm", available ? "text-[var(--color-muted)]" : "text-[var(--color-warning)]")}>
+          <p className={cn("text-sm whitespace-pre-wrap", available ? "text-[var(--color-muted)]" : "text-[var(--color-warning)]")}>
             {message}
           </p>
         )}
