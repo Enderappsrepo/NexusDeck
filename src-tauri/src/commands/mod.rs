@@ -24,6 +24,7 @@ mod app_reset;
 mod app_update;
 mod profile_insights;
 mod logs;
+mod decky_host;
 
 pub use auth::*;
 pub use nexus::*;
@@ -51,3 +52,4 @@ pub use app_reset::*;
 pub use app_update::*;
 pub use profile_insights::*;
 pub use logs::*;
+pub use decky_host::*;

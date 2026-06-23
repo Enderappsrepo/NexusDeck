@@ -1,0 +1,12 @@
+{
+  "name": "NexusDeck Host",
+  "version": "1.1.0",
+  "author": "NexusDeck",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["nexusdeck", "modding", "utility"],
+    "description": "Host-side health checks and fixes for NexusDeck on Steam Deck.",
+    "image": ""
+  }
+}

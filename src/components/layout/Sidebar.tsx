@@ -95,12 +95,13 @@ export function Sidebar() {
 
   return (
     <nav
+      data-focus-group="sidebar"
       onFocusCapture={() => setFocusWithin(true)}
       onBlurCapture={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node)) setFocusWithin(false);
       }}
       className={cn(
-        "flex shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface-1)]/40 py-4 transition-[width]",
+        "flex min-h-0 shrink-0 flex-col overflow-y-auto border-r border-[var(--color-border)] bg-[var(--color-surface-1)]/40 py-4 scrollbar-thin transition-[width]",
         collapsed
           ? "w-20 items-center"
           : "w-20 items-center md:w-56 md:items-stretch md:px-3"

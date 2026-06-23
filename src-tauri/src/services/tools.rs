@@ -166,6 +166,15 @@ fn find_bodyslide_exe(game_root: &Path) -> Option<(PathBuf, PathBuf)> {
         }
     }
 
+    // CBBE FO4 ships BodySlide under Data/Tools/BodySlide (not CalienteTools).
+    let cbbe_tools = game_root.join("Data").join("Tools").join("BodySlide");
+    for exe in BODYSLIDE_EXES {
+        let candidate = cbbe_tools.join(exe);
+        if candidate.is_file() {
+            return Some((candidate, cbbe_tools.clone()));
+        }
+    }
+
     // Case-insensitive walk under Data/ for BodySlide x64.exe.
     let data_root = game_root.join("Data");
     if data_root.is_dir() {
@@ -412,7 +421,7 @@ pub fn configure_bodyslide_paths(profile_id: &str) -> Result<BodyslidePathInfo> 
     let info = detect_bodyslide(profile_id)?;
     let dir = info.working_dir.ok_or_else(|| {
         NexusDeckError::NotFound(
-            "BodySlide install folder not found. Install BodySlide to Data/CalienteTools/BodySlide first.".into(),
+            "BodySlide install folder not found. Install BodySlide to Data/CalienteTools/BodySlide or Data/Tools/BodySlide first.".into(),
         )
     })?;
     bodyslide_config::configure_bodyslide(&profile, Path::new(&dir))

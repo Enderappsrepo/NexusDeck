@@ -16,6 +16,8 @@ export function BackButton() {
       onClick={goBack}
       className="mr-2 shrink-0"
       aria-label="Go back"
+      tabIndex={-1}
+      data-gamepad-skip="true"
     >
       <ArrowLeft className="h-5 w-5" />
       <span className="hidden sm:inline">Back</span>

@@ -30,7 +30,7 @@ export function AppShell({
   useControllerFocus();
 
   return (
-    <div className="flex h-full min-h-screen flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <GameRunningBanner />
       {updateInfo && (
         <UpdateBanner info={updateInfo} onDismiss={onDismissUpdate} />
@@ -72,9 +72,12 @@ export function AppShell({
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {!hideNav && <Sidebar />}
-        <main className="min-h-0 flex-1 overflow-auto p-6 scrollbar-thin" data-scroll-pane>
+        <main
+          className="app-scroll-pane min-h-0 flex-1 p-6 scrollbar-thin"
+          data-scroll-pane
+        >
           {children}
         </main>
       </div>

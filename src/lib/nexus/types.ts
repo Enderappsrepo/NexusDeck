@@ -837,6 +837,24 @@ export interface SevenZipInfo {
   message: string;
 }
 
+export interface DeckyHostStatus {
+  available: boolean;
+  decky_installed: boolean;
+  decky_home: string | null;
+  plugin_installed: boolean;
+  plugin_version: string | null;
+  plugin_loader_active: boolean;
+  bundled_plugin_present: boolean;
+  message: string;
+}
+
+export interface DeckyHostInstallResult {
+  success: boolean;
+  message: string;
+  needs_decky_restart: boolean;
+  manual_steps: string[];
+}
+
 export interface GameSettingOption {
   value: string;
   label: string;

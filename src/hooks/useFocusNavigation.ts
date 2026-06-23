@@ -1,8 +1,11 @@
 import { useEffect, useCallback } from "react";
 import { moveFocus, isTypingElement, activateFocused } from "@/lib/gamepad/focusNavigation";
 import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
+import { useGamepadRouterState } from "@/hooks/useGamepadRouter";
 
 export function useFocusNavigation(containerRef: React.RefObject<HTMLElement | null>) {
+  const { controllerActive } = useGamepadRouterState();
+
   const handleCustomButton = useCallback((button: number) => {
     // Reserved for component-specific button overrides via router
     void button;
@@ -15,6 +18,9 @@ export function useFocusNavigation(containerRef: React.RefObject<HTMLElement | n
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTypingElement(document.activeElement)) return;
+      // Steam Input often mirrors face buttons as keyboard keys; ignore those
+      // while the in-app router is handling the physical controller.
+      if (controllerActive) return;
 
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -42,7 +48,7 @@ export function useFocusNavigation(containerRef: React.RefObject<HTMLElement | n
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [containerRef]);
+  }, [containerRef, controllerActive]);
 }
 
 /** @deprecated Use gamepadRouter directly */

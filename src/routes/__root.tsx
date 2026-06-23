@@ -417,7 +417,7 @@ function RootLayout() {
 
   return (
     <GamepadRouterProvider>
-      <div ref={containerRef} className="flex h-full min-h-screen flex-col">
+      <div ref={containerRef} className="flex h-dvh min-h-0 flex-col overflow-hidden">
         <BootReadyMarker />
         <AppShell hideNav={isOnboarding} updateInfo={updateInfo} onDismissUpdate={dismissUpdate}>
           <Outlet />

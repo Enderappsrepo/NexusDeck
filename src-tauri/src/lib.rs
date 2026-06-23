@@ -321,6 +321,8 @@ pub fn run() {
             parse_modlist_import,
             read_text_file,
             write_text_file,
+            get_decky_host_status,
+            install_decky_host_plugin,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

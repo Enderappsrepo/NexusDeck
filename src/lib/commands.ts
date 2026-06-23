@@ -57,6 +57,8 @@ import type {
   NexusUser,
   PlatformInfo,
   SevenZipInfo,
+  DeckyHostStatus,
+  DeckyHostInstallResult,
   PreviewFileResult,
   PreviewNode,
   Profile,
@@ -128,6 +130,10 @@ export const api = {
   getPlatformInfo: () => invoke<PlatformInfo>("get_platform_info"),
 
   getSevenZipInfo: () => invoke<SevenZipInfo>("get_sevenzip_info"),
+
+  getDeckyHostStatus: () => invoke<DeckyHostStatus>("get_decky_host_status"),
+
+  installDeckyHostPlugin: () => invoke<DeckyHostInstallResult>("install_decky_host_plugin"),
 
   searchMods: (
     gameDomain: string,

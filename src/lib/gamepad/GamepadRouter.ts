@@ -38,6 +38,7 @@ const SCROLL_REPEAT_MS = 60;
 // drains battery even when the user isn't touching anything.
 const IDLE_AFTER_MS = 1500;
 const IDLE_POLL_MS = 50;
+const BUTTON_DEBOUNCE_MS = 120;
 
 type Listener = () => void;
 type FocusDir = "next" | "prev" | "up" | "down";
@@ -48,6 +49,7 @@ class GamepadRouterImpl {
   private lastActivity = 0;
   private running = false;
   private pressed = new Set<number>();
+  private lastButtonFire = new Map<number, number>();
   private stickDir: FocusDir | null = null;
   private repeatStates = new Map<string, RepeatState>();
   private controllerActive = false;
@@ -252,6 +254,11 @@ class GamepadRouterImpl {
   }
 
   private handleButtonPress(button: number): void {
+    const now = performance.now();
+    const last = this.lastButtonFire.get(button) ?? 0;
+    if (now - last < BUTTON_DEBOUNCE_MS) return;
+    this.lastButtonFire.set(button, now);
+
     for (const handler of this.buttonHandlers) {
       handler(button);
     }

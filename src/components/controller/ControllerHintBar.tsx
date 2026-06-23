@@ -1,10 +1,21 @@
+import { useEffect, useState } from "react";
 import { useGamepadRouterState } from "@/hooks/useGamepadRouter";
 import { CONTEXT_HINTS } from "@/lib/gamepad/contexts";
+import { api } from "@/lib/commands";
 
 export function ControllerHintBar() {
   const { controllerActive, hintBarVisible, context } = useGamepadRouterState();
+  const [steamDeck, setSteamDeck] = useState(false);
 
-  if (!controllerActive || !hintBarVisible) return null;
+  useEffect(() => {
+    api
+      .getPlatformInfo()
+      .then((info) => setSteamDeck(info.is_steam_deck))
+      .catch(() => setSteamDeck(false));
+  }, []);
+
+  // Steam Gaming Mode already shows its own controller chrome — our bar doubles it.
+  if (steamDeck || !controllerActive || !hintBarVisible) return null;
 
   const hints = CONTEXT_HINTS[context] ?? CONTEXT_HINTS.global;
   const entries = Object.entries(hints).filter(([, v]) => v);

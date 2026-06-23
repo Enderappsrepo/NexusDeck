@@ -1,5 +1,14 @@
 const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [data-focusable="true"]';
+  'button:not([disabled]):not([data-gamepad-skip="true"]), [href]:not([data-gamepad-skip="true"]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [data-focusable="true"]';
+
+/** Primary page content — excludes header chrome and the sidebar rail. */
+export function defaultFocusContainer(): HTMLElement {
+  return (
+    document.querySelector<HTMLElement>("main.app-scroll-pane") ??
+    document.querySelector<HTMLElement>("main[data-scroll-pane]") ??
+    document.body
+  );
+}
 
 export function isTypingElement(el: Element | null): boolean {
   if (!el) return false;
@@ -12,6 +21,7 @@ export function isTypingElement(el: Element | null): boolean {
 }
 
 function isFocusableVisible(el: HTMLElement): boolean {
+  if (el.dataset.gamepadSkip === "true") return false;
   const style = getComputedStyle(el);
   return (
     (el.offsetParent !== null || el === document.activeElement) &&
@@ -102,7 +112,8 @@ export function moveFocus(
   // the whole page.
   const group = current?.closest<HTMLElement>("[data-focus-group]");
   const dialog = current?.closest<HTMLElement>('[role="dialog"]');
-  const root = container ?? group ?? dialog ?? document.body;
+  const pane = current?.closest<HTMLElement>("[data-scroll-pane]");
+  const root = container ?? group ?? dialog ?? pane ?? defaultFocusContainer();
   const items = getFocusableElements(root);
   if (items.length === 0) return;
 
@@ -149,7 +160,7 @@ export function focusFirst(container?: HTMLElement | null): boolean {
 
 export function activateFocused(): void {
   const el = document.activeElement as HTMLElement;
-  if (!el) return;
+  if (!el || el.dataset.gamepadSkip === "true") return;
   if (el.dataset.launchPrimary === "true") {
     el.click();
     return;

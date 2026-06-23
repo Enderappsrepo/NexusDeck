@@ -33,7 +33,8 @@
       "nsis"
     ],
     "resources": {
-      "resources/7zip/*": "7zip/"
+      "resources/7zip/*": "7zip/",
+      "resources/decky/nexusdeck-host/*": "decky/nexusdeck-host/"
     },
     "icon": [
       "icons/32x32.png",

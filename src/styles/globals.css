@@ -57,6 +57,7 @@
 html, body, #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
   color: var(--color-foreground);
   font-family: "Segoe UI", "Inter", system-ui, -apple-system, sans-serif;
   font-size: var(--font-size-base);
@@ -109,8 +110,29 @@ body {
   display: none !important;
 }
 
-[data-controller="true"] main {
-  padding-bottom: 3.5rem;
+body:has([data-controller-hint-bar]) [data-controller="true"] main,
+body:has([data-controller-hint-bar]) [data-controller="true"] .app-scroll-pane {
+  padding-bottom: calc(5.5rem + 1.5rem + env(safe-area-inset-bottom, 0px));
+  scroll-padding-bottom: calc(5.5rem + 1.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+.app-scroll-pane {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  scroll-padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+body:has([data-download-queue-panel]) .app-scroll-pane,
+body:has([data-install-queue-panel]) .app-scroll-pane,
+body:has([data-collection-install-panel]) .app-scroll-pane {
+  padding-bottom: calc(18rem + env(safe-area-inset-bottom, 0px));
+  scroll-padding-bottom: calc(18rem + env(safe-area-inset-bottom, 0px));
+}
+
+body:has([data-controller-hint-bar]) .app-scroll-pane {
+  scroll-padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 @media (min-width: 1280px) {

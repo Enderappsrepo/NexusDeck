@@ -30,6 +30,8 @@ const STEP_ICONS = {
 export function BodySlideSetupPanel({ profileId }: { profileId: string }) {
   const profile = useGamesStore((s) => s.profiles.find((p) => p.id === profileId));
   const [status, setStatus] = useState<BodySetupStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [launching, setLaunching] = useState<"bodyslide" | "outfit" | null>(null);
   const [configuring, setConfiguring] = useState(false);
   const [copiedPath, setCopiedPath] = useState(false);
@@ -43,10 +45,19 @@ export function BodySlideSetupPanel({ profileId }: { profileId: string }) {
   const registerPendingInstall = useInstallQueueStore((s) => s.registerPendingInstall);
 
   const refresh = useCallback(() => {
+    setLoading(true);
+    setLoadError(null);
     api
       .getBodySetupStatus(profileId)
-      .then(setStatus)
-      .catch(() => setStatus(null));
+      .then((next) => {
+        setStatus(next);
+        setLoadError(null);
+      })
+      .catch((e) => {
+        setStatus(null);
+        setLoadError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => setLoading(false));
   }, [profileId]);
 
   useEffect(() => {
@@ -56,10 +67,38 @@ export function BodySlideSetupPanel({ profileId }: { profileId: string }) {
     return () => window.removeEventListener("nexusdeck-mod-installed", handler);
   }, [refresh]);
 
+  if (loading && !status) {
+    return (
+      <section className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-5">
+        <div className="flex items-center gap-3 text-sm text-[var(--color-muted)]">
+          <Loader2 className="h-5 w-5 animate-spin text-[var(--color-primary)]" />
+          Loading BodySlide setup…
+        </div>
+      </section>
+    );
+  }
+
+  if (loadError && !status) {
+    return (
+      <section className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-bold">BodySlide &amp; Outfits</h3>
+            <p className="mt-1 text-sm text-[var(--color-danger)]">{loadError}</p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={refresh} data-focusable="true">
+            Retry
+          </Button>
+        </div>
+      </section>
+    );
+  }
+
   if (!status) return null;
 
   const showPanel =
     status.can_one_click_install ||
+    status.can_one_click_cbbe ||
     status.cbbe_installed ||
     status.bodyslide_installed;
   if (!showPanel) return null;

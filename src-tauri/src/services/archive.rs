@@ -1124,11 +1124,27 @@ fn extract_nested_inner(
             .and_then(|s| s.to_str())
             .unwrap_or("nested");
         let dest = parent.join(format!("{stem}_nested"));
-        std::fs::create_dir_all(&dest)?;
-        extract_archive_fast(&archive, &dest)?;
-        let _ = std::fs::remove_file(&archive);
-        *count += 1;
-        extract_nested_inner(dir, depth + 1, max_depth, count)?;
+        if let Err(e) = std::fs::create_dir_all(&dest) {
+            log::warn!(
+                "Skipping nested archive {} (could not create extract dir): {e}",
+                archive.display()
+            );
+            continue;
+        }
+        match extract_archive_fast(&archive, &dest) {
+            Ok(_) => {
+                let _ = std::fs::remove_file(&archive);
+                *count += 1;
+                extract_nested_inner(dir, depth + 1, max_depth, count)?;
+            }
+            Err(e) => {
+                log::warn!(
+                    "Skipping nested archive {} (extract failed): {e}",
+                    archive.display()
+                );
+                let _ = std::fs::remove_dir_all(&dest);
+            }
+        }
     }
 
     Ok(())

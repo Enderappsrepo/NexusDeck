@@ -26,6 +26,7 @@ export function ImportModDialog({
   const [installTarget, setInstallTarget] = useState<{
     file: ModFileInfo;
     modName: string;
+    archivePath: string;
   } | null>(null);
 
   const refresh = async () => {
@@ -49,6 +50,7 @@ export function ImportModDialog({
     const name = selected.split(/[/\\]/).pop() ?? "imported_mod.zip";
     setInstallTarget({
       modName: name.replace(/\.(zip|7z|rar)$/i, ""),
+      archivePath: selected,
       file: {
         file_id: 0,
         name,
@@ -68,6 +70,7 @@ export function ImportModDialog({
       await refresh();
       setInstallTarget({
         modName: "NexusDeck Practice Mod",
+        archivePath: practice.path,
         file: {
           file_id: 0,
           name: practice.name,
@@ -86,6 +89,7 @@ export function ImportModDialog({
   const selectStagingFile = (f: StagingFile) => {
     setInstallTarget({
       modName: f.name.replace(/\.(zip|7z|rar)$/i, ""),
+      archivePath: f.path,
       file: {
         file_id: 0,
         name: f.name,
@@ -159,7 +163,7 @@ export function ImportModDialog({
           modId={0}
           modName={installTarget.modName}
           file={installTarget.file}
-          archivePathOverride={installTarget.file.name.includes("\\") || installTarget.file.name.includes("/") ? installTarget.file.name : undefined}
+          archivePathOverride={installTarget.archivePath}
           onInstalled={() => {
             setInstallTarget(null);
             onOpenChange(false);

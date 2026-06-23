@@ -31,7 +31,10 @@ export function DownloadQueuePanel() {
   if (downloads.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] [[data-controller=true]_&]:bottom-12">
+    <div
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] [[data-controller=true]_&]:bottom-12"
+      data-download-queue-panel
+    >
       <div className="pointer-events-auto mx-auto max-w-2xl overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)]/95 shadow-2xl backdrop-blur-md">
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-2">
           <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-muted)]">
