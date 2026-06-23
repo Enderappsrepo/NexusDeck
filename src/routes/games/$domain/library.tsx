@@ -424,10 +424,16 @@ function LibraryPage() {
     setError(null);
     setRescanNote(null);
     try {
+      const recovered = await api.reconcileModLibrary(profile.id);
       const result = await api.rescanLibraryFromDisk(profile.id);
-      setRescanNote(result.message);
+      const note = [recovered.restored > 0 ? recovered.message : null, result.message]
+        .filter(Boolean)
+        .join(" ");
+      setRescanNote(note);
       await refreshLibrary();
-      void triggerHaptic(result.mods_added > 0 ? "success" : "reorder");
+      void triggerHaptic(
+        recovered.restored > 0 || result.mods_added > 0 ? "success" : "reorder"
+      );
     } catch (e) {
       setError(e);
     } finally {

@@ -80,10 +80,16 @@ function LoadOrderPage() {
     setError(null);
     setSyncNote(null);
     try {
+      const recovered = await api.reconcileModLibrary(profile.id);
       const result = await api.rescanLibraryFromDisk(profile.id);
-      setSyncNote(result.message);
+      const note = [recovered.restored > 0 ? recovered.message : null, result.message]
+        .filter(Boolean)
+        .join(" ");
+      setSyncNote(note);
       await refresh();
-      void triggerHaptic(result.mods_added > 0 ? "success" : "reorder");
+      void triggerHaptic(
+        recovered.restored > 0 || result.mods_added > 0 ? "success" : "reorder"
+      );
     } catch (e) {
       setError(e);
     } finally {

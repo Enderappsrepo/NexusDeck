@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 use crate::services::paths::{db_path, ensure_dir};
 
+pub mod ledger;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub id: String,
@@ -78,6 +80,9 @@ fn connection() -> Result<Connection> {
         ensure_dir(parent)?;
     }
     let conn = Connection::open(path)?;
+    // WAL survives power loss far better than the default rollback journal (the
+    // Deck loses power often); best-effort in case the filesystem can't do WAL.
+    let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
     conn.execute_batch(include_str!("schema.sql"))?;
     migrate_downloads_table(&conn)?;
     migrate_installed_mods_table(&conn)?;
@@ -170,9 +175,19 @@ pub fn init_db() -> Result<()> {
 
 pub fn save_profile(profile: &Profile) -> Result<()> {
     let conn = connection()?;
+    // Upsert, NOT INSERT OR REPLACE: REPLACE deletes the row first, which (with
+    // foreign keys on) would CASCADE-delete every installed_mods row for this
+    // profile. ON CONFLICT DO UPDATE preserves the row, its id, and its mods.
     conn.execute(
-        "INSERT OR REPLACE INTO profiles (id, game_domain, name, game_path, staging_path, proton_prefix_path, mod_manager, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO profiles (id, game_domain, name, game_path, staging_path, proton_prefix_path, mod_manager, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(id) DO UPDATE SET
+           game_domain = excluded.game_domain,
+           name = excluded.name,
+           game_path = excluded.game_path,
+           staging_path = excluded.staging_path,
+           proton_prefix_path = excluded.proton_prefix_path,
+           mod_manager = excluded.mod_manager",
         params![
             profile.id,
             profile.game_domain,
@@ -248,6 +263,20 @@ fn map_profile_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Profile> {
     })
 }
 
+/// Resolve a profile's game folder, where the durable on-disk ledger lives.
+fn ledger_game_path(profile_id: &str) -> Option<String> {
+    get_profile(profile_id).ok().flatten().map(|p| p.game_path)
+}
+
+/// Mirror a batch of mods to the on-disk ledger (best-effort).
+fn mirror_all(profile_id: &str, mods: &[InstalledMod]) {
+    if let Some(game_path) = ledger_game_path(profile_id) {
+        for m in mods {
+            ledger::write_mod(&game_path, m);
+        }
+    }
+}
+
 pub fn save_installed_mod(mod_record: &InstalledMod) -> Result<()> {
     let conn = connection()?;
     conn.execute(
@@ -270,6 +299,9 @@ pub fn save_installed_mod(mod_record: &InstalledMod) -> Result<()> {
             mod_record.install_options_json,
         ],
     )?;
+    if let Some(game_path) = ledger_game_path(&mod_record.profile_id) {
+        ledger::write_mod(&game_path, mod_record);
+    }
     Ok(())
 }
 
@@ -307,6 +339,18 @@ pub fn list_installed_mods(profile_id: &str) -> Result<Vec<InstalledMod>> {
     Ok(mods)
 }
 
+pub fn count_installed_mods(profile_id: &str) -> Result<usize> {
+    let conn = connection()?;
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM installed_mods WHERE profile_id = ?1",
+            params![profile_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    Ok(n as usize)
+}
+
 pub fn get_installed_mod(id: &str) -> Result<Option<InstalledMod>> {
     let conn = connection()?;
     let sql = format!("{INSTALLED_MOD_SELECT} FROM installed_mods WHERE id = ?1");
@@ -320,6 +364,11 @@ pub fn get_installed_mod(id: &str) -> Result<Option<InstalledMod>> {
 }
 
 pub fn delete_installed_mod(id: &str) -> Result<()> {
+    if let Ok(Some(m)) = get_installed_mod(id) {
+        if let Some(game_path) = ledger_game_path(&m.profile_id) {
+            ledger::remove_mod(&game_path, id);
+        }
+    }
     let conn = connection()?;
     conn.execute("DELETE FROM installed_mods WHERE id = ?1", params![id])?;
     Ok(())
@@ -333,7 +382,9 @@ pub fn set_mod_sort_orders(profile_id: &str, ordered_ids: &[String]) -> Result<V
             params![order as i32, mod_id, profile_id],
         )?;
     }
-    list_installed_mods(profile_id)
+    let updated = list_installed_mods(profile_id)?;
+    mirror_all(profile_id, &updated);
+    Ok(updated)
 }
 
 pub fn renumber_sort_orders(profile_id: &str) -> Result<()> {
@@ -345,6 +396,8 @@ pub fn renumber_sort_orders(profile_id: &str) -> Result<()> {
             params![order as i32, m.id],
         )?;
     }
+    drop(conn);
+    mirror_all(profile_id, &list_installed_mods(profile_id)?);
     Ok(())
 }
 
@@ -354,6 +407,12 @@ pub fn set_mod_enabled(id: &str, enabled: bool) -> Result<()> {
         "UPDATE installed_mods SET enabled = ?1 WHERE id = ?2",
         params![enabled as i32, id],
     )?;
+    drop(conn);
+    if let Ok(Some(m)) = get_installed_mod(id) {
+        if let Some(game_path) = ledger_game_path(&m.profile_id) {
+            ledger::write_mod(&game_path, &m);
+        }
+    }
     Ok(())
 }
 
@@ -402,7 +461,9 @@ pub fn reorder_mod(profile_id: &str, mod_id: &str, direction: &str) -> Result<Ve
         )?;
     }
 
-    list_installed_mods(profile_id)
+    let updated = list_installed_mods(profile_id)?;
+    mirror_all(profile_id, &updated);
+    Ok(updated)
 }
 
 pub fn insert_download(record: &DownloadRecord) -> Result<()> {

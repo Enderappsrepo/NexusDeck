@@ -36,6 +36,37 @@ pub struct ProtontricksFixResult {
     pub log_path: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepairStep {
+    pub name: String,
+    /// ok | skipped | failed
+    pub status: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtontricksRepairResult {
+    pub success: bool,
+    pub steps: Vec<RepairStep>,
+    /// Health re-checked after the repair sequence ran.
+    pub health: ProtontricksHealth,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_path: Option<String>,
+}
+
+fn ok_step(name: &str, detail: impl Into<String>) -> RepairStep {
+    RepairStep { name: name.into(), status: "ok".into(), detail: detail.into() }
+}
+
+fn skipped_step(name: &str, detail: impl Into<String>) -> RepairStep {
+    RepairStep { name: name.into(), status: "skipped".into(), detail: detail.into() }
+}
+
+fn failed_step(name: &str, detail: impl Into<String>) -> RepairStep {
+    RepairStep { name: name.into(), status: "failed".into(), detail: detail.into() }
+}
+
 pub fn check_protontricks_health(logger: Option<&ProtonLogger>) -> Result<ProtontricksHealth> {
     if let Some(log) = logger {
         log.info("health", "Checking Protontricks health");
@@ -219,6 +250,175 @@ fn with_log_path(mut result: ProtontricksFixResult, logger: Option<&ProtonLogger
         log.info("result", &result.message);
     }
     result
+}
+
+/// Run a sequence of safe, reversible remediations for the common Protontricks failure
+/// modes on Steam Deck, then re-probe and report what each step did. Best-effort: a failed
+/// step is recorded, not fatal, so the rest still run.
+pub fn repair_protontricks(logger: Option<&ProtonLogger>) -> Result<ProtontricksRepairResult> {
+    if let Some(log) = logger {
+        log.info("repair", "Starting Protontricks repair sequence");
+    }
+    if cfg!(target_os = "windows") {
+        let health = check_protontricks_health(logger)?;
+        return Ok(with_repair_log(
+            ProtontricksRepairResult {
+                success: true,
+                steps: vec![skipped_step("Repair", "Protontricks repairs are Linux-only.")],
+                health,
+                message: "Not applicable on Windows.".into(),
+                log_path: None,
+            },
+            logger,
+        ));
+    }
+
+    let pt = proton_deps::detect_protontricks();
+    if let Some(log) = logger {
+        log.info("repair", &format!("Detected: available={} kind={}", pt.available, pt.kind));
+    }
+
+    let mut steps = Vec::new();
+    // Narrate each step into the live log so the panel shows progress, not a silent spinner.
+    let note = |phase: &str| {
+        if let Some(log) = logger {
+            log.info("repair", phase);
+        }
+    };
+
+    // 1. Re-apply the Flatpak filesystem grants so Protontricks can reach the prefix /
+    //    SD card / compatdata. Idempotent.
+    note("Re-applying Flatpak filesystem permissions…");
+    match proton_deps::ensure_protontricks_flatpak_access() {
+        Ok(()) => steps.push(ok_step(
+            "Filesystem permissions",
+            "Re-applied Protontricks Flatpak access to home, /run/media and /mnt.",
+        )),
+        Err(e) => steps.push(failed_step("Filesystem permissions", e.to_string())),
+    }
+
+    // 2. Kill a hung Protontricks process. `flatpak kill` targets only the Protontricks app,
+    //    never the running game's Proton/wineserver.
+    note("Clearing any stuck Protontricks instance…");
+    steps.push(clear_stuck_protontricks(&pt, logger));
+
+    // 3. Repair a corrupted shortcuts.vdf (crashes Protontricks on startup); backs up first.
+    note("Checking Steam shortcuts…");
+    steps.push(repair_shortcuts_step());
+
+    // 4. Remove stale winetricks lockfiles / partial downloads that wedge installs, leaving
+    //    completed downloads intact so we don't force a re-download.
+    note("Cleaning stale winetricks cache files…");
+    steps.push(clean_winetricks_cache(logger));
+
+    // 5. Re-probe so the UI reflects the post-repair reality.
+    note("Re-checking Protontricks…");
+    let health = check_protontricks_health(logger)?;
+
+    let any_failed = steps.iter().any(|s| s.status == "failed");
+    let now_ok = health.protontricks_responds && !health.shortcuts_corrupted;
+    let success = now_ok && !any_failed;
+
+    let message = if !pt.available {
+        "Ran repairs, but Protontricks isn't installed. Install it from Discover (search \"Protontricks\"), then tap Check again.".into()
+    } else if now_ok {
+        "Protontricks repaired — it now responds and Steam shortcuts are valid.".into()
+    } else if health.shortcuts_corrupted {
+        "Repaired what we could, but Steam shortcuts still look corrupted. Fully quit Steam, reopen it, then run Repair again.".into()
+    } else {
+        "Ran all repairs, but Protontricks still didn't respond. Fully quit Steam (not just the window), reopen it, then try again.".into()
+    };
+
+    Ok(with_repair_log(
+        ProtontricksRepairResult { success, steps, health, message, log_path: None },
+        logger,
+    ))
+}
+
+fn with_repair_log(
+    mut result: ProtontricksRepairResult,
+    logger: Option<&ProtonLogger>,
+) -> ProtontricksRepairResult {
+    if let Some(log) = logger {
+        result.log_path = Some(log.log_path_string());
+        for s in &result.steps {
+            log.info("repair-step", &format!("{}: {} — {}", s.name, s.status, s.detail));
+        }
+        log.info("result", &result.message);
+    }
+    result
+}
+
+fn clear_stuck_protontricks(
+    pt: &proton_deps::ProtontricksInfo,
+    logger: Option<&ProtonLogger>,
+) -> RepairStep {
+    if pt.kind != "flatpak" {
+        return skipped_step(
+            "Clear stuck instance",
+            "Native Protontricks — no Flatpak instance to clear.",
+        );
+    }
+    // `flatpak kill` only signals the Protontricks app; a running game is unaffected.
+    let script = format!("flatpak kill {PROTONTRICKS_FLATPAK_ID} >/dev/null 2>&1; exit 0");
+    match run_host_bash(&script, PROTONTRICKS_PROBE_TIMEOUT_SECS) {
+        Ok(_) => ok_step("Clear stuck instance", "Signalled any hung Protontricks process to exit."),
+        Err(e) => {
+            if let Some(log) = logger {
+                log.warn("repair", &format!("flatpak kill failed: {e}"));
+            }
+            failed_step("Clear stuck instance", e.to_string())
+        }
+    }
+}
+
+fn clean_winetricks_cache(logger: Option<&ProtonLogger>) -> RepairStep {
+    // Covers both the Protontricks Flatpak cache and a native winetricks cache.
+    let script = r#"removed=0
+for base in "$HOME/.var/app/com.github.Matoking.protontricks/cache/winetricks" "$HOME/.cache/winetricks"; do
+  [ -d "$base" ] || continue
+  n=$(find "$base" -type f \( -name '*.part' -o -name '*.tmp' -o -name '*.lock' \) 2>/dev/null | wc -l)
+  find "$base" -type f \( -name '*.part' -o -name '*.tmp' -o -name '*.lock' \) -delete 2>/dev/null || true
+  removed=$((removed + n))
+done
+echo "$removed""#;
+    match run_host_bash(script, host_command::DEFAULT_HOST_TIMEOUT_SECS) {
+        Ok(out) => {
+            let count: u32 = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap_or(0);
+            if count > 0 {
+                ok_step(
+                    "Clean winetricks cache",
+                    format!("Removed {count} stale lock/partial file(s)."),
+                )
+            } else {
+                skipped_step("Clean winetricks cache", "No stale lock or partial files found.")
+            }
+        }
+        Err(e) => {
+            if let Some(log) = logger {
+                log.warn("repair", &format!("cache clean failed: {e}"));
+            }
+            failed_step("Clean winetricks cache", e.to_string())
+        }
+    }
+}
+
+fn repair_shortcuts_step() -> RepairStep {
+    match resolve_shortcuts_path() {
+        Ok(Some(path)) => match is_shortcuts_corrupted(&path) {
+            Ok(true) => match repair_shortcuts_on_host(&path) {
+                Ok(action) => ok_step(
+                    "Repair Steam shortcuts",
+                    format!("shortcuts.vdf was corrupted ({action})."),
+                ),
+                Err(e) => failed_step("Repair Steam shortcuts", e.to_string()),
+            },
+            Ok(false) => skipped_step("Repair Steam shortcuts", "shortcuts.vdf is valid."),
+            Err(e) => failed_step("Repair Steam shortcuts", e.to_string()),
+        },
+        Ok(None) => skipped_step("Repair Steam shortcuts", "No shortcuts.vdf found."),
+        Err(e) => failed_step("Repair Steam shortcuts", e.to_string()),
+    }
 }
 
 fn resolve_shortcuts_path() -> Result<Option<PathBuf>> {

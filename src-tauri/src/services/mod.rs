@@ -1,6 +1,7 @@
 pub mod archive_options;
 pub mod credentials;
 pub mod diagnostics;
+pub mod mod_ledger;
 pub mod paths;
 pub mod platform;
 pub mod startup_log;

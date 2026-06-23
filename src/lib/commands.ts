@@ -29,6 +29,7 @@ import type {
   InstalledMod,
   LoadOrderState,
   LibraryRescanResult,
+  LibraryReconcileResult,
   PluginsSyncResult,
   ModUpdateInfo,
   UninstallResult,
@@ -312,6 +313,9 @@ export const api = {
 
   rescanLibraryFromDisk: (profileId: string) =>
     invoke<LibraryRescanResult>("rescan_library_from_disk", { profileId }),
+
+  reconcileModLibrary: (profileId: string) =>
+    invoke<LibraryReconcileResult>("reconcile_mod_library", { profileId }),
 
   refreshModMetadata: (profileId: string) =>
     invoke<InstalledMod[]>("refresh_mod_metadata", { profileId }),
@@ -718,6 +722,9 @@ export const api = {
 
   fixProtontricksError: () =>
     invoke<import("@/lib/autofix-types").ProtontricksFixResult>("fix_protontricks_error"),
+
+  repairProtontricks: () =>
+    invoke<import("@/lib/autofix-types").ProtontricksRepairResult>("repair_protontricks"),
 
   installProtonDeps: (
     gameDomain: string,

@@ -1526,7 +1526,17 @@ pub fn read_fomod_asset(
 
 #[tauri::command]
 pub fn list_installed_mods(profile_id: String) -> Result<Vec<InstalledMod>> {
+    // Self-heal: if the DB has lost mods that are still deployed + recorded in the
+    // on-disk ledger, restore them before listing (cheap no-op when in sync).
+    let _ = crate::services::mod_ledger::reconcile_if_diverged(&profile_id);
     db::list_installed_mods(&profile_id)
+}
+
+#[tauri::command]
+pub fn reconcile_mod_library(
+    profile_id: String,
+) -> Result<crate::services::mod_ledger::LibraryReconcileResult> {
+    crate::services::mod_ledger::reconcile_library(&profile_id)
 }
 
 #[tauri::command]

@@ -16,6 +16,9 @@ pub const PROTONTRICKS_FLATPAK_ID: &str = "com.github.Matoking.protontricks";
 const PREPARE_PHASE_TIMEOUT: Duration = Duration::from_secs(90);
 const STEAMLOCATE_TIMEOUT_SECS: u64 = 8;
 const PREFIX_HOST_TIMEOUT_SECS: u64 = 20;
+/// remove_mono is a quick prefix tweak; cap it well below the full per-package install
+/// timeout so a wedged remove can't burn the whole budget before .NET even starts.
+const REMOVE_MONO_TIMEOUT_SECS: u64 = 180;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtontricksInfo {
@@ -191,8 +194,14 @@ fn run_on_host_probe(program: &str, args: &[&str], env: &[(&str, &str)]) -> Resu
     host_command::run_program(program, args, env, PROTONTRICKS_PROBE_TIMEOUT_SECS)
 }
 
-fn run_on_host_install(program: &str, args: &[&str], env: &[(&str, &str)]) -> Result<Output> {
-    host_command::run_program(program, args, env, PROTONTRICKS_INSTALL_TIMEOUT_SECS)
+fn run_on_host_install(
+    program: &str,
+    args: &[&str],
+    env: &[(&str, &str)],
+    timeout_secs: u64,
+    heartbeat: &mut dyn FnMut(u64),
+) -> Result<Output> {
+    host_command::run_program_redirected(program, args, env, timeout_secs, heartbeat)
 }
 
 pub fn list_game_deps(game_domain: &str) -> Result<Vec<String>> {
@@ -478,11 +487,40 @@ fn install_packages_with_context(
                 detail: Some(format!("Running protontricks for {pkg}…")),
             });
         }
+        // Protontricks blocks for minutes per package and emits nothing of its own; pump a
+        // heartbeat so the UI shows live elapsed time instead of a frozen spinner.
+        let mut heartbeat = |elapsed: u64| {
+            if let Some(cb) = on_progress {
+                cb(ProtonDepProgress {
+                    package: pkg.clone(),
+                    index: idx + 1,
+                    total,
+                    status: "installing".into(),
+                    detail: Some(format!("Still installing {pkg}… ({elapsed}s on this step)")),
+                });
+            }
+        };
         // .NET needs Wine's bundled mono removed first or the installer aborts.
         if pkg == "dotnet48" {
-            let _ = run_protontricks_verbs(app_id, &compatdata, &["remove_mono"], &pt, logger);
+            let _ = run_protontricks_verbs(
+                app_id,
+                &compatdata,
+                &["remove_mono"],
+                &pt,
+                logger,
+                REMOVE_MONO_TIMEOUT_SECS,
+                &mut heartbeat,
+            );
         }
-        match run_protontricks_verbs(app_id, &compatdata, std::slice::from_ref(pkg), &pt, logger) {
+        match run_protontricks_verbs(
+            app_id,
+            &compatdata,
+            std::slice::from_ref(pkg),
+            &pt,
+            logger,
+            PROTONTRICKS_INSTALL_TIMEOUT_SECS,
+            &mut heartbeat,
+        ) {
             Ok(()) => {
                 installed.push(pkg.clone());
                 if let Some(log) = logger {
@@ -591,6 +629,8 @@ fn run_protontricks_verbs(
     packages: &[impl AsRef<str>],
     pt: &ProtontricksInfo,
     logger: Option<&ProtonLogger>,
+    timeout_secs: u64,
+    heartbeat: &mut dyn FnMut(u64),
 ) -> Result<()> {
     let app_id_str = app_id.to_string();
     let package_names: Vec<String> = packages.iter().map(|p| p.as_ref().to_string()).collect();
@@ -604,7 +644,7 @@ fn run_protontricks_verbs(
                 let mut args = vec!["--no-term", app_id_str.as_str(), "-q"];
                 args.extend(package_names.iter().map(String::as_str));
                 let label = format!("{cmd} {}", args.join(" "));
-                (label, run_on_host_install(cmd, &args, &env_refs))
+                (label, run_on_host_install(cmd, &args, &env_refs, timeout_secs, &mut *heartbeat))
             }
             ProtontricksRunner::Flatpak => {
                 let mut args = vec![
@@ -616,7 +656,7 @@ fn run_protontricks_verbs(
                 ];
                 args.extend(package_names.iter().map(String::as_str));
                 let label = format!("flatpak {}", args.join(" "));
-                (label, run_on_host_install("flatpak", &args, &env_refs))
+                (label, run_on_host_install("flatpak", &args, &env_refs, timeout_secs, &mut *heartbeat))
             }
         };
 

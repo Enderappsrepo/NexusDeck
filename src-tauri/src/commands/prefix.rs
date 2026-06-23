@@ -92,6 +92,19 @@ pub async fn fix_protontricks_error(app: tauri::AppHandle) -> Result<protontrick
 }
 
 #[tauri::command]
+pub async fn repair_protontricks(app: tauri::AppHandle) -> Result<protontricks_health::ProtontricksRepairResult> {
+    tokio::task::spawn_blocking(move || {
+        let logger = new_proton_logger("health", &app);
+        if let Some(ref log) = logger {
+            let _ = log.write_header("Protontricks repair", "");
+        }
+        protontricks_health::repair_protontricks(logger.as_ref())
+    })
+    .await
+    .map_err(|e| crate::error::NexusDeckError::Other(format!("Protontricks repair failed: {e}")))?
+}
+
+#[tauri::command]
 pub async fn install_proton_deps(
     app: tauri::AppHandle,
     game_domain: String,

@@ -106,6 +106,20 @@ export interface ProtontricksFixResult {
   log_path?: string | null;
 }
 
+export interface RepairStep {
+  name: string;
+  status: "ok" | "skipped" | "failed";
+  detail: string;
+}
+
+export interface ProtontricksRepairResult {
+  success: boolean;
+  steps: RepairStep[];
+  health: ProtontricksHealth;
+  message: string;
+  log_path?: string | null;
+}
+
 export interface ProtonLogLine {
   session_id: string;
   category: string;

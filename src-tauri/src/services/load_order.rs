@@ -112,6 +112,8 @@ pub fn auto_sort_load_order(profile_id: &str) -> Result<Vec<InstalledMod>> {
 }
 
 pub fn get_load_order_state(profile_id: &str) -> Result<LoadOrderState> {
+    // Self-heal a DB that has lost mods still present on disk before we read it.
+    let _ = crate::services::mod_ledger::reconcile_if_diverged(profile_id);
     let profile = db::get_profile(profile_id)?
         .ok_or_else(|| NexusDeckError::NotFound("Profile not found".into()))?;
     let plugin = GameRegistry::get(&profile.game_domain)?;

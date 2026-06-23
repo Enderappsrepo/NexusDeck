@@ -676,6 +676,12 @@ export interface LibraryRescanResult {
   message: string;
 }
 
+export interface LibraryReconcileResult {
+  restored: number;
+  mirrored: number;
+  message: string;
+}
+
 export interface PluginsSyncResult {
   path: string;
   plugin_count: number;
