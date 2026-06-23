@@ -113,14 +113,21 @@ pub async fn install_proton_deps(
     proton_prefix_path: Option<String>,
 ) -> Result<proton_deps::ProtonDepsResult> {
     tokio::task::spawn_blocking(move || {
+        let profile = profile_id.as_deref().and_then(try_load_profile);
+        let effective_prefix = profile
+            .as_ref()
+            .and_then(|p| p.proton_prefix_path.as_deref())
+            .filter(|s| !s.is_empty())
+            .or(proton_prefix_path.as_deref().filter(|s| !s.is_empty()));
+
         let logger = new_proton_logger("deps", &app);
         if let Some(ref log) = logger {
             let _ = log.write_header(
                 "Proton dependency install",
                 &format!(
-                    "game_domain={game_domain} dry_run={dry_run} profile_id={} prefix_hint={}",
+                    "game_domain={game_domain} dry_run={dry_run} profile_id={} prefix_path={}",
                     profile_id.as_deref().unwrap_or("(none)"),
-                    proton_prefix_path.as_deref().unwrap_or("(none)")
+                    effective_prefix.unwrap_or("(auto-detect)")
                 ),
             );
         }
@@ -144,12 +151,12 @@ pub async fn install_proton_deps(
             }
             let _ = app.emit("proton-deps:progress", p);
         };
+        if let Some(profile) = profile {
+            return proton_deps::install_game_deps_for_profile_with_progress(
+                &profile, dry_run, &emit, logger.as_ref(),
+            );
+        }
         if let Some(id) = profile_id {
-            if let Some(profile) = try_load_profile(&id) {
-                return proton_deps::install_game_deps_for_profile_with_progress(
-                    &profile, dry_run, &emit, logger.as_ref(),
-                );
-            }
             if let Some(ref log) = logger {
                 log.warn(
                     "profile",

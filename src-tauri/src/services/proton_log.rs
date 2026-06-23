@@ -123,8 +123,12 @@ impl ProtonLogger {
             self.session_id,
             self.verbose,
         );
-        let mut file = self.file.lock().expect("proton log mutex poisoned");
-        writeln!(file, "{header}")?;
+        {
+            let mut file = self.file.lock().expect("proton log mutex poisoned");
+            writeln!(file, "{header}")?;
+            let _ = file.flush();
+        }
+        // Must not call info/log while holding `file` — they take the same mutex (deadlock).
         self.info("session", "Proton operation started");
         Ok(())
     }
@@ -154,6 +158,7 @@ impl ProtonLogger {
 
         if let Ok(mut file) = self.file.lock() {
             let _ = file.write_all(line.as_bytes());
+            let _ = file.flush();
         }
 
         if let Some(parent) = self.master_path.parent() {
