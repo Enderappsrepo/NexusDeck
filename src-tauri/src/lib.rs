@@ -25,13 +25,15 @@ fn force_env(key: &str, value: &str) {
 /// Must run before Tauri/WebKit initialize. Safe to call from `main`.
 #[cfg(target_os = "linux")]
 pub fn prepare_linux_webview() {
-    // Ubuntu CI AppImages often show a blank window on SteamOS until these are set.
-    // Force values even if Steam/Wayland already exported conflicting defaults.
-    // https://v2.tauri.app/develop/debug/linux-graphics/
-    force_env("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-    force_env("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    let hw_accel = crate::services::app_prefs::hardware_acceleration_enabled();
+    // Prefer X11 on Steam Deck — Wayland + WebKitGTK still has edge-case input bugs.
     force_env("GDK_BACKEND", "x11");
     force_env("WINIT_UNIX_BACKEND", "x11");
+    if !hw_accel {
+        // Compatibility path for blank-window / corrupt rendering on older WebKit builds.
+        force_env("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        force_env("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    }
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -50,8 +52,13 @@ fn configure_linux_webview(app: &tauri::AppHandle) -> crate::error::Result<()> {
         .with_webview(|webview| {
             let wv = webview.inner();
             if let Some(settings) = wv.settings() {
-                settings.set_hardware_acceleration_policy(HardwareAccelerationPolicy::Never);
-                settings.set_enable_webgl(false);
+                let hw_accel = crate::services::app_prefs::hardware_acceleration_enabled();
+                if hw_accel {
+                    settings.set_hardware_acceleration_policy(HardwareAccelerationPolicy::OnDemand);
+                } else {
+                    settings.set_hardware_acceleration_policy(HardwareAccelerationPolicy::Never);
+                    settings.set_enable_webgl(false);
+                }
             }
         })
         .map_err(|e| crate::error::NexusDeckError::Other(e.to_string()))?;
@@ -104,7 +111,15 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             {
                 configure_linux_webview(app.handle())?;
-                startup_log::log_step("linux_webview", "hardware acceleration disabled");
+                let hw = crate::services::app_prefs::hardware_acceleration_enabled();
+                startup_log::log_step(
+                    "linux_webview",
+                    if hw {
+                        "hardware acceleration enabled (OnDemand)"
+                    } else {
+                        "hardware acceleration disabled (compatibility mode)"
+                    },
+                );
             }
 
             process_monitor.set_app_handle(app.handle().clone());
@@ -140,6 +155,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_app_prefs,
+            set_hardware_acceleration,
             validate_and_store_api_key,
             load_stored_api_key,
             check_has_api_key,

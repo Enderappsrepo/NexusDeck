@@ -33,9 +33,6 @@ finish-args:
   # Tauri single-instance plugin (com.nexusdeck.app → org.com_nexusdeck_app)
   - --talk-name=org.com_nexusdeck_app.SingleInstance
   - --own-name=org.com_nexusdeck_app.SingleInstance
-  # WebKitGTK workarounds for Steam Deck / AMD APUs
-  - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
-  - --env=WEBKIT_DISABLE_COMPOSITING_MODE=1
 
 modules:
   - name: sevenzip

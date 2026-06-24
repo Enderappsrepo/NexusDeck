@@ -1,3 +1,4 @@
+pub mod app_prefs;
 pub mod archive_options;
 pub mod credentials;
 pub mod diagnostics;

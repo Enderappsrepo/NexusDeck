@@ -1,3 +1,4 @@
+mod app_prefs;
 mod auth;
 mod nexus;
 mod wizard;
@@ -27,6 +28,7 @@ mod logs;
 mod decky_host;
 mod wake;
 
+pub use app_prefs::*;
 pub use auth::*;
 pub use nexus::*;
 pub use wizard::*;

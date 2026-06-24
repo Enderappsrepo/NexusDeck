@@ -18,7 +18,7 @@ import { ProtontricksGuidePanel } from "@/components/proton/ProtontricksGuidePan
 import { ResetModsDialog } from "@/components/mod/ResetModsDialog";
 import { ResetAppDialog } from "@/components/settings/ResetAppDialog";
 import { UninstallAppDialog } from "@/components/settings/UninstallAppDialog";
-import type { SevenZipInfo } from "@/lib/nexus/types";
+import type { HardwareAccelerationMode, SevenZipInfo } from "@/lib/nexus/types";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -65,6 +65,10 @@ function SettingsPage() {
   const [uninstallOpen, setUninstallOpen] = useState(false);
   const [rerunningOnboarding, setRerunningOnboarding] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [isLinux, setIsLinux] = useState(false);
+  const [hardwareAcceleration, setHardwareAcceleration] =
+    useState<HardwareAccelerationMode>("on");
+  const [hwAccelSaved, setHwAccelSaved] = useState(false);
   const [logsDir, setLogsDir] = useState<string | null>(null);
   const [verboseLogging, setVerboseLogging] = useState(false);
   const [exportingLogs, setExportingLogs] = useState(false);
@@ -92,7 +96,15 @@ function SettingsPage() {
     loadSettings();
     loadLaunchSettings();
     api.getAppPaths().then(setPaths);
-    api.getPlatformInfo().then((p) => setAppVersion(p.app_version)).catch(() => {});
+    api.getPlatformInfo()
+      .then((p) => {
+        setAppVersion(p.app_version);
+        setIsLinux(p.is_linux);
+      })
+      .catch(() => {});
+    api.getAppPrefs()
+      .then((prefs) => setHardwareAcceleration(prefs.hardware_acceleration))
+      .catch(() => {});
     api.getLogsDir().then(setLogsDir).catch(() => {});
     api.getVerboseLogging().then(setVerboseLogging).catch(() => {});
     api.getProtonMasterLogPath().then(setProtonMasterLogPath).catch(() => {});
@@ -465,6 +477,33 @@ function SettingsPage() {
               ]}
             />
           </div>
+          {isLinux && (
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="min-w-0">
+                <Label>Hardware acceleration</Label>
+                <p className="text-sm text-[var(--color-muted)]">
+                  Uses the GPU for scrolling and UI (recommended). Turn off only if the window is
+                  blank or corrupted — requires restart.
+                  {hwAccelSaved ? " Restart NexusDeck to apply." : ""}
+                </p>
+              </div>
+              <SegmentedControl
+                size="sm"
+                ariaLabel="Hardware acceleration"
+                value={hardwareAcceleration}
+                onChange={(mode) => {
+                  void api.setHardwareAcceleration(mode).then((prefs) => {
+                    setHardwareAcceleration(prefs.hardware_acceleration);
+                    setHwAccelSaved(true);
+                  });
+                }}
+                options={[
+                  { value: "on", label: "On" },
+                  { value: "off", label: "Off" },
+                ]}
+              />
+            </div>
+          )}
           <div className="flex items-center justify-between gap-4">
             <div>
               <Label>Gyro scroll preset</Label>

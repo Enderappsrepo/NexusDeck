@@ -228,6 +228,11 @@ export const api = {
   setDownloadSettings: (settings: DownloadSettings) =>
     invoke<void>("set_download_settings", { settings }),
 
+  getAppPrefs: () => invoke<import("@/lib/nexus/types").AppPrefs>("get_app_prefs"),
+
+  setHardwareAcceleration: (mode: import("@/lib/nexus/types").HardwareAccelerationMode) =>
+    invoke<import("@/lib/nexus/types").AppPrefs>("set_hardware_acceleration", { mode }),
+
   compareStagingArchives: (
     profileId: string,
     archiveA: string,

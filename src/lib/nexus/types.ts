@@ -848,6 +848,12 @@ export interface PlatformInfo {
   app_version: string;
 }
 
+export type HardwareAccelerationMode = "on" | "off";
+
+export interface AppPrefs {
+  hardware_acceleration: HardwareAccelerationMode;
+}
+
 export type SevenZipSource = "system" | "bundled" | "host";
 
 export interface SevenZipInfo {
