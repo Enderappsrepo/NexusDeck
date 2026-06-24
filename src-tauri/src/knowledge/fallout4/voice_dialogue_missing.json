@@ -1,7 +1,7 @@
 {
   "id": "voice_dialogue_missing",
   "title": "Fix missing NPC voice dialogue",
-  "description": "Gunshots and ambient sound work but NPC voices and title music are silent. Installs XACT and sets xaudio2 overrides in your Proton prefix.",
+  "description": "Gunshots work but NPC voices and music are silent. Installs XACT + XACT 64-bit and sets xaudio2 native overrides in your Proton prefix.",
   "fix": { "type": "fix_bethesda_audio", "backup": false, "confirm": false },
-  "deck_tip": "Applied automatically before NexusDeck launches. One-click here if you launch from Steam or voices are still missing."
+  "deck_tip": "Runs automatically after Proton deps install. Use Fix voice audio if you launch from Steam and only 32-bit audio works."
 }

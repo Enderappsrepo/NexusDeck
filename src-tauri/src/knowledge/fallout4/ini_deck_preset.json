@@ -1,7 +1,7 @@
 {
   "id": "apply_deck_ini_preset",
   "title": "Apply Deck INI preset",
-  "description": "Apply NexusDeck's Fallout 4 Deck performance INI preset.",
+  "description": "Apply NexusDeck's Fallout 4 Deck preset: 1280×800 borderless, gamepad enabled for Steam Input, vsync off, god rays off.",
   "fix": { "type": "apply_deck_ini_preset", "backup": true, "confirm": false },
-  "deck_tip": "1280×800 borderless with god rays off."
+  "deck_tip": "Also sets bGamepadEnable=1 so the controller works in Gaming Mode (not mouse-only)."
 }

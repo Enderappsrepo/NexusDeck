@@ -12,6 +12,7 @@ use crate::services::host_command::{
 use crate::services::platform;
 use crate::services::proton_log::ProtonLogger;
 use crate::services::protontricks_health;
+use crate::services::{game_settings, proton_audio};
 
 pub const PROTONTRICKS_FLATPAK_ID: &str = "com.github.Matoking.protontricks";
 const PREPARE_PHASE_TIMEOUT: Duration = Duration::from_secs(90);
@@ -229,14 +230,18 @@ pub fn install_game_deps_for_profile_with_progress(
     logger: Option<&ProtonLogger>,
 ) -> Result<ProtonDepsResult> {
     let config = load_deps_config(&profile.game_domain)?;
-    install_packages_with_context(
+    let result = install_packages_with_context(
         config.app_id,
         &config.packages,
         profile.proton_prefix_path.as_deref(),
         dry_run,
         Some(on_progress),
         logger,
-    )
+    )?;
+    if !dry_run {
+        post_install_proton_setup(profile, logger, &result);
+    }
+    Ok(result)
 }
 
 pub fn install_packages_for_app(
@@ -503,7 +508,8 @@ fn install_packages_with_context(
                 });
             }
         };
-        // .NET needs Wine's bundled mono removed first or the installer aborts.
+        // .NET needs Wine's bundled mono removed first, then Proton's dangling
+        // registry keys cleared — otherwise dotnet48 refuses to install on Proton 9+.
         if pkg == "dotnet48" {
             let _ = run_protontricks_verbs(
                 app_id,
@@ -514,8 +520,9 @@ fn install_packages_with_context(
                 REMOVE_MONO_TIMEOUT_SECS,
                 &mut heartbeat,
             );
+            let _ = clear_proton_dotnet_registry(app_id, &compatdata, &pt, logger);
         }
-        match run_protontricks_verbs(
+        let mut install_result = run_protontricks_verbs(
             app_id,
             &compatdata,
             std::slice::from_ref(pkg),
@@ -523,7 +530,23 @@ fn install_packages_with_context(
             logger,
             PROTONTRICKS_INSTALL_TIMEOUT_SECS,
             &mut heartbeat,
-        ) {
+        );
+        if pkg == "dotnet48" && install_result.is_err() {
+            if let Some(log) = logger {
+                log.warn("package", "dotnet48 failed — clearing Proton .NET registry keys and retrying once");
+            }
+            let _ = clear_proton_dotnet_registry(app_id, &compatdata, &pt, logger);
+            install_result = run_protontricks_verbs(
+                app_id,
+                &compatdata,
+                std::slice::from_ref(pkg),
+                &pt,
+                logger,
+                PROTONTRICKS_INSTALL_TIMEOUT_SECS,
+                &mut heartbeat,
+            );
+        }
+        match install_result {
             Ok(()) => {
                 installed.push(pkg.clone());
                 if let Some(log) = logger {
@@ -626,6 +649,124 @@ fn runners_for(pt: &ProtontricksInfo) -> Vec<ProtontricksRunner> {
     runners
 }
 
+const DOTNET_REGISTRY_CMD: &str = r#"reg delete "HKLM\Software\Wow6432Node\Microsoft\NET Framework Setup\NDP" /f 2>/dev/null; reg delete "HKLM\Software\Wow6432Node\Microsoft\.NETFramework" /f 2>/dev/null; exit 0"#;
+
+fn clear_proton_dotnet_registry(
+    app_id: u32,
+    compatdata: &Path,
+    pt: &ProtontricksInfo,
+    logger: Option<&ProtonLogger>,
+) -> Result<()> {
+    if let Some(log) = logger {
+        log.info("dotnet48", "Clearing Proton .NET registry keys that block dotnet48");
+    }
+    run_protontricks_shell(app_id, compatdata, pt, DOTNET_REGISTRY_CMD, 60, logger)
+}
+
+fn run_protontricks_shell(
+    app_id: u32,
+    compatdata: &Path,
+    pt: &ProtontricksInfo,
+    shell_cmd: &str,
+    timeout_secs: u64,
+    logger: Option<&ProtonLogger>,
+) -> Result<()> {
+    let app_id_str = app_id.to_string();
+    let env = [("STEAM_COMPAT_DATA_PATH", compatdata.to_string_lossy().into_owned())];
+    let env_refs: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let mut last_error = String::new();
+
+    for runner in runners_for(pt) {
+        let (label, output) = match runner {
+            ProtontricksRunner::Native(ref cmd) => {
+                let args = ["--no-term", "-c", shell_cmd, app_id_str.as_str()];
+                let label = format!("{cmd} {}", args.join(" "));
+                (label, run_on_host_install(cmd, &args, &env_refs, timeout_secs, &mut |_| {}))
+            }
+            ProtontricksRunner::Flatpak => {
+                let args = [
+                    "run",
+                    PROTONTRICKS_FLATPAK_ID,
+                    "--no-term",
+                    "-c",
+                    shell_cmd,
+                    app_id_str.as_str(),
+                ];
+                let label = format!("flatpak {}", args.join(" "));
+                (label, run_on_host_install("flatpak", &args, &env_refs, timeout_secs, &mut |_| {}))
+            }
+        };
+
+        match output {
+            Ok(out) if out.status.success() => {
+                if let Some(log) = logger {
+                    log.log_command(
+                        "protontricks",
+                        &label,
+                        &String::from_utf8_lossy(&out.stdout),
+                        &String::from_utf8_lossy(&out.stderr),
+                        true,
+                    );
+                }
+                return Ok(());
+            }
+            Ok(out) => {
+                last_error = format_command_error(&["shell".into()], &out);
+            }
+            Err(e) => last_error = e.to_string(),
+        }
+    }
+
+    Err(NexusDeckError::Other(if last_error.is_empty() {
+        "protontricks shell command failed".into()
+    } else {
+        last_error
+    }))
+}
+
+fn post_install_proton_setup(
+    profile: &Profile,
+    logger: Option<&ProtonLogger>,
+    result: &ProtonDepsResult,
+) {
+    if !proton_audio::is_bethesda_game(&profile.game_domain) || result.installed.is_empty() {
+        return;
+    }
+
+    if let Some(log) = logger {
+        log.info("post_install", "Applying Bethesda audio and Deck controller INI fixes");
+    }
+    if profile.game_domain == "fallout4" {
+        if let Err(e) = game_settings::ensure_deck_gamepad_settings(profile) {
+            if let Some(log) = logger {
+                log.warn("post_install", &format!("Controller INI fix skipped: {e}"));
+            }
+        } else if let Some(log) = logger {
+            log.info("post_install", "Enabled Fallout 4 gamepad + disabled vsync for Deck input");
+        }
+    }
+    match proton_audio::ensure_bethesda_audio(profile, logger) {
+        Ok(status) if status.ready => {
+            if let Some(log) = logger {
+                log.info("post_install", "Bethesda voice/music audio fix applied");
+            }
+        }
+        Ok(status) => {
+            if let Some(log) = logger {
+                log.warn(
+                    "post_install",
+                    status.message.as_deref().unwrap_or("Audio fix incomplete"),
+                );
+            }
+        }
+        Err(e) => {
+            if let Some(log) = logger {
+                log.warn("post_install", &format!("Audio fix failed: {e}"));
+            }
+        }
+    }
+}
+
 fn run_protontricks_verbs(
     app_id: u32,
     compatdata: &Path,
@@ -644,7 +785,7 @@ fn run_protontricks_verbs(
     for runner in runners_for(pt) {
         let (command_label, output) = match runner {
             ProtontricksRunner::Native(ref cmd) => {
-                let mut args = vec!["--no-term", app_id_str.as_str(), "-q"];
+                let mut args = vec!["--no-term", app_id_str.as_str()];
                 args.extend(package_names.iter().map(String::as_str));
                 let label = format!("{cmd} {}", args.join(" "));
                 (label, run_on_host_install(cmd, &args, &env_refs, timeout_secs, &mut *heartbeat))
@@ -655,7 +796,6 @@ fn run_protontricks_verbs(
                     PROTONTRICKS_FLATPAK_ID,
                     "--no-term",
                     app_id_str.as_str(),
-                    "-q",
                 ];
                 args.extend(package_names.iter().map(String::as_str));
                 let label = format!("flatpak {}", args.join(" "));
@@ -930,7 +1070,8 @@ fn format_deps_message(
 
     if failed.iter().any(|p| p == "dotnet48") {
         message.push_str(
-            "\nTip: .NET 4.8 often needs Proton Experimental. Switch Proton version in Steam, then retry.",
+            "\nTip: .NET 4.8 often needs Proton Experimental. In Steam → Fallout 4 → Properties → Compatibility, \
+             force Proton Experimental, launch the game once, then retry Install dependencies.",
         );
     }
 

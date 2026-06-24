@@ -152,7 +152,34 @@ pub fn apply_game_settings(
 pub fn apply_game_settings_preset(profile_id: &str, preset_id: &str) -> Result<ApplyGameSettingsResult> {
     let profile = load_profile(profile_id)?;
     let values = preset_values(&profile.game_domain, preset_id)?;
-    apply_game_settings(profile_id, values)
+    let result = apply_game_settings(profile_id, values)?;
+    if profile.game_domain == "fallout4" {
+        let _ = ensure_deck_gamepad_settings(&profile);
+    }
+    Ok(result)
+}
+
+/// Fallout 4 on Deck needs gamepad enabled in INI (not mouse-only) and vsync off
+/// for responsive Steam Input. Safe to call after Proton deps install or from Troubleshoot.
+pub fn ensure_deck_gamepad_settings(profile: &Profile) -> Result<bool> {
+    if profile.game_domain != "fallout4" {
+        return Ok(false);
+    }
+
+    let config_dir = resolve_my_games_dir(profile)?;
+    let prefix = ini_prefix(&profile.game_domain)?;
+    let prefs = ini_path(&config_dir, prefix, "prefs");
+
+    write_ini_value(&prefs, "Controls", "bGamepadEnable", "1")?;
+    write_ini_value(&prefs, "General", "bUseGamepad", "1")?;
+    write_ini_value(&prefs, "Display", "iPresentInterval", "0")?;
+
+    let main_ini = config_dir.join(format!("{prefix}.ini"));
+    if main_ini.is_file() {
+        write_ini_value(&main_ini, "Display", "iPresentInterval", "0")?;
+    }
+
+    Ok(true)
 }
 
 /// Creation Engine titles ignore loose-file assets (textures, meshes, loose
