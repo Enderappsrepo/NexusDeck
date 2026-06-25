@@ -23,7 +23,8 @@ import { InstallSummaryPanel } from "@/components/mod/InstallSummaryPanel";
 import { InstallWizardStepper } from "@/components/mod/InstallWizardStepper";
 import { OptionCard } from "@/components/mod/OptionCard";
 import { api } from "@/lib/commands";
-import { useGamepadBackHandler } from "@/hooks/useGamepadRouter";
+import { useGamepadBackHandler, useGamepadTabs } from "@/hooks/useGamepadRouter";
+import { focusFirst } from "@/lib/gamepad/focusNavigation";
 import { loadFomodAssetUrl, releaseFomodAssetUrls } from "@/lib/fomodAssets";
 import { InstallLogPanel } from "@/components/install/InstallLogPanel";
 import { InstallErrorPanel } from "@/components/install/InstallErrorPanel";
@@ -730,6 +731,48 @@ export function ModInstallDialog({
     (phase === "welcome" && loading) ||
     phase === "error";
 
+  // Controller: re-home focus to the meaningful target on every step/phase
+  // change (AppDialog only focuses on first open). Option phases land on the
+  // first selectable option so the d-pad moves option→option immediately;
+  // welcome/review land on the primary action (marked data-focus-start) so a
+  // single A advances. Never steals focus mid-install.
+  useEffect(() => {
+    if (!open || phase === "installing" || phase === "error") return;
+    const raf = requestAnimationFrame(() => {
+      const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+      if (!dialog) return;
+      const optionFirst =
+        phase === "wizard" || phase === "options"
+          ? dialog.querySelector<HTMLElement>("[aria-pressed]")
+          : null;
+      const target =
+        dialog.querySelector<HTMLElement>('[data-focus-start="true"]') ?? optionFirst;
+      if (target) target.focus();
+      else focusFirst(dialog);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [open, phase, wizardStepIndex]);
+
+  // Shoulder buttons page through install steps (B already goes back). The
+  // router routes L1/R1 through the active tab handler, so we register one here
+  // (page scope, most-recent → wins over the page underneath). Three sentinel
+  // "tabs" anchored on the middle make L1 deterministically resolve to "back"
+  // and R1 to "next" with no wrap hazard, mapped to the existing goBack/goNext.
+  useGamepadTabs(
+    ["__nd_back__", "__nd_current__", "__nd_next__"],
+    "__nd_current__",
+    (id) => {
+      // installBusy already includes phase === "installing".
+      if (installBusy || phase === "error") return;
+      if (id === "__nd_next__") {
+        if (!primaryDisabled) void goNext();
+      } else if (id === "__nd_back__") {
+        if (showBack) goBack();
+      }
+    },
+    "page"
+  );
+
   const displayTitle = installWizard?.module_name ?? modName;
 
   return (
@@ -1103,6 +1146,9 @@ export function ModInstallDialog({
               onClick={() => void goNext()}
               disabled={primaryDisabled}
               data-focusable="true"
+              data-focus-start={
+                phase === "welcome" || phase === "review" ? "true" : undefined
+              }
             >
               {loading && phase === "review" ? (
                 <>

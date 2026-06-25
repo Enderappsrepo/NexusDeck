@@ -51,6 +51,7 @@ pub mod repair;
 pub mod proton_audio;
 pub mod proton_deps;
 pub mod proton_log;
+pub mod proton_steam_input;
 pub mod protontricks_health;
 pub mod prefix_manager;
 pub mod autofix;

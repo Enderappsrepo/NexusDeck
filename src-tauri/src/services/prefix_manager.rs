@@ -328,9 +328,23 @@ pub fn ensure_proton_prefix(profile: &Profile) -> Result<Profile> {
     }
 
     if let Some(found) = find_prefix_for_app(app_id) {
+        #[cfg(target_os = "linux")]
+        let was_missing = profile
+            .proton_prefix_path
+            .as_deref()
+            .and_then(normalize_pfx_path)
+            .is_none();
         let mut updated = profile.clone();
         updated.proton_prefix_path = Some(found.display().to_string());
         db::save_profile(&updated)?;
+        #[cfg(target_os = "linux")]
+        {
+            let _ = crate::services::game_settings::ensure_deck_gamepad_settings(&updated);
+            if was_missing {
+                let _ =
+                    crate::services::game_settings::apply_initial_deck_preset_if_applicable(&updated);
+            }
+        }
         return Ok(updated);
     }
 

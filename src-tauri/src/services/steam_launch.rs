@@ -1,11 +1,15 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(target_os = "linux")]
+use std::process::Stdio;
 
 use serde::{Deserialize, Serialize};
 
 use crate::db::Profile;
 use crate::error::{NexusDeckError, Result};
 use crate::games::GameRegistry;
+#[cfg(target_os = "linux")]
+use crate::services::platform;
 use crate::services::proton_audio::apply_bethesda_audio_env;
 use crate::services::steam::detect_steam;
 
@@ -66,11 +70,40 @@ pub fn launch_via_steam_uri(app_id: u32) -> Result<()> {
     open_uri(&uri)
 }
 
+/// Launch a game through Steam, picking a strategy that works in Gaming Mode.
+/// Returns the method label used (`steam_host_applaunch`, `steam_cli`, etc.).
+pub fn launch_steam_game(
+    app_id: u32,
+    args: &[String],
+    compat_data_path: Option<&Path>,
+) -> Result<String> {
+    #[cfg(target_os = "linux")]
+    if platform::is_flatpak_sandbox() {
+        if let Ok(method) = launch_via_steam_host(app_id, args, compat_data_path) {
+            return Ok(method);
+        }
+    }
+
+    if launch_via_steam_cli(app_id, args, compat_data_path).is_ok() {
+        return Ok("steam_cli".to_string());
+    }
+
+    launch_via_steam_uri(app_id)?;
+    Ok("steam_uri".to_string())
+}
+
 pub fn launch_via_steam_cli(
     app_id: u32,
     args: &[String],
     compat_data_path: Option<&Path>,
 ) -> Result<()> {
+    #[cfg(target_os = "linux")]
+    if platform::is_flatpak_sandbox() {
+        let method = launch_via_steam_host(app_id, args, compat_data_path)?;
+        let _ = method;
+        return Ok(());
+    }
+
     let info = detect_steam_launch_info(app_id)?;
 
     if info.kind == "flatpak" {
@@ -103,6 +136,96 @@ pub fn launch_via_steam_cli(
 
     apply_proton_env(&mut cmd, compat_data_path);
     run_command(cmd)
+}
+
+#[cfg(target_os = "linux")]
+fn launch_via_steam_host(
+    app_id: u32,
+    args: &[String],
+    compat_data_path: Option<&Path>,
+) -> Result<String> {
+    let app_id_str = app_id.to_string();
+    let extra = if args.is_empty() {
+        String::new()
+    } else {
+        format!(" -- {}", shell_join_args(args))
+    };
+
+    let applaunch_script = format!(
+        "if command -v steam >/dev/null 2>&1; then \
+           exec steam -applaunch {app_id_str}{extra}; \
+         elif [ -x /usr/bin/steam ]; then \
+           exec /usr/bin/steam -applaunch {app_id_str}{extra}; \
+         elif command -v flatpak >/dev/null 2>&1 && flatpak info com.valvesoftware.Steam >/dev/null 2>&1; then \
+           exec flatpak run com.valvesoftware.Steam -applaunch {app_id_str}{extra}; \
+         else \
+           exit 127; \
+         fi"
+    );
+
+    if spawn_host_bash(&applaunch_script, compat_data_path).is_ok() {
+        return Ok("steam_host_applaunch".to_string());
+    }
+
+    let uri_script = format!("xdg-open 'steam://rungameid/{app_id_str}'");
+    spawn_host_bash(&uri_script, compat_data_path).map_err(|e| {
+        NexusDeckError::LaunchFailed(format!(
+            "Could not launch game through host Steam from Gaming Mode: {e}. \
+             Try launching Fallout 4 once from Steam directly, then retry."
+        ))
+    })?;
+    Ok("steam_host_uri".to_string())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn launch_via_steam_host(
+    _app_id: u32,
+    _args: &[String],
+    _compat_data_path: Option<&Path>,
+) -> Result<String> {
+    Err(NexusDeckError::LaunchFailed(
+        "Host Steam launch is Linux-only".into(),
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn shell_join_args(args: &[String]) -> String {
+    args.iter()
+        .map(|a| format!("'{}'", a.replace('\'', "'\\''")))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_host_bash(script: &str, compat_data_path: Option<&Path>) -> Result<()> {
+    let mut cmd = Command::new("flatpak-spawn");
+    cmd.arg("--host");
+    apply_proton_env_flatpak_spawn(&mut cmd, compat_data_path);
+    cmd.arg("bash").args(["-lc", script]);
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    cmd.spawn()
+        .map_err(|e| NexusDeckError::LaunchFailed(format!("flatpak-spawn failed: {e}")))?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn apply_proton_env_flatpak_spawn(cmd: &mut Command, compat_data_path: Option<&Path>) {
+    if let Some(path) = compat_data_path {
+        cmd.arg(format!(
+            "--env=STEAM_COMPAT_DATA_PATH={}",
+            path.display()
+        ));
+        if let Some(parent) = path.parent() {
+            if let Some(grand) = parent.parent() {
+                cmd.arg(format!(
+                    "--env=STEAM_COMPAT_CLIENT_INSTALL_PATH={}",
+                    grand.display()
+                ));
+            }
+        }
+    }
 }
 
 fn apply_proton_env(cmd: &mut Command, compat_data_path: Option<&Path>) {

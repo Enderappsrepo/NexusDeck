@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::{self, Profile};
 use crate::error::{NexusDeckError, Result};
 use crate::games::GameRegistry;
+use crate::services::prefix_manager;
 
 #[derive(Debug, Deserialize)]
 struct SkyrimPresetEntry {
@@ -179,6 +180,37 @@ pub fn ensure_deck_gamepad_settings(profile: &Profile) -> Result<bool> {
         write_ini_value(&main_ini, "Display", "iPresentInterval", "0")?;
     }
 
+    Ok(true)
+}
+
+/// Resolve the Proton prefix if needed, then apply Fallout 4 gamepad INI keys.
+/// Best-effort — safe from setup, launch prep, and prefix auto-heal.
+pub fn ensure_automatic_deck_gamepad(profile_id: &str) -> Result<bool> {
+    if !cfg!(target_os = "linux") {
+        return Ok(false);
+    }
+    let profile = load_profile(profile_id)?;
+    let profile = prefix_manager::ensure_proton_prefix(&profile)?;
+    ensure_deck_gamepad_settings(&profile)
+}
+
+/// When a Proton prefix is first discovered on Deck, apply the Deck INI preset
+/// (resolution, performance tweaks, and gamepad keys for Fallout 4).
+pub fn apply_initial_deck_preset_if_applicable(profile: &Profile) -> Result<bool> {
+    if !cfg!(target_os = "linux") || !crate::services::platform::is_steam_deck() {
+        return Ok(false);
+    }
+    if profile.proton_prefix_path.is_none() {
+        return Ok(false);
+    }
+
+    let preset = match profile.game_domain.as_str() {
+        "fallout4" => "deck",
+        "skyrimspecialedition" => "deck_balanced",
+        _ => return Ok(false),
+    };
+
+    apply_game_settings_preset(&profile.id, preset)?;
     Ok(true)
 }
 

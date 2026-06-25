@@ -5,8 +5,7 @@
     "dotnet48",
     "d3dx9_43",
     "xact",
-    "xact_64",
-    "xinput"
+    "xact_64"
   ],
-  "description": "Common Proton dependencies for Skyrim SE modding (SKSE plugins, .NET mods, audio)."
+  "description": "Common Proton dependencies for Skyrim SE modding (SKSE plugins, .NET mods, audio). Do not install xinput on Steam Deck — use Steam Input instead."
 }

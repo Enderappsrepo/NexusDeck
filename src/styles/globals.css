@@ -420,6 +420,18 @@ body:has([data-bottom-nav]) [data-controller-hint-bar] {
   backdrop-filter: blur(8px);
 }
 
+/* Controller/keyboard focus: keep a focused mod card clear of the sticky
+   toolbar when .focus() scrolls it into view (the toolbar stacks taller on
+   mobile, so reserve more there). */
+body:has(.mods-toolbar) .app-scroll-pane {
+  scroll-padding-top: 9rem;
+}
+@media (min-width: 640px) {
+  body:has(.mods-toolbar) .app-scroll-pane {
+    scroll-padding-top: 7rem;
+  }
+}
+
 .mod-grid {
   display: grid;
   gap: 1.25rem;

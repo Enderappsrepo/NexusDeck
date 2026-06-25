@@ -27,7 +27,11 @@ import { cn, gameGradient } from "@/lib/utils";
 import type { ModSearchFilters, SupportedGameInfo } from "@/lib/nexus/types";
 import { modFileDownloadName } from "@/lib/nexus/types";
 import { getGameMeta, loadSupportedGames } from "@/lib/games";
-import { useGamepadContextAction, useGamepadTabs } from "@/hooks/useGamepadRouter";
+import {
+  useGamepadContextAction,
+  useGamepadRouterState,
+  useGamepadTabs,
+} from "@/hooks/useGamepadRouter";
 import { GP } from "@/lib/gamepad/buttons";
 import { focusedBrowseModId } from "@/lib/gamepad/domHelpers";
 import { useEndorseFocusedMod } from "@/hooks/useEndorseFocusedMod";
@@ -99,6 +103,7 @@ function ModBrowserPage() {
     query,
     sort,
     filters,
+    categories,
     totalCount,
     hasMore,
     setQuery,
@@ -115,14 +120,38 @@ function ModBrowserPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [supportedGames, setSupportedGames] = useState<SupportedGameInfo[]>([]);
+  const [installedIds, setInstalledIds] = useState<Set<number>>(new Set());
   const [welcomeDismissed, setWelcomeDismissed] = useState(
     () => sessionStorage.getItem(`nexusdeck_welcome_${domain}`) === "1"
   );
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const { controllerActive } = useGamepadRouterState();
+  const autoFocusedRef = useRef(false);
 
   useEffect(() => {
     loadSupportedGames().then(setSupportedGames);
   }, []);
+
+  // Controller: once results land, move focus onto the first mod card so the
+  // d-pad goes mod→mod immediately instead of starting on the page chrome.
+  // Fires once per results load; never yanks focus out of the grid, the search
+  // box, or an open filter panel.
+  useEffect(() => {
+    if (loading) {
+      autoFocusedRef.current = false;
+      return;
+    }
+    if (autoFocusedRef.current || !controllerActive || mods.length === 0 || filtersOpen) {
+      return;
+    }
+    const active = document.activeElement as HTMLElement | null;
+    if (active && active.closest("[data-nexus-mod-id], input, textarea")) return;
+    autoFocusedRef.current = true;
+    const raf = requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>("[data-nexus-mod-id]")?.focus();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [loading, controllerActive, mods.length, filtersOpen]);
 
   useGamepadTabs([...SORT_OPTIONS], sort, setSort);
 
@@ -170,6 +199,22 @@ function ModBrowserPage() {
   useEffect(() => {
     loadCategories(domain);
   }, [domain, loadCategories]);
+
+  // Which catalog mods are already in this profile's library (by Nexus mod id),
+  // so the grid can flag them. Refreshes when the install queue changes length.
+  useEffect(() => {
+    if (!profile) return;
+    let active = true;
+    api
+      .listInstalledMods(profile.id)
+      .then((installed) => {
+        if (active) setInstalledIds(new Set(installed.map((m) => m.nexus_mod_id)));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [profile?.id]);
 
   useEffect(() => {
     const filters = parseFiltersFromSearch(search as Record<string, unknown>);
@@ -229,6 +274,24 @@ function ModBrowserPage() {
         q: query.trim() || undefined,
         modId: undefined,
         category: search.category,
+        tags: search.tags,
+        minEndorsements: search.minEndorsements,
+        hideAdult: search.hideAdult,
+        updatedDays: search.updatedDays,
+      },
+    });
+  };
+
+  // One-tap category filter from the inline chip row (no need to open Filters).
+  const selectCategory = (category: string | null) => {
+    setFilters({ ...filters, category });
+    navigate({
+      to: "/games/$domain/mods",
+      params: { domain },
+      search: {
+        q: query.trim() || undefined,
+        modId: undefined,
+        category: category ?? undefined,
         tags: search.tags,
         minEndorsements: search.minEndorsements,
         hideAdult: search.hideAdult,
@@ -384,6 +447,39 @@ function ModBrowserPage() {
         </div>
       </div>
 
+      {/* Category quick-filter chips — one tap, no need to open Filters */}
+      {categories.length > 0 && (
+        <div className="mb-5 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button
+            type="button"
+            onClick={() => selectCategory(null)}
+            className={cn(
+              "game-nav-chip focusable shrink-0",
+              !filters.category &&
+                "border-[var(--color-primary)]/60 bg-[var(--color-primary)]/10 text-[var(--color-foreground)]"
+            )}
+            data-focusable="true"
+          >
+            All
+          </button>
+          {categories.map((c) => (
+            <button
+              key={c.category_id}
+              type="button"
+              onClick={() => selectCategory(c.name)}
+              className={cn(
+                "game-nav-chip focusable shrink-0",
+                filters.category === c.name &&
+                  "border-[var(--color-primary)]/60 bg-[var(--color-primary)]/10 text-[var(--color-foreground)]"
+              )}
+              data-focusable="true"
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Results header */}
       <div className="page-header mb-5">
         <div>
@@ -440,7 +536,12 @@ function ModBrowserPage() {
 
       <div className="mod-grid">
         {mods.map((mod) => (
-          <ModCard key={mod.mod_id} mod={mod} domain={domain} />
+          <ModCard
+            key={mod.mod_id}
+            mod={mod}
+            domain={domain}
+            installed={installedIds.has(mod.mod_id)}
+          />
         ))}
         {loadingMore &&
           Array.from({ length: 4 }).map((_, i) => (

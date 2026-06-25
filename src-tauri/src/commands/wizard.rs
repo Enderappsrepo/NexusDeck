@@ -71,6 +71,10 @@ pub fn create_profile(
     // Enable Creation Engine archive invalidation up front so loose-file mods
     // load once deployed. Best-effort (no-op until the Proton prefix exists).
     let _ = crate::services::game_settings::ensure_archive_invalidation(&profile);
+    #[cfg(target_os = "linux")]
+    {
+        let _ = crate::services::game_settings::ensure_automatic_deck_gamepad(&profile.id);
+    }
     Ok(profile)
 }
 

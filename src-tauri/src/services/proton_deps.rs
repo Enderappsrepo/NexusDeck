@@ -12,7 +12,7 @@ use crate::services::host_command::{
 use crate::services::platform;
 use crate::services::proton_log::ProtonLogger;
 use crate::services::protontricks_health;
-use crate::services::{game_settings, proton_audio};
+use crate::services::proton_audio;
 
 pub const PROTONTRICKS_FLATPAK_ID: &str = "com.github.Matoking.protontricks";
 const PREPARE_PHASE_TIMEOUT: Duration = Duration::from_secs(90);
@@ -648,7 +648,7 @@ fn load_deps_config(game_domain: &str) -> Result<DepsConfig> {
             include_str!("../games/rules/skyrimspecialedition_proton_deps.json")
         }
         "fallout4" => {
-            r#"{"app_id":377160,"packages":["vcrun2019","dotnet48","d3dx9_43","xact","xact_64","xinput"]}"#
+            r#"{"app_id":377160,"packages":["vcrun2019","dotnet48","d3dx9_43","xact","xact_64"]}"#
         }
         other => {
             return Err(NexusDeckError::Other(format!(
@@ -879,20 +879,27 @@ fn post_install_proton_setup(
     logger: Option<&ProtonLogger>,
     result: &ProtonDepsResult,
 ) {
-    if !proton_audio::is_bethesda_game(&profile.game_domain) || result.installed.is_empty() {
+    if result.installed.is_empty() {
+        return;
+    }
+
+    if cfg!(target_os = "linux") {
+        if let Some(log) = logger {
+            log.info("post_install", "Ensuring Steam Input compatibility (no winetricks xinput)");
+        }
+        let _ = crate::services::proton_steam_input::ensure_steam_input_for_profile(profile, logger);
+    }
+
+    if !proton_audio::is_bethesda_game(&profile.game_domain) {
         return;
     }
 
     if let Some(log) = logger {
-        log.info("post_install", "Applying Bethesda audio and Deck controller INI fixes");
+        log.info("post_install", "Applying Bethesda audio fix");
     }
     if profile.game_domain == "fallout4" {
-        if let Err(e) = game_settings::ensure_deck_gamepad_settings(profile) {
-            if let Some(log) = logger {
-                log.warn("post_install", &format!("Controller INI fix skipped: {e}"));
-            }
-        } else if let Some(log) = logger {
-            log.info("post_install", "Enabled Fallout 4 gamepad + disabled vsync for Deck input");
+        if let Some(log) = logger {
+            log.info("post_install", "Fallout 4 gamepad INI applied via Steam Input setup");
         }
     }
     match proton_audio::ensure_bethesda_audio(profile, logger) {

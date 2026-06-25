@@ -130,8 +130,8 @@ export interface ProtonLogLine {
 }
 
 export const PROTON_DEPS_PACKAGES: Record<string, string[]> = {
-  skyrimspecialedition: ["vcrun2019", "dotnet48", "d3dx9_43", "xact", "xact_64", "xinput"],
-  fallout4: ["vcrun2019", "dotnet48", "d3dx9_43", "xact", "xact_64", "xinput"],
+  skyrimspecialedition: ["vcrun2019", "dotnet48", "d3dx9_43", "xact", "xact_64"],
+  fallout4: ["vcrun2019", "dotnet48", "d3dx9_43", "xact", "xact_64"],
 };
 
 export interface GameManifestEntry {

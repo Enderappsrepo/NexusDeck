@@ -13,8 +13,7 @@ use crate::services::pre_launch::{profile_has_loose_assets, validate_launch, Lau
 use crate::services::process_monitor::ProcessMonitor;
 use crate::services::repair::repair_deployment;
 use crate::services::steam_launch::{
-    launch_direct_executable, launch_through_proton, launch_via_steam_cli, launch_via_steam_uri,
-    proton_compat_data_path,
+    launch_direct_executable, launch_steam_game, launch_through_proton, proton_compat_data_path,
 };
 use crate::services::steam_shortcut::resolve_config;
 
@@ -110,6 +109,17 @@ pub fn launch_game(
         );
     }
 
+    #[cfg(target_os = "linux")]
+    {
+        emit_progress(app, profile_id, "preparing_controller");
+        let _ = crate::services::proton_steam_input::ensure_steam_input_for_profile(
+            &profile,
+            crate::services::proton_log::ProtonLogger::new("steam_input", None)
+                .ok()
+                .as_ref(),
+        );
+    }
+
     if pre_actions.iter().any(|a| a == "ensure_archive_invalidation")
         || profile_has_loose_assets(&profile).unwrap_or(false)
     {
@@ -168,18 +178,10 @@ pub fn launch_game(
             }
             _ => {
                 let compat = resolve_compat_path(&profile, app_id);
-                // Prefer the steam:// URI on every platform. Inside the Flatpak
-                // sandbox it is the only reliable way to reach the host Steam (via
-                // the desktop portal), and it lets Steam set up the Proton prefix
-                // itself. Fall back to the Steam CLI — which can also pass custom
-                // launch args — only if the URI launch fails. (Custom args are best
-                // set via Steam launch options or the direct/custom launch method.)
-                let method = if launch_via_steam_uri(app_id).is_ok() {
-                    "steam_uri".to_string()
-                } else {
-                    launch_via_steam_cli(app_id, &args, compat.as_deref())?;
-                    "steam_cli".to_string()
-                };
+                // From the Flatpak sandbox (Gaming Mode), xdg-open on steam:// URIs
+                // often returns success without actually starting the game. Prefer
+                // host-side `steam -applaunch` via flatpak-spawn instead.
+                let method = launch_steam_game(app_id, &args, compat.as_deref())?;
                 (None, method)
             }
         }

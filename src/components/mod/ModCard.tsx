@@ -1,6 +1,6 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Download, Heart, ImageOff } from "lucide-react";
+import { Check, Download, Heart, ImageOff } from "lucide-react";
 import { cn, formatNumber, formatRelativeDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import type { ModSummary } from "@/lib/nexus/types";
@@ -10,10 +10,13 @@ interface ModCardProps {
   domain: string;
   className?: string;
   compact?: boolean;
+  /** Already in the current profile's library — shows an "Installed" badge. */
+  installed?: boolean;
 }
 
-export const ModCard = memo(function ModCard({ mod, domain, className, compact = false }: ModCardProps) {
+export const ModCard = memo(function ModCard({ mod, domain, className, compact = false, installed = false }: ModCardProps) {
   const navigate = useNavigate();
+  const [imgFailed, setImgFailed] = useState(false);
 
   const openMod = () => {
     navigate({
@@ -39,14 +42,17 @@ export const ModCard = memo(function ModCard({ mod, domain, className, compact =
           compact ? "aspect-[16/9]" : "aspect-[16/10]"
         )}
       >
-        {mod.picture_url ? (
+        {mod.picture_url && !imgFailed ? (
           <img
             src={mod.picture_url}
             alt={mod.name}
             draggable={false}
+            width={640}
+            height={compact ? 360 : 400}
             className="nd-card-img pointer-events-none h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03] motion-reduce:transform-none"
             loading="lazy"
             decoding="async"
+            onError={() => setImgFailed(true)}
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-[var(--color-muted)]">
@@ -57,6 +63,12 @@ export const ModCard = memo(function ModCard({ mod, domain, className, compact =
         {mod.adult_content && (
           <Badge variant="nsfw" className="absolute left-3 top-3">
             Adult
+          </Badge>
+        )}
+        {installed && (
+          <Badge variant="success" className="absolute right-3 top-3 gap-1">
+            <Check className="h-3 w-3" />
+            Installed
           </Badge>
         )}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />

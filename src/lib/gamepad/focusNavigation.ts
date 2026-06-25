@@ -147,14 +147,22 @@ export function resetFocusIndex(): void {
   focusIndex = 0;
 }
 
-/** Focus the first interactive element within `container` (defaults to <main>). */
+/**
+ * Focus the first interactive element within `container` (defaults to <main>).
+ * A screen can override where controller focus lands by marking an element with
+ * `data-focus-start="true"` (e.g. the first mod card, or a wizard step's first
+ * option); when present and focusable it wins over the DOM-first element.
+ */
 export function focusFirst(container?: HTMLElement | null): boolean {
   const root = container ?? document.querySelector<HTMLElement>("main");
   if (!root) return false;
   const items = getFocusableElements(root);
   if (items.length === 0) return false;
-  focusIndex = 0;
-  items[0].focus();
+  const hinted = root.querySelector<HTMLElement>('[data-focus-start="true"]');
+  const hintedIdx = hinted ? items.indexOf(hinted) : -1;
+  const idx = hintedIdx >= 0 ? hintedIdx : 0;
+  focusIndex = idx;
+  items[idx].focus();
   return true;
 }
 
