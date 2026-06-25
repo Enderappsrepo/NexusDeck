@@ -190,6 +190,7 @@ add_to_steam_shortcuts() {
   local display_name="$2"
   local exe_path="$3"
   local start_dir="$4"
+  local launch_options="${5:-run ${APP_ID}}"
 
   local userdata
   userdata="$(find_steam_userdata "$steam_path")" || fail "Could not find Steam userdata folder"
@@ -212,7 +213,7 @@ add_to_steam_shortcuts() {
 "AppName"		"${display_name}"
 "Exe"		"${exe_path}"
 "StartDir"		"${start_dir}"
-"LaunchOptions"		""
+"LaunchOptions"		"${launch_options}"
 "icon"		""
 "ShortcutPath"		""
 "IsHidden"		"0"
@@ -230,7 +231,7 @@ add_to_steam_shortcuts() {
 "SortAs"		""
 "UseLaunchOptions"		"1"
 "LastUpdated"		"0"
-"FlatpakAppID"		""
+"FlatpakAppID"		"${APP_ID}"
 "GameID"		"${app_id}"
 EOF
   )
@@ -318,8 +319,11 @@ main() {
     ok "Steam found at ${steam_path}"
     echo
     if prompt_yes_no "Add NexusDeck to Steam library for Gaming Mode?" y; then
-      add_to_steam_shortcuts "$steam_path" "$APP_NAME" "$FLATPAK_CMD" "$HOME"
+      local flatpak_exe="/usr/bin/flatpak"
+      [[ -x "$flatpak_exe" ]] || flatpak_exe="flatpak"
+      add_to_steam_shortcuts "$steam_path" "$APP_NAME" "$flatpak_exe" "$HOME" "run ${APP_ID}"
       warn "Restart Steam for the shortcut to appear"
+      warn "Do not enable Proton on the NexusDeck shortcut — it is a native Linux app"
     fi
   else
     warn "Steam not found — skip Steam library step or add later from Settings"

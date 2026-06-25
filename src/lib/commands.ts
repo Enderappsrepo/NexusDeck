@@ -701,8 +701,13 @@ export const api = {
 
   getWabbajackChecklist: () => invoke<string[]>("get_wabbajack_checklist"),
 
-  checkPrefixStatus: (protonPrefixPath: string | null, myGamesFolder: string) =>
+  checkPrefixStatus: (
+    protonPrefixPath: string | null,
+    myGamesFolder: string,
+    profileId?: string | null
+  ) =>
     invoke<import("@/lib/autofix-types").PrefixStatus>("check_prefix_status", {
+      profileId: profileId ?? null,
       protonPrefixPath,
       myGamesFolder,
     }),

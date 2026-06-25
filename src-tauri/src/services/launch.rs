@@ -52,6 +52,7 @@ pub fn validate_launch_for_profile(
     monitor: &ProcessMonitor,
 ) -> Result<LaunchValidationResult> {
     let profile = load_profile(profile_id)?;
+    let profile = crate::services::prefix_manager::ensure_proton_prefix(&profile)?;
     let config = resolve_config(profile_id, config_id)?;
     validate_launch(&profile, &config, monitor)
 }
@@ -64,6 +65,7 @@ pub fn launch_game(
     monitor: &ProcessMonitor,
 ) -> Result<LaunchResult> {
     let profile = load_profile(profile_id)?;
+    let profile = crate::services::prefix_manager::ensure_proton_prefix(&profile)?;
     let config = resolve_config(profile_id, config_id)?;
 
     emit_progress(app, profile_id, "validating");

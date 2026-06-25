@@ -8,7 +8,9 @@ use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
+use crate::db::{self, Profile};
 use crate::error::{NexusDeckError, Result};
+use crate::games::GameRegistry;
 use crate::services::steam::{detect_steam, proton_prefix_path};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +46,17 @@ pub struct PrefixBackupResult {
 }
 
 pub fn prefix_status(proton_prefix: Option<&str>, my_games_folder: &str) -> PrefixStatus {
+    if cfg!(target_os = "windows") {
+        return PrefixStatus {
+            exists: true,
+            my_games_exists: true,
+            prefix_path: None,
+            size_mb: 0,
+            writable: true,
+            message: "Proton prefixes are Linux-only — not applicable on Windows.".to_string(),
+        };
+    }
+
     let Some(prefix_str) = proton_prefix.filter(|s| !s.is_empty()) else {
         return PrefixStatus {
             exists: false,
@@ -261,17 +274,67 @@ pub fn is_likely_removable_drive(library_path: &str) -> bool {
         || (cfg!(windows) && (lower.starts_with("e:") || lower.starts_with("f:")))
 }
 
-fn find_prefix_for_app(app_id: u32) -> Option<PathBuf> {
+pub fn find_prefix_for_app(app_id: u32) -> Option<PathBuf> {
     if let Ok(Some(steam)) = detect_steam() {
         for lib in steam.library_folders {
             if let Some(p) = proton_prefix_path(&lib, app_id) {
-                if p.exists() {
+                if p.join("user.reg").is_file() {
                     return Some(p);
                 }
             }
         }
     }
+
+    crate::services::proton_deps::resolve_compatdata_path(app_id, None)
+        .map(|compat| compat.join("pfx"))
+        .filter(|pfx| pfx.join("user.reg").is_file())
+}
+
+fn normalize_pfx_path(stored: &str) -> Option<PathBuf> {
+    let path = PathBuf::from(stored);
+    if path.join("user.reg").is_file() {
+        return Some(path);
+    }
+    let nested = path.join("pfx");
+    if nested.join("user.reg").is_file() {
+        return Some(nested);
+    }
     None
+}
+
+/// When the profile has no stored prefix (or it is stale), locate the Proton `pfx`
+/// from the game's Steam app id and persist it on the profile.
+pub fn ensure_proton_prefix(profile: &Profile) -> Result<Profile> {
+    if cfg!(target_os = "windows") {
+        return Ok(profile.clone());
+    }
+
+    let plugin = GameRegistry::get(&profile.game_domain)?;
+    let Some(app_id) = plugin.steam_app_id() else {
+        return Ok(profile.clone());
+    };
+
+    if let Some(ref stored) = profile.proton_prefix_path {
+        if let Some(valid) = normalize_pfx_path(stored) {
+            let normalized = valid.display().to_string();
+            if stored == &normalized {
+                return Ok(profile.clone());
+            }
+            let mut updated = profile.clone();
+            updated.proton_prefix_path = Some(normalized);
+            db::save_profile(&updated)?;
+            return Ok(updated);
+        }
+    }
+
+    if let Some(found) = find_prefix_for_app(app_id) {
+        let mut updated = profile.clone();
+        updated.proton_prefix_path = Some(found.display().to_string());
+        db::save_profile(&updated)?;
+        return Ok(updated);
+    }
+
+    Ok(profile.clone())
 }
 
 fn launch_via_steam(app_id: u32) -> bool {
@@ -321,5 +384,33 @@ fn path_writable(path: &Path) -> bool {
             true
         }
         Err(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prefix_status_on_windows_is_not_applicable() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+        let status = prefix_status(None, "Fallout4");
+        assert!(status.exists);
+        assert!(status.message.contains("Windows"));
+    }
+
+    #[test]
+    fn normalize_pfx_accepts_compatdata_root_or_pfx() {
+        let dir = std::env::temp_dir().join(format!("nd-pfx-{}", uuid::Uuid::new_v4()));
+        let pfx = dir.join("pfx");
+        std::fs::create_dir_all(&pfx).unwrap();
+        std::fs::write(pfx.join("user.reg"), b"").unwrap();
+
+        assert!(normalize_pfx_path(&pfx.display().to_string()).is_some());
+        assert!(normalize_pfx_path(&dir.display().to_string()).is_some());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

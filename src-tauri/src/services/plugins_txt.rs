@@ -19,16 +19,17 @@ pub struct PluginsSyncResult {
 }
 
 pub fn sync_plugins_txt(profile: &Profile) -> Result<PluginsSyncResult> {
+    let profile = crate::services::prefix_manager::ensure_proton_prefix(profile)?;
     let plugin = GameRegistry::get(&profile.game_domain)?;
     let plugins_path = plugin
-        .plugins_txt_path(profile)
+        .plugins_txt_path(&profile)
         .ok_or_else(|| {
             crate::error::NexusDeckError::Other(
                 "plugins.txt path not available — set your Proton prefix in Setup and launch the game once through Steam.".into(),
             )
         })?;
 
-    let plugins = collect_plugins_for_launch(profile)?;
+    let plugins = collect_plugins_for_launch(&profile)?;
     write_plugins_txt(&plugins_path, &plugins)?;
     Ok(PluginsSyncResult {
         path: plugins_path.display().to_string(),

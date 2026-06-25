@@ -173,7 +173,7 @@ pub fn validate_launch(
     }
 
     if config.launch_method == "steam" {
-        let app_id = plugin.and_then(|p| p.steam_app_id()).unwrap_or(377160);
+        let app_id = plugin.as_ref().and_then(|p| p.steam_app_id()).unwrap_or(377160);
         if detect_steam()?.is_none() && detect_steam_launch_info(app_id).is_err() {
             warnings.push(item(
                 "steam_not_found",
@@ -183,12 +183,17 @@ pub fn validate_launch(
         }
     }
 
-    if cfg!(target_os = "linux") && profile.proton_prefix_path.is_none() {
-        warnings.push(item(
-            "proton_prefix_missing",
-            "Proton prefix not set. First launch may take longer while Steam creates it.",
-            "warning",
-        ));
+    if cfg!(target_os = "linux") {
+        let app_id = plugin.as_ref().and_then(|p| p.steam_app_id()).unwrap_or(377160);
+        let still_missing = profile.proton_prefix_path.as_deref().unwrap_or("").is_empty()
+            && crate::services::prefix_manager::find_prefix_for_app(app_id).is_none();
+        if still_missing {
+            warnings.push(item(
+                "proton_prefix_missing",
+                "Proton prefix not set. First launch may take longer while Steam creates it.",
+                "warning",
+            ));
+        }
     }
 
     // Proton runtime dependencies (.NET / DirectX). Missing deps are the usual

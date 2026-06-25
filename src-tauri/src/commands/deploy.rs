@@ -16,6 +16,7 @@ use crate::services::deploy::{
 use crate::services::load_order::plugins_json_from_manifest;
 use crate::services::mod_state::{apply_mod_enabled_state, backup_installed_files};
 use crate::services::plugins_txt;
+use crate::services::prefix_manager;
 use crate::services::update_checker;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1290,6 +1291,8 @@ pub async fn install_mod_from_archive_impl(
         );
     }
 
+    let profile = prefix_manager::ensure_proton_prefix(&profile).unwrap_or(profile);
+
     session.set_phase("proton");
     let archive_invalidation = match crate::services::game_settings::ensure_archive_invalidation(&profile) {
         Ok(true) => {
@@ -1326,7 +1329,9 @@ pub async fn install_mod_from_archive_impl(
         }
     }
 
-    if profile.proton_prefix_path.as_deref().unwrap_or("").is_empty() {
+    if cfg!(target_os = "linux")
+        && profile.proton_prefix_path.as_deref().unwrap_or("").is_empty()
+    {
         session.warn(
             "proton",
             "No Proton prefix configured — plugins.txt and INI changes may require a vanilla launch first",

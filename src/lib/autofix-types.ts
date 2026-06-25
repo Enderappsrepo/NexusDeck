@@ -83,7 +83,7 @@ export interface ProtonDepProgress {
   package: string;
   index: number;
   total: number;
-  /** preparing | installing | done | failed */
+  /** preparing | installing | done | failed | skipped */
   status: string;
   /** Human-readable step detail during preparing/installing */
   detail?: string | null;

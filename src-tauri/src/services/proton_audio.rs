@@ -16,6 +16,7 @@ use crate::services::steam::detect_steam;
 pub const WINE_XAUDIO_OVERRIDES: &str = r"xaudio2_7=n,b;xaudio2_6=n,b";
 
 const AUDIO_PACKAGES: [&str; 2] = ["xact", "xact_64"];
+const OPTIONAL_AUDIO_PACKAGES: [&str; 1] = ["xact_64"];
 const MARKER_FILE: &str = ".nexusdeck_bethesda_audio";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,6 +135,33 @@ pub fn ensure_bethesda_audio(
                         log.info("xact", "XACT packages installed and marker written");
                     }
                 }
+                Ok(result)
+                    if result.installed.iter().any(|p| p == "xact")
+                        && result
+                            .failed
+                            .iter()
+                            .all(|p| OPTIONAL_AUDIO_PACKAGES.contains(&p.as_str())) =>
+                {
+                    let _ = mark_audio_ready(&pfx);
+                    if let Some(log) = logger {
+                        log.info(
+                            "xact",
+                            "32-bit xact installed; optional xact_64 skipped — xaudio2 override active",
+                        );
+                    }
+                }
+                Ok(result)
+                    if result.skipped.iter().any(|p| p == "xact_64")
+                        && result.installed.iter().any(|p| p == "xact") =>
+                {
+                    let _ = mark_audio_ready(&pfx);
+                    if let Some(log) = logger {
+                        log.info(
+                            "xact",
+                            "32-bit xact installed; xact_64 optional skip — xaudio2 override active",
+                        );
+                    }
+                }
                 Ok(result) => {
                     let msg = format!(
                         "Some audio packages failed: {} — DLL override still applied.",
@@ -227,6 +255,11 @@ fn has_xaudio_dll_override(pfx: &Path) -> bool {
     };
     content.contains(r#""xaudio2_7"="native,builtin""#)
         || content.contains(r#""xaudio2_7"="native, builtin""#)
+}
+
+/// Apply xaudio2 native,builtin overrides in user.reg (used when xact_64 fails on Proton).
+pub fn apply_xaudio_for_pfx(pfx: &Path, logger: Option<&ProtonLogger>) -> Result<()> {
+    apply_xaudio_dll_override(pfx, logger)
 }
 
 fn apply_xaudio_dll_override(pfx: &Path, logger: Option<&ProtonLogger>) -> Result<()> {

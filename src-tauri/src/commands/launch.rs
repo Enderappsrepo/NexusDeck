@@ -137,6 +137,7 @@ pub async fn stop_game(
 pub async fn sync_plugins_txt(profile_id: String) -> Result<crate::services::plugins_txt::PluginsSyncResult> {
     let profile = db::get_profile(&profile_id)?
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
+    let profile = crate::services::prefix_manager::ensure_proton_prefix(&profile)?;
     tokio::task::spawn_blocking(move || run_sync_plugins(&profile))
         .await
         .map_err(|e| crate::error::NexusDeckError::Other(format!("Plugin sync failed: {e}")))?

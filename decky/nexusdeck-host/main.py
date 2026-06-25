@@ -160,7 +160,7 @@ class Plugin:
 "SortAs"\t\t""
 "UseLaunchOptions"\t\t"1"
 "LastUpdated"\t\t"0"
-"FlatpakAppID"\t\t""
+"FlatpakAppID"\t\t"{NEXUSDECK_APP_ID}"
 "GameID"\t\t"{app_id}"
 """
 

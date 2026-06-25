@@ -25,10 +25,25 @@ pub fn get_protontricks_info() -> proton_deps::ProtontricksInfo {
 
 #[tauri::command]
 pub fn check_prefix_status(
+    profile_id: Option<String>,
     proton_prefix_path: Option<String>,
     my_games_folder: String,
 ) -> prefix_manager::PrefixStatus {
-    prefix_manager::prefix_status(proton_prefix_path.as_deref(), &my_games_folder)
+    let resolved_path = if let Some(id) = profile_id {
+        if let Ok(Some(profile)) = crate::db::get_profile(&id) {
+            prefix_manager::ensure_proton_prefix(&profile)
+                .ok()
+                .and_then(|p| p.proton_prefix_path)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let effective = resolved_path
+        .as_deref()
+        .or(proton_prefix_path.as_deref().filter(|s| !s.is_empty()));
+    prefix_manager::prefix_status(effective, &my_games_folder)
 }
 
 #[tauri::command]
@@ -113,7 +128,9 @@ pub async fn install_proton_deps(
     proton_prefix_path: Option<String>,
 ) -> Result<proton_deps::ProtonDepsResult> {
     tokio::task::spawn_blocking(move || {
-        let profile = profile_id.as_deref().and_then(try_load_profile);
+        let profile = profile_id.as_deref().and_then(try_load_profile).map(|p| {
+            prefix_manager::ensure_proton_prefix(&p).unwrap_or(p)
+        });
         let effective_prefix = profile
             .as_ref()
             .and_then(|p| p.proton_prefix_path.as_deref())
@@ -198,6 +215,7 @@ pub async fn verify_proton_deps(
         let result = (|| {
             if let Some(id) = profile_id {
                 if let Some(profile) = try_load_profile(&id) {
+                    let profile = prefix_manager::ensure_proton_prefix(&profile).unwrap_or(profile);
                     return proton_deps::verify_deps_for_profile(&profile);
                 }
             }

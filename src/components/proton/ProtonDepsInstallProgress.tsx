@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, MinusCircle, XCircle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import type { ProtonDepProgress } from "@/lib/autofix-types";
 import { cn } from "@/lib/utils";
 
-type PkgStatus = "pending" | "preparing" | "installing" | "done" | "failed";
+type PkgStatus = "pending" | "preparing" | "installing" | "done" | "failed" | "skipped";
 
 const PACKAGE_LABELS: Record<string, string> = {
   vcrun2019: "Visual C++ 2019",
@@ -86,6 +86,8 @@ export function ProtonDepsInstallProgress({
           next[p.package] = "installing";
         } else if (p.status === "done") {
           next[p.package] = "done";
+        } else if (p.status === "skipped") {
+          next[p.package] = "skipped";
         } else if (p.status === "failed") {
           next[p.package] = "failed";
         }
@@ -102,7 +104,15 @@ export function ProtonDepsInstallProgress({
   }, [active, packages]);
 
   const doneCount = useMemo(
-    () => packages.filter((p) => statusByPkg[p] === "done").length,
+    () =>
+      packages.filter(
+        (p) => statusByPkg[p] === "done" || statusByPkg[p] === "skipped"
+      ).length,
+    [packages, statusByPkg]
+  );
+
+  const skippedCount = useMemo(
+    () => packages.filter((p) => statusByPkg[p] === "skipped").length,
     [packages, statusByPkg]
   );
 
@@ -141,6 +151,7 @@ export function ProtonDepsInstallProgress({
         <Progress value={progressValue} className="h-2" />
         <p className="text-xs text-[var(--color-muted)]">
           {doneCount} of {packages.length} complete
+          {skippedCount > 0 ? ` · ${skippedCount} optional skipped` : ""}
           {failedCount > 0 ? ` · ${failedCount} failed` : ""}
           {current?.status === "installing"
             ? " · .NET can take 10+ minutes — keep NexusDeck open."
@@ -184,11 +195,15 @@ export function ProtonDepsInstallProgress({
               className={cn(
                 "flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm",
                 status === "installing" && "bg-[var(--color-primary)]/10",
-                status === "failed" && "bg-[var(--color-danger)]/10"
+                status === "failed" && "bg-[var(--color-danger)]/10",
+                status === "skipped" && "bg-[var(--color-warning)]/10"
               )}
             >
               {status === "done" && (
                 <CheckCircle2 className="h-4 w-4 shrink-0 text-[var(--color-success)]" />
+              )}
+              {status === "skipped" && (
+                <MinusCircle className="h-4 w-4 shrink-0 text-[var(--color-warning)]" />
               )}
               {status === "failed" && (
                 <XCircle className="h-4 w-4 shrink-0 text-[var(--color-danger)]" />

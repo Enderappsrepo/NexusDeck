@@ -11,6 +11,7 @@ use crate::services::proton_audio;
 pub fn scan_profile(profile_id: &str) -> Result<DiagnosticScanResult> {
     let profile = db::get_profile(profile_id)?
         .ok_or_else(|| crate::error::NexusDeckError::NotFound("Profile not found".into()))?;
+    let profile = prefix_manager::ensure_proton_prefix(&profile).unwrap_or(profile);
     let plugin = GameRegistry::get(&profile.game_domain)?;
     let game_path = std::path::Path::new(&profile.game_path);
 

@@ -67,6 +67,7 @@ struct ModSortKey {
 pub fn auto_sort_load_order(profile_id: &str) -> Result<Vec<InstalledMod>> {
     let profile = db::get_profile(profile_id)?
         .ok_or_else(|| NexusDeckError::NotFound("Profile not found".into()))?;
+    let profile = crate::services::prefix_manager::ensure_proton_prefix(&profile)?;
     let mods = db::list_installed_mods(profile_id)?;
     if mods.is_empty() {
         return Ok(mods);
@@ -116,6 +117,7 @@ pub fn get_load_order_state(profile_id: &str) -> Result<LoadOrderState> {
     let _ = crate::services::mod_ledger::reconcile_if_diverged(profile_id);
     let profile = db::get_profile(profile_id)?
         .ok_or_else(|| NexusDeckError::NotFound("Profile not found".into()))?;
+    let profile = crate::services::prefix_manager::ensure_proton_prefix(&profile)?;
     let plugin = GameRegistry::get(&profile.game_domain)?;
     let plugins_txt_path = plugin.plugins_txt_path(&profile).map(|p| p.display().to_string());
     let plugins_txt_ready = plugins_txt_path.is_some();

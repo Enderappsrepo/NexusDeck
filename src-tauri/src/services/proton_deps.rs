@@ -21,6 +21,12 @@ const PREFIX_HOST_TIMEOUT_SECS: u64 = 20;
 /// remove_mono is a quick prefix tweak; cap it well below the full per-package install
 /// timeout so a wedged remove can't burn the whole budget before .NET even starts.
 const REMOVE_MONO_TIMEOUT_SECS: u64 = 180;
+/// Winetricks verbs that often fail on Proton but have workarounds — do not block the whole install.
+const OPTIONAL_DEPS: &[&str] = &["xact_64"];
+
+fn is_optional_dep(pkg: &str) -> bool {
+    OPTIONAL_DEPS.contains(&pkg)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtontricksInfo {
@@ -55,7 +61,7 @@ pub struct ProtonDepProgress {
     pub package: String,
     pub index: usize,
     pub total: usize,
-    /// preparing | installing | done | failed
+    /// preparing | installing | done | failed | skipped
     pub status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
@@ -477,6 +483,7 @@ fn install_packages_with_context(
 
     let package_names: Vec<String> = packages.iter().map(|p| p.as_ref().to_string()).collect();
     let mut installed = Vec::new();
+    let mut skipped = Vec::new();
     let mut failed = Vec::new();
     let mut failure_details = Vec::new();
 
@@ -510,42 +517,28 @@ fn install_packages_with_context(
         };
         // .NET needs Wine's bundled mono removed first, then Proton's dangling
         // registry keys cleared — otherwise dotnet48 refuses to install on Proton 9+.
-        if pkg == "dotnet48" {
-            let _ = run_protontricks_verbs(
+        let install_result = if pkg == "dotnet48" {
+            install_dotnet48(
                 app_id,
                 &compatdata,
-                &["remove_mono"],
                 &pt,
                 logger,
-                REMOVE_MONO_TIMEOUT_SECS,
                 &mut heartbeat,
-            );
-            let _ = clear_proton_dotnet_registry(app_id, &compatdata, &pt, logger);
-        }
-        let mut install_result = run_protontricks_verbs(
-            app_id,
-            &compatdata,
-            std::slice::from_ref(pkg),
-            &pt,
-            logger,
-            PROTONTRICKS_INSTALL_TIMEOUT_SECS,
-            &mut heartbeat,
-        );
-        if pkg == "dotnet48" && install_result.is_err() {
-            if let Some(log) = logger {
-                log.warn("package", "dotnet48 failed — clearing Proton .NET registry keys and retrying once");
-            }
-            let _ = clear_proton_dotnet_registry(app_id, &compatdata, &pt, logger);
-            install_result = run_protontricks_verbs(
+            )
+        } else if pkg == "xact_64" {
+            install_xact_64(app_id, &compatdata, &pt, logger, &mut heartbeat)
+        } else {
+            run_protontricks_verbs(
                 app_id,
                 &compatdata,
+                &[],
                 std::slice::from_ref(pkg),
                 &pt,
                 logger,
                 PROTONTRICKS_INSTALL_TIMEOUT_SECS,
                 &mut heartbeat,
-            );
-        }
+            )
+        };
         match install_result {
             Ok(()) => {
                 installed.push(pkg.clone());
@@ -559,6 +552,46 @@ fn install_packages_with_context(
                         total,
                         status: "done".into(),
                         detail: None,
+                    });
+                }
+            }
+            Err(e) if is_optional_dep(pkg) => {
+                let detail = e.to_string();
+                log::warn!("protontricks {pkg} optional skip: {detail}");
+                if pkg == "xact_64" {
+                    let pfx = compatdata.join("pfx");
+                    match proton_audio::apply_xaudio_for_pfx(&pfx, logger) {
+                        Ok(()) => {
+                            if let Some(log) = logger {
+                                log.info(
+                                    "package",
+                                    "xact_64 optional — applied xaudio2 native override for voice/music audio",
+                                );
+                            }
+                        }
+                        Err(override_err) => {
+                            if let Some(log) = logger {
+                                log.warn(
+                                    "package",
+                                    &format!("xact_64 failed and xaudio override skipped: {override_err}"),
+                                );
+                            }
+                        }
+                    }
+                }
+                if let Some(log) = logger {
+                    log.warn("package", &format!("Skipped optional {pkg}: {detail}"));
+                }
+                skipped.push(pkg.clone());
+                if let Some(cb) = on_progress {
+                    cb(ProtonDepProgress {
+                        package: pkg.clone(),
+                        index: idx + 1,
+                        total,
+                        status: "skipped".into(),
+                        detail: Some(format!(
+                            "{pkg} is optional on Proton — install continued without it"
+                        )),
                     });
                 }
             }
@@ -583,23 +616,23 @@ fn install_packages_with_context(
         }
     }
 
-    // Only mark the prefix "ready" when every dependency installed. A partial
-    // install (e.g. vcrun ok but dotnet48 failed) must not report deps as done —
-    // otherwise the UI shows a green check while BodySlide still launches empty.
-    if failed.is_empty() && !installed.is_empty() {
+    // Mark the prefix ready when all required deps installed.
+    // must not block BodySlide/.NET tools or show a stale "missing deps" warning forever.
+    let hard_failed: Vec<_> = failed.iter().filter(|p| !is_optional_dep(p)).collect();
+    if hard_failed.is_empty() && !installed.is_empty() {
         let _ = mark_deps_installed(app_id, &compatdata);
         if let Some(log) = logger {
             log.info("marker", "Marked deps as installed on prefix");
         }
     }
 
-    let success = failed.is_empty();
-    let message = format_deps_message(&installed, &[], &failed, &failure_details);
+    let success = hard_failed.is_empty();
+    let message = format_deps_message(&installed, &skipped, &failed, &failure_details);
     Ok(finish_deps_result(
         ProtonDepsResult {
             success,
             installed,
-            skipped: vec![],
+            skipped,
             failed,
             message,
             failure_details,
@@ -649,7 +682,124 @@ fn runners_for(pt: &ProtontricksInfo) -> Vec<ProtontricksRunner> {
     runners
 }
 
-const DOTNET_REGISTRY_CMD: &str = r#"reg delete "HKLM\Software\Wow6432Node\Microsoft\NET Framework Setup\NDP" /f 2>/dev/null; reg delete "HKLM\Software\Wow6432Node\Microsoft\.NETFramework" /f 2>/dev/null; exit 0"#;
+const DOTNET_REGISTRY_CMD: &str = r#"reg delete "HKLM\Software\Microsoft\NET Framework Setup\NDP" /f 2>/dev/null; reg delete "HKLM\Software\Wow6432Node\Microsoft\NET Framework Setup\NDP" /f 2>/dev/null; reg delete "HKLM\Software\Microsoft\.NETFramework" /f 2>/dev/null; reg delete "HKLM\Software\Wow6432Node\Microsoft\.NETFramework" /f 2>/dev/null; reg delete "HKLM\Software\Mono" /f 2>/dev/null; reg delete "HKLM\Software\Wow6432Node\Mono" /f 2>/dev/null; exit 0"#;
+
+fn prepare_dotnet48(
+    app_id: u32,
+    compatdata: &Path,
+    pt: &ProtontricksInfo,
+    logger: Option<&ProtonLogger>,
+    heartbeat: &mut dyn FnMut(u64),
+) {
+    if let Some(log) = logger {
+        log.info("dotnet48", "Preparing prefix: remove_mono, win10, clear Proton .NET registry");
+    }
+    let _ = run_protontricks_verbs(
+        app_id,
+        compatdata,
+        &[],
+        &["remove_mono"],
+        pt,
+        logger,
+        REMOVE_MONO_TIMEOUT_SECS,
+        heartbeat,
+    );
+    let _ = run_protontricks_verbs(
+        app_id,
+        compatdata,
+        &[],
+        &["win10"],
+        pt,
+        logger,
+        90,
+        heartbeat,
+    );
+    let _ = clear_proton_dotnet_registry(app_id, compatdata, pt, logger);
+}
+
+fn install_dotnet48(
+    app_id: u32,
+    compatdata: &Path,
+    pt: &ProtontricksInfo,
+    logger: Option<&ProtonLogger>,
+    heartbeat: &mut dyn FnMut(u64),
+) -> Result<()> {
+    prepare_dotnet48(app_id, compatdata, pt, logger, heartbeat);
+
+    let attempts: &[&[&str]] = &[&[], &["--force"], &["--force", "--unattended"]];
+    let mut last_error = String::new();
+
+    for (idx, prefix) in attempts.iter().enumerate() {
+        if idx > 0 {
+            if let Some(log) = logger {
+                log.warn(
+                    "dotnet48",
+                    &format!(
+                        "Retry {}/{} with winetricks {}",
+                        idx + 1,
+                        attempts.len(),
+                        prefix.join(" ")
+                    ),
+                );
+            }
+            let _ = clear_proton_dotnet_registry(app_id, compatdata, pt, logger);
+        }
+        match run_protontricks_verbs(
+            app_id,
+            compatdata,
+            prefix,
+            &["dotnet48"],
+            pt,
+            logger,
+            PROTONTRICKS_INSTALL_TIMEOUT_SECS,
+            heartbeat,
+        ) {
+            Ok(()) => return Ok(()),
+            Err(e) => last_error = e.to_string(),
+        }
+    }
+
+    Err(NexusDeckError::Other(if last_error.is_empty() {
+        "dotnet48 install failed after multiple attempts".into()
+    } else {
+        last_error
+    }))
+}
+
+fn install_xact_64(
+    app_id: u32,
+    compatdata: &Path,
+    pt: &ProtontricksInfo,
+    logger: Option<&ProtonLogger>,
+    heartbeat: &mut dyn FnMut(u64),
+) -> Result<()> {
+    run_protontricks_verbs(
+        app_id,
+        compatdata,
+        &[],
+        &["xact_64"],
+        pt,
+        logger,
+        PROTONTRICKS_INSTALL_TIMEOUT_SECS,
+        heartbeat,
+    )
+    .or_else(|first| {
+        if let Some(log) = logger {
+            log.warn("xact_64", "First attempt failed — retrying with winetricks --force");
+        }
+        run_protontricks_verbs(
+            app_id,
+            compatdata,
+            &["--force"],
+            &["xact_64"],
+            pt,
+            logger,
+            PROTONTRICKS_INSTALL_TIMEOUT_SECS,
+            heartbeat,
+        )
+        .map_err(|_| first)
+    })
+}
 
 fn clear_proton_dotnet_registry(
     app_id: u32,
@@ -770,6 +920,7 @@ fn post_install_proton_setup(
 fn run_protontricks_verbs(
     app_id: u32,
     compatdata: &Path,
+    winetricks_prefix: &[&str],
     packages: &[impl AsRef<str>],
     pt: &ProtontricksInfo,
     logger: Option<&ProtonLogger>,
@@ -786,6 +937,7 @@ fn run_protontricks_verbs(
         let (command_label, output) = match runner {
             ProtontricksRunner::Native(ref cmd) => {
                 let mut args = vec!["--no-term", app_id_str.as_str()];
+                args.extend(winetricks_prefix.iter().copied());
                 args.extend(package_names.iter().map(String::as_str));
                 let label = format!("{cmd} {}", args.join(" "));
                 (label, run_on_host_install(cmd, &args, &env_refs, timeout_secs, &mut *heartbeat))
@@ -797,6 +949,7 @@ fn run_protontricks_verbs(
                     "--no-term",
                     app_id_str.as_str(),
                 ];
+                args.extend(winetricks_prefix.iter().copied());
                 args.extend(package_names.iter().map(String::as_str));
                 let label = format!("flatpak {}", args.join(" "));
                 (label, run_on_host_install("flatpak", &args, &env_refs, timeout_secs, &mut *heartbeat))
@@ -934,7 +1087,7 @@ flatpak override --user {PROTONTRICKS_FLATPAK_ID} \
     Ok(())
 }
 
-fn resolve_compatdata_path(app_id: u32, prefix_hint: Option<&str>) -> Option<PathBuf> {
+pub fn resolve_compatdata_path(app_id: u32, prefix_hint: Option<&str>) -> Option<PathBuf> {
     if let Some(hint) = prefix_hint.filter(|s| !s.is_empty()) {
         if let Some(path) = compatdata_from_hint(hint) {
             return Some(path);
@@ -1073,6 +1226,19 @@ fn format_deps_message(
             "\nTip: .NET 4.8 often needs Proton Experimental. In Steam → Fallout 4 → Properties → Compatibility, \
              force Proton Experimental, launch the game once, then retry Install dependencies.",
         );
+        message.push_str(
+            "\nIf it still fails, run in Konsole (one line at a time):\n\
+             flatpak run com.github.Matoking.protontricks --no-term 377160 remove_mono\n\
+             flatpak run com.github.Matoking.protontricks --no-term -c 'reg delete \"HKLM\\Software\\Wow6432Node\\Microsoft\\NET Framework Setup\\NDP\" /f' 377160\n\
+             flatpak run com.github.Matoking.protontricks --no-term 377160 --force dotnet48",
+        );
+    }
+
+    if skipped.iter().any(|p| p == "xact_64") || failed.iter().any(|p| p == "xact_64") {
+        message.push_str(
+            "\nTip: xact_64 often fails on Proton but is optional — 32-bit xact + xaudio2 native overrides \
+             (applied automatically) fix NPC voices and music on Steam Deck.",
+        );
     }
 
     if failure_details
@@ -1198,7 +1364,12 @@ fn verify_deps_for_domain_with_hint(
             missing.push(pkg.clone());
         }
     }
-    let satisfied = missing.is_empty();
+    let hard_missing: Vec<String> = missing
+        .iter()
+        .filter(|p| !is_optional_dep(p))
+        .cloned()
+        .collect();
+    let satisfied = hard_missing.is_empty();
 
     if satisfied {
         let _ = mark_deps_installed(config.app_id, &compatdata);
@@ -1276,6 +1447,12 @@ mod tests {
             compat.map(|p| p.display().to_string()),
             Some("/home/deck/.local/share/Steam/steamapps/compatdata/489830".into())
         );
+    }
+
+    #[test]
+    fn xact_64_is_optional_dep() {
+        assert!(is_optional_dep("xact_64"));
+        assert!(!is_optional_dep("dotnet48"));
     }
 
     #[test]

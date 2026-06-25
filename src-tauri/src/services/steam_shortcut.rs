@@ -228,13 +228,14 @@ fn append_shortcut_on_host(
 "SortAs"		""
 "UseLaunchOptions"		"1"
 "LastUpdated"		"0"
-"FlatpakAppID"		""
+"FlatpakAppID"		"{flatpak_app_id}"
 "GameID"		"{app_id}"
 "#,
         name = name.replace('"', "\\\""),
         exe = exe.replace('"', "\\\""),
         start_dir = start_dir.replace('"', "\\\""),
         launch_options = launch_options.replace('"', "\\\""),
+        flatpak_app_id = NEXUSDECK_APP_ID,
         app_id = app_id,
     );
 
@@ -620,13 +621,14 @@ fn append_shortcut_vdf_text(
 "SortAs"		""
 "UseLaunchOptions"		"1"
 "LastUpdated"		"0"
-"FlatpakAppID"		""
+"FlatpakAppID"		"{flatpak_app_id}"
 "GameID"		"{app_id}"
 "#,
         name = name.replace('"', "\\\""),
         exe = exe.replace('"', "\\\""),
         start_dir = start_dir.replace('"', "\\\""),
         launch_options = launch_options.replace('"', "\\\""),
+        flatpak_app_id = NEXUSDECK_APP_ID,
         app_id = app_id,
     );
 
