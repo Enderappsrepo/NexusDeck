@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useGamepadBackHandler } from "@/hooks/useGamepadTabs";
 import { useAppBack } from "@/hooks/useAppBack";
 import { useGamepadRouterState } from "@/hooks/useGamepadRouter";
+import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
 
 export function useGamepadBack() {
   const goBack = useAppBack();
@@ -11,8 +12,9 @@ export function useGamepadBack() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape" && e.key !== "Backspace") return;
-      // Avoid double-back when Steam also maps B to Backspace.
-      if (controllerActive && e.key === "Backspace") return;
+      // Steam maps B to Esc/Backspace; the gamepad B already drives back, so
+      // ignore the mirrored key whenever a pad is present to avoid double-back.
+      if (controllerActive || gamepadRouter.isPadConnected()) return;
       const target = e.target as HTMLElement;
       if (
         target.tagName === "INPUT" ||

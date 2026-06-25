@@ -158,13 +158,21 @@ export function focusFirst(container?: HTMLElement | null): boolean {
   return true;
 }
 
+// Cross-source activation lock. A single physical "confirm" can reach us twice:
+// once as the polled gamepad button and once as a keyboard/mouse event that Steam
+// Input mirrors for the same press. Because the two arrive a few ms apart and the
+// second lands on whatever the first just navigated to, it looks like the app
+// "enters the game then immediately bounces back out". Collapse activations that
+// fall inside this window into one.
+let lastActivateAt = 0;
+const ACTIVATE_LOCK_MS = 220;
+
 export function activateFocused(): void {
+  const now = performance.now();
+  if (now - lastActivateAt < ACTIVATE_LOCK_MS) return;
   const el = document.activeElement as HTMLElement;
   if (!el || el.dataset.gamepadSkip === "true") return;
-  if (el.dataset.launchPrimary === "true") {
-    el.click();
-    return;
-  }
+  lastActivateAt = now;
   el.click();
 }
 

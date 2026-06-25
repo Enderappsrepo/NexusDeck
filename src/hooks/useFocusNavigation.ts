@@ -18,9 +18,10 @@ export function useFocusNavigation(containerRef: React.RefObject<HTMLElement | n
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTypingElement(document.activeElement)) return;
-      // Steam Input often mirrors face buttons as keyboard keys; ignore those
-      // while the in-app router is handling the physical controller.
-      if (controllerActive) return;
+      // Steam Input mirrors face buttons / d-pad as keyboard keys. Ignore those
+      // whenever a pad is present (not just once controllerActive flips) so a
+      // mirrored key can't beat the first poll and double-fire navigation.
+      if (controllerActive || gamepadRouter.isPadConnected()) return;
 
       if (e.key === "ArrowDown") {
         e.preventDefault();

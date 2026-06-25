@@ -14,6 +14,9 @@ interface SegmentedControlProps<T extends string> {
   size?: "sm" | "default";
   className?: string;
   ariaLabel?: string;
+  /** Stretch segments to fill the container width (equal-width segments).
+   *  Useful on narrow/mobile layouts; pair with `w-full` in `className`. */
+  fill?: boolean;
 }
 
 export function SegmentedControl<T extends string>({
@@ -23,13 +26,15 @@ export function SegmentedControl<T extends string>({
   size = "default",
   className,
   ariaLabel,
+  fill = false,
 }: SegmentedControlProps<T>) {
   return (
     <div
       role="tablist"
       aria-label={ariaLabel}
       className={cn(
-        "inline-flex gap-1 rounded-xl bg-[var(--color-secondary)] p-1",
+        "gap-1 rounded-xl bg-[var(--color-secondary)] p-1",
+        fill ? "flex" : "inline-flex",
         className
       )}
     >
@@ -46,6 +51,7 @@ export function SegmentedControl<T extends string>({
             className={cn(
               "focusable inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-all",
               size === "sm" ? "min-h-[48px] px-3 text-sm" : "min-h-[48px] px-4 text-base",
+              fill && "flex-1",
               active
                 ? "bg-[var(--color-card)] text-[var(--color-foreground)] shadow-[var(--shadow-sm)] ring-1 ring-[var(--color-primary)]/30"
                 : "text-[var(--color-muted)] hover:text-[var(--color-foreground)]"

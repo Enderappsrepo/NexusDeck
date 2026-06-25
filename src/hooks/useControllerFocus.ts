@@ -1,34 +1,34 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { usePathname } from "@/lib/routeParams";
-import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
+import { useGamepadRouterState } from "@/hooks/useGamepadRouter";
 import { focusFirst, resetFocusIndex } from "@/lib/gamepad/focusNavigation";
 
 /**
- * On every route change, reset directional-focus state so the next d-pad/stick
- * press starts from the top of the new screen instead of a stale index. When a
- * controller is in use, also move focus to the first interactive element of the
- * new page so navigation feels immediate. Skipped for mouse/touch so we never
- * steal focus or flash a focus ring on people who aren't using a controller.
+ * Keep a visible focus target on screen whenever a controller is in use. Resets
+ * directional-focus state on every route change, then — if a controller is the
+ * active input — moves focus into the page content so the d-pad has somewhere to
+ * start and the focus ring is immediately visible. Runs on route change AND when
+ * the controller first wakes up mid-page. Never steals an in-page focus (so it
+ * won't fight a d-pad/stick move) and never grabs focus for mouse/touch users.
  */
 export function useControllerFocus() {
   const pathname = usePathname();
-  const firstRun = useRef(true);
+  const { controllerActive } = useGamepadRouterState();
 
   useEffect(() => {
     resetFocusIndex();
 
-    // Don't grab focus on the initial mount or on the onboarding wizard.
-    if (firstRun.current) {
-      firstRun.current = false;
-      return;
-    }
     if (pathname === "/onboarding" || pathname.endsWith("/setup")) return;
-    if (!gamepadRouter.getControllerActive()) return;
+    if (!controllerActive) return;
 
-    // Defer one frame so the new route has committed its DOM before we look.
+    // Defer one frame so a freshly navigated route has committed its DOM.
     const raf = requestAnimationFrame(() => {
+      const active = document.activeElement as HTMLElement | null;
+      // Already focused inside the page content (e.g. a d-pad move just landed)?
+      // Leave it alone — only take over when focus is on body or page chrome.
+      if (active && active.closest("[data-scroll-pane]")) return;
       focusFirst(document.querySelector<HTMLElement>("[data-scroll-pane]"));
     });
     return () => cancelAnimationFrame(raf);
-  }, [pathname]);
+  }, [pathname, controllerActive]);
 }

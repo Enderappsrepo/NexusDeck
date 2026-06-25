@@ -1,7 +1,6 @@
 import { createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
-  ArrowDownAZ,
   FolderOpen,
   Layers,
   ListOrdered,
@@ -196,22 +195,6 @@ function GameDashboard() {
             <GameStatStrip profileId={profile.id} gameDomain={domain} playtime={playtime} />
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            {NAV_LINKS.map(({ to, label, icon: Icon, withModSearch }) => (
-              <Link
-                key={to}
-                to={to}
-                params={{ domain }}
-                search={withModSearch ? { modId: undefined } : undefined}
-                className="focusable game-nav-chip"
-                data-focusable="true"
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {label}
-              </Link>
-            ))}
-          </div>
-
           <div className="mt-4 max-w-xl">
             <ModSearchBar
               value={modSearchQuery}
@@ -222,6 +205,27 @@ function GameDashboard() {
           </div>
         </div>
       </section>
+
+      <nav
+        aria-label="Game sections"
+        className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6"
+      >
+        {NAV_LINKS.map(({ to, label, icon: Icon, withModSearch }) => (
+          <Link
+            key={to}
+            to={to}
+            params={{ domain }}
+            search={withModSearch ? { modId: undefined } : undefined}
+            className="quick-tile focusable items-center gap-2.5 text-center"
+            data-focusable="true"
+          >
+            <div className="quick-tile-icon">
+              <Icon className="h-6 w-6" />
+            </div>
+            <span className="text-sm font-semibold">{label}</span>
+          </Link>
+        ))}
+      </nav>
 
       {showExtender &&
         extenderStatus &&

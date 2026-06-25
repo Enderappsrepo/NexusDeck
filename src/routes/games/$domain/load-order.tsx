@@ -42,6 +42,7 @@ function LoadOrderPage() {
   const [syncing, setSyncing] = useState(false);
   const [sorting, setSorting] = useState(false);
   const [rescanning, setRescanning] = useState(false);
+  const [scanningDisk, setScanningDisk] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [syncNote, setSyncNote] = useState<string | null>(null);
   const [tab, setTab] = useState<"mods" | "plugins">("mods");
@@ -62,8 +63,28 @@ function LoadOrderPage() {
       setLoading(profilesLoading);
       return;
     }
+    let cancelled = false;
     setLoading(true);
-    refresh().finally(() => setLoading(false));
+    setScanningDisk(true);
+    // List from the real game Data folder, not just the DB: reconcile restores
+    // any ledgered mods the DB dropped, and rescan imports mod plugins already
+    // deployed under Data/ that aren't tracked yet — so the list reflects what
+    // is actually on disk. Best-effort: fall back to the DB/ledger on error.
+    void (async () => {
+      try {
+        await api.reconcileModLibrary(profile.id);
+        await api.rescanLibraryFromDisk(profile.id);
+      } catch {
+        // ignore — the refresh below still shows whatever the DB/ledger holds
+      }
+      if (cancelled) return;
+      setScanningDisk(false);
+      await refresh();
+      if (!cancelled) setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [profile, profilesLoading, refresh]);
 
   useEffect(() => {
@@ -179,7 +200,8 @@ function LoadOrderPage() {
           </Link>
           <h1 className="text-3xl font-bold tracking-tight">Load Order</h1>
           <p className="mt-1 max-w-2xl text-sm text-[var(--color-muted)]">
-            Manage mod order and which plugins load in-game. NexusDeck writes{" "}
+            Mods here are scanned from your game's <code className="text-xs">Data</code> folder, so
+            the list matches what's actually deployed. NexusDeck writes{" "}
             <code className="text-xs">plugins.txt</code> before launch so mods stay enabled in
             Creations — no manual toggling needed.
           </p>
@@ -188,12 +210,14 @@ function LoadOrderPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void refresh()}
-            loading={loading}
+            onClick={() => void rescanFromDisk()}
+            loading={rescanning}
+            disabled={rescanning || loading}
             data-focusable="true"
+            title="Re-scan the game Data folder and refresh the list"
           >
             <RefreshCw className="h-4 w-4" />
-            Refresh
+            Rescan
           </Button>
           <LaunchButton profileId={profile.id} gameDomain={domain} compact />
         </div>
@@ -270,7 +294,11 @@ function LoadOrderPage() {
         </Button>
       </div>
 
-      {loading && <p className="text-[var(--color-muted)]">Loading load order…</p>}
+      {loading && (
+        <p className="text-[var(--color-muted)]">
+          {scanningDisk ? "Scanning game Data folder…" : "Loading load order…"}
+        </p>
+      )}
 
       {!loading && state && tab === "mods" && state.mods.length === 0 && (
         <EmptyState

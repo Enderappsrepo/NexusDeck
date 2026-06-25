@@ -98,6 +98,7 @@ function ModBrowserPage() {
     error,
     query,
     sort,
+    filters,
     totalCount,
     hasMore,
     setQuery,
@@ -250,6 +251,13 @@ function ModBrowserPage() {
 
   const isPremium = user?.is_premium ?? false;
   const resultLabel = query.trim() ? `Results for "${query.trim()}"` : "Popular mods";
+  const activeFilterCount = [
+    filters.category,
+    filters.min_endorsements,
+    filters.updated_since_days,
+    filters.hide_adult,
+    filters.tags.length > 0,
+  ].filter(Boolean).length;
 
   return (
     <div className="mx-auto max-w-6xl" data-scroll-pane>
@@ -275,7 +283,7 @@ function ModBrowserPage() {
 
       {/* Page header */}
       <header className="page-hero mb-6">
-        <div className="relative p-6 sm:p-8">
+        <div className="relative p-5 sm:p-8">
           <div
             className={cn(
               "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-40",
@@ -330,33 +338,43 @@ function ModBrowserPage() {
 
       {!user && <SignInPrompt className="mb-4" />}
 
-      {/* Sticky toolbar */}
+      {/* Sticky toolbar — stacks on mobile, spreads out on larger screens */}
       <div className="mods-toolbar">
-        <div className="flex flex-col gap-4 rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-4 shadow-[var(--shadow-md)] sm:p-5">
-          <div className="flex flex-wrap items-end gap-3">
-            <ModSearchBar
-              value={query}
-              onChange={setQuery}
-              onSearch={handleSearch}
-              loading={loading}
-              placeholder={`Search ${profile.name} mods...`}
-              className="min-w-[200px] flex-1"
-            />
+        <div className="flex flex-col gap-3 rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-3 shadow-[var(--shadow-md)] sm:gap-4 sm:p-5">
+          {/* Search gets its own full-width row */}
+          <ModSearchBar
+            value={query}
+            onChange={setQuery}
+            onSearch={handleSearch}
+            loading={loading}
+            placeholder={`Search ${profile.name} mods...`}
+          />
+
+          {/* Sort + filters: full-width stacked controls on mobile, inline on sm+ */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <SegmentedControl
               ariaLabel="Sort mods"
               size="sm"
               value={sort as SortValue}
               onChange={(v) => setSort(v)}
               options={SORT_SEGMENTS}
+              fill
+              className="w-full sm:w-auto"
             />
             <Button
               variant={filtersOpen ? "default" : "secondary"}
               size="lg"
               onClick={() => setFiltersOpen(!filtersOpen)}
-              className="shrink-0"
+              className="w-full shrink-0 sm:w-auto"
+              aria-expanded={filtersOpen}
             >
               <SlidersHorizontal className="h-5 w-5" />
               Filters
+              {activeFilterCount > 0 && (
+                <Badge variant="default" className="ml-1">
+                  {activeFilterCount}
+                </Badge>
+              )}
             </Button>
           </div>
 

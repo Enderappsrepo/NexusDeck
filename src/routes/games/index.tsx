@@ -89,7 +89,7 @@ function GamesPage() {
   return (
     <div className="mx-auto max-w-6xl" data-scroll-pane>
       <section className="page-hero mb-8">
-        <div className="relative overflow-hidden p-8 sm:p-10">
+        <div className="relative overflow-hidden p-5 sm:p-10">
           <div className="pointer-events-none absolute inset-0 bg-[image:var(--gradient-surface)]" />
           <div className="relative">
             <div className="mb-3 flex items-center gap-2">

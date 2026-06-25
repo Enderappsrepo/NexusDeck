@@ -91,8 +91,19 @@ body {
   --font-size-base: 19px;
 }
 
-[data-controller="true"] [data-focusable="true"]:focus-visible,
-[data-controller="true"] .focusable:focus-visible {
+/* The gamepad moves focus with programmatic el.focus(), which does NOT reliably
+   match :focus-visible (the heuristic suppresses the ring after pointer/trackpad
+   use and is inconsistent in WebKitGTK). That left the d-pad silently moving an
+   invisible focus, so the UI felt unresponsive. In controller mode, show the ring
+   on plain :focus for everything reachable by the focus engine. */
+[data-controller="true"] a:focus,
+[data-controller="true"] button:focus,
+[data-controller="true"] input:focus,
+[data-controller="true"] select:focus,
+[data-controller="true"] textarea:focus,
+[data-controller="true"] [tabindex]:focus,
+[data-controller="true"] [data-focusable="true"]:focus,
+[data-controller="true"] .focusable:focus {
   outline: 4px solid var(--color-focus);
   outline-offset: 3px;
   box-shadow: 0 0 0 6px rgba(255, 107, 43, 0.35), var(--shadow-md);
@@ -133,6 +144,24 @@ body:has([data-collection-install-panel]) .app-scroll-pane {
 
 body:has([data-controller-hint-bar]) .app-scroll-pane {
   scroll-padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Compact viewports: the touch-first bottom navigation (BottomNav) is fixed to
+   the bottom edge. Keep scroll content and the floating panels clear of it. */
+body:has([data-bottom-nav]) .app-scroll-pane {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* The download panel docks low (z below the nav) — lift its card above the bar.
+   The install/collection panels already reserve 5.5rem, which clears the nav. */
+body:has([data-bottom-nav]) [data-download-queue-panel] {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Stack the controller hint bar above the nav rather than behind it. */
+body:has([data-bottom-nav]) [data-controller-hint-bar] {
+  bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
 }
 
 @media (min-width: 1280px) {
@@ -500,7 +529,7 @@ body:has([data-controller-hint-bar]) .app-scroll-pane {
 
 .game-banner-content {
   position: relative;
-  padding: 1.75rem;
+  padding: 1.25rem;
 }
 
 @media (min-width: 640px) {

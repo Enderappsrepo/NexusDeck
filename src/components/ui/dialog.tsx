@@ -1,5 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
@@ -37,6 +37,9 @@ export function AppDialog({
   const blockOutside = !dismissible || disableOutsideClose;
   const preventClose = (e: Event) => e.preventDefault();
 
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+
   useEffect(() => {
     if (!open) return;
     gamepadRouter.pushContext("dialog");
@@ -44,11 +47,18 @@ export function AppDialog({
       const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
       if (dialog) focusFirst(dialog);
     });
+    // While the dialog is open, B (back) should close it, not navigate the route
+    // behind it. Top of the back stack wins, so this beats the global handler.
+    // Locked dialogs (an irreversible step in progress) opt out.
+    const unregisterBack = dismissible
+      ? gamepadRouter.pushBackHandler(() => onOpenChangeRef.current(false))
+      : undefined;
     return () => {
       cancelAnimationFrame(frame);
+      unregisterBack?.();
       gamepadRouter.popContext();
     };
-  }, [open]);
+  }, [open, dismissible]);
 
   return (
     <Dialog.Root
@@ -65,13 +75,16 @@ export function AppDialog({
           onPointerDownOutside={blockOutside ? preventClose : undefined}
           onInteractOutside={blockOutside ? preventClose : undefined}
           className={cn(
-            "focusable fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-6 shadow-xl",
+            // Mobile: a thumb-reachable card anchored near the bottom edge.
+            // sm+: classic dead-center modal. Caller `max-w-*` still caps width.
+            "focusable fixed bottom-0 left-1/2 z-50 mb-2 max-h-[90dvh] w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 overflow-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-xl",
+            "sm:bottom-auto sm:top-1/2 sm:mb-0 sm:w-[calc(100%-2rem)] sm:-translate-y-1/2 sm:p-6",
             className
           )}
         >
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
-              <Dialog.Title className="text-2xl font-bold">{title}</Dialog.Title>
+              <Dialog.Title className="text-xl font-bold sm:text-2xl">{title}</Dialog.Title>
               {description && (
                 <Dialog.Description className="mt-2 text-[var(--color-muted)]">
                   {description}

@@ -6,12 +6,14 @@ import {
   applyPerfAttribute,
   detectSteamDeck,
   resolvePerfActive,
+  type NavMode,
   type PerformanceMode,
 } from "@/lib/platform";
 
 const SIDEBAR_COLLAPSED_KEY = "nexusdeck_sidebar_collapsed";
 const GYRO_SCROLL_KEY = "nexusdeck_gyro_scroll";
 const PERF_MODE_KEY = "nexusdeck_perf_mode";
+const NAV_MODE_KEY = "nexusdeck_nav_mode";
 const LEGACY_BATTERY_KEY = "nexusdeck_battery_mode";
 
 function loadPerformanceMode(): PerformanceMode {
@@ -22,9 +24,16 @@ function loadPerformanceMode(): PerformanceMode {
   return "auto";
 }
 
+function loadNavMode(): NavMode {
+  const v = localStorage.getItem(NAV_MODE_KEY);
+  if (v === "auto" || v === "bottom" || v === "sidebar") return v;
+  return "auto";
+}
+
 interface SettingsState {
   downloadSettings: DownloadSettings;
   performanceMode: PerformanceMode;
+  navMode: NavMode;
   deckDetected: boolean;
   perfActive: boolean;
   sidebarCollapsed: boolean;
@@ -33,6 +42,7 @@ interface SettingsState {
   loadSettings: () => Promise<void>;
   setDownloadSettings: (settings: DownloadSettings) => Promise<void>;
   setPerformanceMode: (mode: PerformanceMode) => void;
+  setNavMode: (mode: NavMode) => void;
   setGyroScroll: (enabled: boolean) => void;
   toggleSidebar: () => void;
 }
@@ -48,6 +58,7 @@ applyPerfAttribute(initialPerfActive);
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   downloadSettings: { max_concurrent: 2, speed_limit_kbps: 0, auto_install_after_download: false },
   performanceMode: initialPerfMode,
+  navMode: loadNavMode(),
   deckDetected,
   perfActive: initialPerfActive,
   sidebarCollapsed: localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true",
@@ -75,6 +86,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const perfActive = resolvePerfActive(mode, get().deckDetected);
     applyPerfAttribute(perfActive);
     set({ performanceMode: mode, perfActive });
+  },
+
+  setNavMode: (mode) => {
+    localStorage.setItem(NAV_MODE_KEY, mode);
+    set({ navMode: mode });
   },
 
   setGyroScroll: (enabled) => {

@@ -4,6 +4,11 @@ import { useUiLockStore } from "@/stores/uiLockStore";
 
 const TOP_LEVEL_PATHS = new Set(["/", "/games", "/settings", "/onboarding"]);
 
+// Collapse back invocations that arrive within this window (gamepad B plus the
+// Esc/Backspace Steam mirrors for the same press) so one tap goes back once.
+let lastBackAt = 0;
+const BACK_LOCK_MS = 250;
+
 function normalizePath(pathname: string): string {
   if (pathname === "/") return "/";
   return pathname.replace(/\/+$/, "") || "/";
@@ -22,6 +27,10 @@ export function useAppBack() {
   return useCallback(() => {
     // Don't navigate away while an install is mid-flight.
     if (useUiLockStore.getState().installBusy) return;
+
+    const now = performance.now();
+    if (now - lastBackAt < BACK_LOCK_MS) return;
+    lastBackAt = now;
 
     if (window.history.length > 1) {
       router.history.back();

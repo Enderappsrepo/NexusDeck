@@ -31,11 +31,13 @@ function SettingsPage() {
   const {
     downloadSettings,
     performanceMode,
+    navMode,
     deckDetected,
     gyroScroll,
     loadSettings,
     setDownloadSettings,
     setPerformanceMode,
+    setNavMode,
     setGyroScroll,
   } = useSettingsStore();
   const launchSettings = useLaunchStore((s) => s.settings);
@@ -474,6 +476,27 @@ function SettingsPage() {
                 { value: "auto", label: "Auto" },
                 { value: "on", label: "On" },
                 { value: "off", label: "Off" },
+              ]}
+            />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="min-w-0">
+              <Label>Navigation</Label>
+              <p className="text-sm text-[var(--color-muted)]">
+                Auto uses the touch-friendly bottom bar on a Steam Deck or narrow window and the
+                side rail on wide screens. Force the bottom bar on handhelds that aren't
+                auto-detected (ROG Ally, Legion Go).
+              </p>
+            </div>
+            <SegmentedControl
+              size="sm"
+              ariaLabel="Navigation layout"
+              value={navMode}
+              onChange={setNavMode}
+              options={[
+                { value: "auto", label: "Auto" },
+                { value: "bottom", label: "Bottom bar" },
+                { value: "sidebar", label: "Side rail" },
               ]}
             />
           </div>

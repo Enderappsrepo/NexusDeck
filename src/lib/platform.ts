@@ -9,6 +9,14 @@
 
 export type PerformanceMode = "auto" | "on" | "off";
 
+/**
+ * Primary-navigation preference.
+ * - `auto`   → bottom bar on narrow viewports or a detected Steam Deck, rail otherwise
+ * - `bottom` → always the touch-first bottom bar (force it on undetectable handhelds)
+ * - `sidebar`→ always the desktop left rail
+ */
+export type NavMode = "auto" | "bottom" | "sidebar";
+
 export function detectSteamDeck(): boolean {
   if (typeof window === "undefined" || typeof navigator === "undefined") return false;
   const ua = navigator.userAgent ?? "";
@@ -35,4 +43,20 @@ export function applyPerfAttribute(active: boolean): void {
 export function applyDeckAttribute(deck: boolean): void {
   if (typeof document === "undefined") return;
   document.documentElement.dataset.deck = deck ? "true" : "false";
+}
+
+/**
+ * Resolve whether the compact (bottom-bar) navigation should be used right now.
+ * `narrow` is the live viewport signal (< lg) supplied by the shell; the Deck is
+ * always treated as compact so the primary handheld gets the touch-first bar even
+ * at its 1280px landscape width.
+ */
+export function resolveCompactNav(
+  mode: NavMode,
+  narrow: boolean,
+  deckDetected: boolean
+): boolean {
+  if (mode === "bottom") return true;
+  if (mode === "sidebar") return false;
+  return narrow || deckDetected;
 }

@@ -74,7 +74,7 @@ function HomePage() {
       )}
       {/* Hero */}
       <section className="page-hero">
-        <div className="relative p-8 sm:p-10">
+        <div className="relative p-5 sm:p-10">
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div className="max-w-2xl">
               <div className="mb-4 flex items-center gap-3">

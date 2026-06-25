@@ -8,9 +8,13 @@ import { useGamepadRouterState } from "@/hooks/useGamepadRouter";
 import { useControllerFocus } from "@/hooks/useControllerFocus";
 import { useLaunchStore } from "@/stores/launchStore";
 import { useAuthStore } from "@/stores";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { BackButton } from "@/components/layout/BackButton";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { BottomNav } from "@/components/layout/BottomNav";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
+import { useIsNarrow } from "@/hooks/useMediaQuery";
+import { resolveCompactNav } from "@/lib/platform";
 
 export function AppShell({
   children,
@@ -27,6 +31,10 @@ export function AppShell({
   const dismissToast = useLaunchStore((s) => s.dismissToast);
   const user = useAuthStore((s) => s.user);
   const { controllerActive } = useGamepadRouterState();
+  const navMode = useSettingsStore((s) => s.navMode);
+  const deckDetected = useSettingsStore((s) => s.deckDetected);
+  const narrow = useIsNarrow();
+  const compactNav = resolveCompactNav(navMode, narrow, deckDetected);
   useControllerFocus();
 
   return (
@@ -35,14 +43,14 @@ export function AppShell({
       {updateInfo && (
         <UpdateBanner info={updateInfo} onDismiss={onDismissUpdate} />
       )}
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[image:var(--gradient-surface)] px-6">
-        <div className="flex min-w-0 items-center gap-3">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[image:var(--gradient-surface)] px-4 sm:h-16 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <BackButton />
-          <div className="flex shrink-0 items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[image:var(--gradient-primary)] font-bold text-white shadow-[var(--shadow-glow)]">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[image:var(--gradient-primary)] text-sm font-bold text-white shadow-[var(--shadow-glow)] sm:h-10 sm:w-10 sm:text-base">
               ND
             </div>
-            <span className="truncate text-2xl font-bold tracking-tight">
+            <span className="truncate text-xl font-bold tracking-tight sm:text-2xl">
               Nexus<span className="text-[var(--color-primary)]">Deck</span>
             </span>
           </div>
@@ -73,14 +81,15 @@ export function AppShell({
       </header>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {!hideNav && <Sidebar />}
+        {!hideNav && !compactNav && <Sidebar />}
         <main
-          className="app-scroll-pane min-h-0 flex-1 p-6 scrollbar-thin"
+          className="app-scroll-pane min-h-0 flex-1 p-4 scrollbar-thin sm:p-6"
           data-scroll-pane
         >
           {children}
         </main>
       </div>
+      {!hideNav && compactNav && <BottomNav />}
       <Toaster toasts={toasts} onDismiss={dismissToast} />
     </div>
   );

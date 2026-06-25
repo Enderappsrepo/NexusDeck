@@ -53,6 +53,7 @@ class GamepadRouterImpl {
   private stickDir: FocusDir | null = null;
   private repeatStates = new Map<string, RepeatState>();
   private controllerActive = false;
+  private padConnected = false;
   private hintBarVisible = true;
   private context: InputContext = "global";
   private contextStack: InputContext[] = ["global"];
@@ -94,6 +95,7 @@ class GamepadRouterImpl {
 
   private onConnect = (): void => {
     // A pad just woke up — make sure we're polling at full rate to catch input.
+    this.padConnected = true;
     this.lastActivity = performance.now();
     this.notify();
   };
@@ -101,6 +103,7 @@ class GamepadRouterImpl {
   private onDisconnect = (): void => {
     if (!this.getPad()) {
       this.controllerActive = false;
+      this.padConnected = false;
       document.documentElement.removeAttribute("data-controller");
       this.pressed.clear();
       this.repeatStates.clear();
@@ -110,6 +113,16 @@ class GamepadRouterImpl {
 
   getControllerActive(): boolean {
     return this.controllerActive;
+  }
+
+  /**
+   * Whether a gamepad is currently present. Used to suppress the keyboard/mouse
+   * events Steam Input mirrors for each press, which would otherwise double-fire
+   * navigation. Unlike `controllerActive` this is true before the first press, so
+   * it closes the race where a mirrored key beats the first poll.
+   */
+  isPadConnected(): boolean {
+    return this.padConnected;
   }
 
   getHintBarVisible(): boolean {
@@ -211,6 +224,7 @@ class GamepadRouterImpl {
   private poll = (): void => {
     if (!this.running) return;
     const pad = this.getPad();
+    this.padConnected = !!pad;
     if (pad) {
       this.processButtons(pad);
       this.processAxes(pad);
