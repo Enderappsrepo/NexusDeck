@@ -29,6 +29,7 @@ pub mod launch_config;
 pub mod plugins_txt;
 pub mod pre_launch;
 pub mod process_monitor;
+pub mod host_shell;
 pub mod steam_input_install;
 pub mod steam_launch;
 pub mod script_extender;

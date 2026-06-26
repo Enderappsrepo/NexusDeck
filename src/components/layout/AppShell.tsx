@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "@tanstack/react-router";
 import { Star } from "lucide-react";
 import { GameRunningBanner } from "@/components/launch/GameRunningBanner";
@@ -16,6 +17,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { useIsNarrow } from "@/hooks/useMediaQuery";
 import { resolveCompactNav } from "@/lib/platform";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 export function AppShell({
   children,
@@ -36,7 +38,16 @@ export function AppShell({
   const deckDetected = useSettingsStore((s) => s.deckDetected);
   const narrow = useIsNarrow();
   const compactNav = resolveCompactNav(navMode, narrow, deckDetected);
+  const coarsePointer = useMediaQuery("(pointer: coarse)");
   useControllerFocus();
+
+  useEffect(() => {
+    const touch = compactNav || coarsePointer || deckDetected;
+    document.documentElement.dataset.touch = touch ? "true" : "false";
+    return () => {
+      delete document.documentElement.dataset.touch;
+    };
+  }, [compactNav, coarsePointer, deckDetected]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">

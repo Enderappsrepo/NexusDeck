@@ -4,7 +4,7 @@ NexusDeck ships a **NexusDeck** Steam Input template for the Steam Deck (Neptune
 
 ## Auto-install
 
-When you use **Settings → Add NexusDeck to Steam**, NexusDeck copies `nexusdeck_controller_config.vdf` into Steam’s `controller_base/templates/` folder and registers it in `configset_controller_neptune.vdf` for your Steam user. You can re-run install anytime with the in-app action or `install_nexusdeck_steam_input_layout`.
+When you use **Settings → Add NexusDeck to Steam** (or **Install Steam Input template**), NexusDeck copies `nexusdeck_controller_config.vdf` into Steam’s `controller_base/templates/` folder on every detected Steam install (native and Flatpak) and registers it in `configset_controller_neptune.vdf` for your Steam user.
 
 If the layout is not active in Gaming Mode, open **NexusDeck → Controller → Change layout** and pick **NexusDeck**.
 

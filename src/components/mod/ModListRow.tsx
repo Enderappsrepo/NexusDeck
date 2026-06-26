@@ -34,13 +34,13 @@ export const ModListRow = memo(function ModListRow({
       type="button"
       onClick={openMod}
       className={cn(
-        "mod-list-row focusable group flex w-full items-stretch gap-3 rounded-xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-2.5 text-left shadow-[var(--shadow-sm)] transition-colors hover:border-[var(--color-cyan)]/45 hover:bg-[var(--color-card)]",
+        "mod-list-row focusable group flex w-full min-h-[5.25rem] items-stretch gap-3 rounded-xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-3 text-left shadow-[var(--shadow-sm)] transition-colors hover:border-[var(--color-cyan)]/45 hover:bg-[var(--color-card)] active:bg-[var(--color-card-hover)]",
         className
       )}
       data-focusable="true"
       data-nexus-mod-id={mod.mod_id}
     >
-      <div className="relative h-[4.5rem] w-[4.5rem] shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-[var(--color-secondary)] to-[var(--color-background)] sm:h-20 sm:w-20">
+      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-[var(--color-secondary)] to-[var(--color-background)] sm:h-[4.5rem] sm:w-[4.5rem]">
         {mod.picture_url && !imgFailed ? (
           <img
             src={mod.picture_url}
@@ -67,7 +67,7 @@ export const ModListRow = memo(function ModListRow({
 
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 py-0.5">
         <div className="flex items-start gap-2">
-          <h3 className="line-clamp-2 flex-1 text-sm font-semibold leading-snug group-hover:text-[var(--color-primary)] sm:text-base">
+          <h3 className="line-clamp-2 flex-1 text-base font-semibold leading-snug group-hover:text-[var(--color-primary)] sm:text-base">
             {mod.name}
           </h3>
           {installed && (

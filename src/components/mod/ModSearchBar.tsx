@@ -58,6 +58,7 @@ export function ModSearchBar({
         onFocus={expand}
         data-focusable="true"
         data-mod-search
+        data-touch-target="true"
         aria-label={value.trim() ? `Search: ${value.trim()}. Activate to edit.` : "Open search"}
       >
         <Search className="h-5 w-5 shrink-0 text-[var(--color-cyan)]" aria-hidden="true" />
@@ -97,7 +98,7 @@ export function ModSearchBar({
             type="button"
             variant="ghost"
             size="icon"
-            className="absolute right-1 top-1/2 h-9 w-9 -translate-y-1/2 text-[var(--color-muted)] hover:text-[var(--color-foreground)]"
+            className="absolute right-1 top-1/2 h-11 w-11 min-h-[44px] min-w-[44px] -translate-y-1/2 text-[var(--color-muted)] hover:text-[var(--color-foreground)]"
             onClick={onCollapse}
             aria-label="Collapse search"
             data-focusable="true"

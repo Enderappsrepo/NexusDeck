@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
+import { installMirroredKeySuppressor } from "@/lib/gamepad/suppressMirroredKeys";
 import type { TabHandlerScope } from "@/lib/gamepad/GamepadRouter";
 import type { InputContext } from "@/lib/gamepad/contexts";
 
@@ -60,7 +61,11 @@ export function GamepadRouterProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     gamepadRouter.start();
-    return () => gamepadRouter.stop();
+    const uninstallKeys = installMirroredKeySuppressor();
+    return () => {
+      uninstallKeys();
+      gamepadRouter.stop();
+    };
   }, []);
 
   return (

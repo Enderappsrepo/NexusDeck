@@ -7,6 +7,7 @@ use crate::db::{self, LaunchConfig, Profile, SteamShortcutRecord};
 use crate::error::{NexusDeckError, Result};
 use crate::games::GameRegistry;
 use crate::services::platform;
+use crate::services::host_shell::run_host_bash;
 use crate::services::steam_input_install::{self, SteamInputInstallResult};
 use crate::services::steam::find_game_by_app_id;
 use crate::services::steam_launch::detect_steam_launch_info;
@@ -418,18 +419,6 @@ fn shortcut_exists(path: &Path, exe: &str, name: &str) -> bool {
     };
     existing.contains(&format!("\"Exe\"\t\t\"{exe}\""))
         || existing.contains(&format!("\"AppName\"\t\t\"{name}\""))
-}
-
-fn run_host_bash(script: &str) -> Result<std::process::Output> {
-    let output = if platform::is_flatpak_sandbox() {
-        Command::new("flatpak-spawn")
-            .args(["--host", "bash", "-lc", script])
-            .output()
-    } else {
-        Command::new("bash").args(["-lc", script]).output()
-    }
-    .map_err(|e| NexusDeckError::Other(format!("Host command failed: {e}")))?;
-    Ok(output)
 }
 
 /// True when the Steam client is running on the host (native or Flatpak).

@@ -74,6 +74,7 @@ function SettingsPage() {
   const [logsDir, setLogsDir] = useState<string | null>(null);
   const [verboseLogging, setVerboseLogging] = useState(false);
   const [exportingLogs, setExportingLogs] = useState(false);
+  const [installingSteamInput, setInstallingSteamInput] = useState(false);
   const [protonMasterLogPath, setProtonMasterLogPath] = useState<string | null>(null);
   const [protonLogPreview, setProtonLogPreview] = useState<string | null>(null);
   const [loadingProtonLog, setLoadingProtonLog] = useState(false);
@@ -242,6 +243,18 @@ function SettingsPage() {
       }
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const installSteamInputLayout = async () => {
+    setInstallingSteamInput(true);
+    try {
+      const result = await api.installNexusDeckSteamInputLayout("NexusDeck");
+      alert(result.message);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstallingSteamInput(false);
     }
   };
 
@@ -548,7 +561,20 @@ function SettingsPage() {
               <li>{GAMEPAD_HINTS.launch}: Quick launch / context (Y)</li>
               <li>{GAMEPAD_HINTS.menu}: Search / command palette (Menu)</li>
             </ul>
-            <p className="mt-3">
+            <p className="mt-3 flex flex-wrap gap-3">
+              {isLinux && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  loading={installingSteamInput}
+                  disabled={installingSteamInput}
+                  data-focusable="true"
+                  onClick={() => void installSteamInputLayout()}
+                >
+                  Install Steam Input template
+                </Button>
+              )}
               <button
                 type="button"
                 className="focusable text-[var(--color-primary)] underline"

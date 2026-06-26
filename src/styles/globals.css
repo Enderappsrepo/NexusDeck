@@ -424,30 +424,13 @@ body:has([data-bottom-nav]) [data-controller-hint-bar] {
 }
 
 .mods-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  margin-bottom: 1.5rem;
-  padding: 1rem 0;
-  background: linear-gradient(180deg, var(--color-background) 70%, transparent);
-  backdrop-filter: blur(8px);
+  position: relative;
+  z-index: 1;
+  margin-bottom: 1rem;
 }
 
-/* Controller/keyboard focus: keep a focused mod card clear of the sticky
-   toolbar when .focus() scrolls it into view (the toolbar stacks taller on
-   mobile, so reserve more there). */
-body:has(.mods-toolbar) .app-scroll-pane {
-  scroll-padding-top: 9rem;
-}
-@media (max-width: 639px) {
-  body:has(.mods-toolbar) .app-scroll-pane {
-    scroll-padding-top: 6.5rem;
-  }
-}
-@media (min-width: 640px) {
-  body:has(.mods-toolbar) .app-scroll-pane {
-    scroll-padding-top: 7rem;
-  }
+.mods-page-compact .mods-toolbar {
+  margin-bottom: 0.75rem;
 }
 
 .mod-grid {
@@ -497,6 +480,12 @@ body:has(.mods-toolbar) .app-scroll-pane {
   .mods-page-compact {
     --spacing-page: 1rem;
   }
+
+  .mods-page-compact .game-nav-chip {
+    min-height: 44px;
+    padding: 0.5rem 1rem;
+    font-size: 0.9375rem;
+  }
 }
 
 /* Off-screen cards/rows skip layout + paint but stay in the DOM, so controller
@@ -530,6 +519,73 @@ body:has(.mods-toolbar) .app-scroll-pane {
   border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
   color: var(--color-foreground);
   background: var(--color-card);
+}
+
+/* Touch / Deck: larger tap targets, no double-tap zoom delay on controls */
+[data-deck="true"],
+[data-touch="true"] {
+  -webkit-tap-highlight-color: rgba(255, 107, 43, 0.12);
+}
+
+[data-deck="true"] button,
+[data-deck="true"] a,
+[data-deck="true"] [role="tab"],
+[data-deck="true"] [data-focusable="true"],
+[data-touch="true"] button,
+[data-touch="true"] a,
+[data-touch="true"] [role="tab"],
+[data-touch="true"] [data-focusable="true"] {
+  touch-action: manipulation;
+}
+
+[data-deck="true"] .game-nav-chip,
+[data-touch="true"] .game-nav-chip {
+  min-height: 44px;
+  padding: 0.625rem 1.125rem;
+  font-size: 0.9375rem;
+}
+
+[data-deck="true"] .mod-list-row,
+[data-touch="true"] .mod-list-row {
+  min-height: 5.75rem;
+  padding: 0.75rem 0.875rem;
+  gap: 0.875rem;
+}
+
+[data-deck="true"] .mod-list-row:active,
+[data-touch="true"] .mod-list-row:active {
+  background: var(--color-card-hover);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+}
+
+[data-deck="true"] [role="tablist"] [role="tab"],
+[data-touch="true"] [role="tablist"] [role="tab"] {
+  min-height: 52px;
+  padding-inline: 1rem;
+}
+
+[data-deck="true"] header button,
+[data-touch="true"] header button {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+[data-deck="true"] .app-scroll-pane,
+[data-touch="true"] .app-scroll-pane {
+  padding-inline: max(1rem, env(safe-area-inset-left, 0px))
+    max(1rem, env(safe-area-inset-right, 0px));
+}
+
+[data-deck="true"] [data-bottom-nav] .focusable,
+[data-touch="true"] [data-bottom-nav] .focusable {
+  min-height: 56px;
+  padding-block: 0.375rem;
+}
+
+[data-deck="true"] [data-bottom-nav] .h-6,
+[data-touch="true"] [data-bottom-nav] .h-6 {
+  height: 1.75rem;
+  width: 1.75rem;
 }
 
 /* Theme-styled native range slider. Targets the two Tauri webviews
@@ -624,11 +680,10 @@ body:has(.mods-toolbar) .app-scroll-pane {
   --shadow-lg: 0 8px 20px -6px rgba(0, 0, 0, 0.55);
 }
 
-/* Backdrop blur is the single most expensive effect here — the sticky mods
-   toolbar otherwise re-rasterizes the blurred backdrop on every scroll frame. */
+/* Backdrop blur is the single most expensive effect here — strip it in perf
+   mode on any remaining blurred surfaces. */
 [data-perf="true"] .mods-toolbar {
   backdrop-filter: none;
-  background: var(--color-background);
 }
 
 [data-perf="true"] [class*="backdrop-blur"] {

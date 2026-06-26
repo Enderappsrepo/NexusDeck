@@ -136,7 +136,7 @@ function ModBrowserPage() {
   const narrow = useIsNarrow();
   const deckDetected = useSettingsStore((s) => s.deckDetected);
   const compactBrowse = narrow || deckDetected;
-  const [searchExpanded, setSearchExpanded] = useState(() => !(narrow || deckDetected));
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const { controllerActive } = useGamepadRouterState();
   const autoFocusedRef = useRef(false);
 
@@ -460,7 +460,7 @@ function ModBrowserPage() {
 
       {!user && <SignInPrompt className="mb-4" />}
 
-      {/* Sticky toolbar — stacks on mobile, spreads out on larger screens */}
+      {/* Search & filters — scrolls with the page so the mod list keeps full height */}
       <div className="mods-toolbar">
         <div className="mods-toolbar-inner flex flex-col gap-3 rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-3 shadow-[var(--shadow-md)] sm:gap-4 sm:p-5">
           <ModSearchBar
