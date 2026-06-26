@@ -6,4 +6,5 @@ export const DEFAULT_FILTERS: ModSearchFilters = {
   min_endorsements: null,
   hide_adult: false,
   updated_since_days: null,
+  author: null,
 };

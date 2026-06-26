@@ -10,6 +10,7 @@ import {
 import { ModListRow } from "@/components/mod/ModListRow";
 import { ModSearchBar } from "@/components/mod/ModSearchBar";
 import { ModFilterPanel } from "@/components/mod/ModFilterPanel";
+import { ModActiveFilterPills } from "@/components/mod/ModActiveFilterPills";
 import { ModCard } from "@/components/mod/ModCard";
 import { ImportModDialog } from "@/components/mod/ImportModDialog";
 import { PostSetupBanner } from "@/components/game/PostSetupBanner";
@@ -17,6 +18,7 @@ import { SetupRequiredState } from "@/components/game/SetupRequiredState";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { AppDialog } from "@/components/ui/dialog";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -70,6 +72,20 @@ function parseFiltersFromSearch(search: Record<string, unknown>): ModSearchFilte
     hide_adult: search.hideAdult === true || search.hideAdult === "true",
     updated_since_days:
       typeof search.updatedDays === "number" ? search.updatedDays : null,
+    author: typeof search.author === "string" ? search.author : null,
+  };
+}
+
+function buildSearchFromState(query: string, filters: ModSearchFilters): ModsSearch {
+  return {
+    q: query.trim() || undefined,
+    modId: undefined,
+    category: filters.category ?? undefined,
+    tags: filters.tags.length > 0 ? filters.tags.join(",") : undefined,
+    minEndorsements: filters.min_endorsements ?? undefined,
+    hideAdult: filters.hide_adult || undefined,
+    updatedDays: filters.updated_since_days ?? undefined,
+    author: filters.author?.trim() || undefined,
   };
 }
 
@@ -82,6 +98,7 @@ export interface ModsSearch {
   minEndorsements?: number;
   hideAdult?: boolean;
   updatedDays?: number;
+  author?: string;
 }
 
 export const Route = createFileRoute("/games/$domain/mods/")({
@@ -96,6 +113,7 @@ export const Route = createFileRoute("/games/$domain/mods/")({
       typeof s.minEndorsements === "number" ? s.minEndorsements : undefined,
     hideAdult: s.hideAdult === true || s.hideAdult === "true" ? true : undefined,
     updatedDays: typeof s.updatedDays === "number" ? s.updatedDays : undefined,
+    author: typeof s.author === "string" ? s.author : undefined,
   }),
 });
 
@@ -126,7 +144,8 @@ function ModBrowserPage() {
   const setProgress = useDownloadsStore((s) => s.setProgress);
   const profile = getProfile(domain);
   const [importOpen, setImportOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersDialogOpen, setFiltersDialogOpen] = useState(false);
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
   const [supportedGames, setSupportedGames] = useState<SupportedGameInfo[]>([]);
   const [installedIds, setInstalledIds] = useState<Set<number>>(new Set());
   const [welcomeDismissed, setWelcomeDismissed] = useState(
@@ -136,7 +155,6 @@ function ModBrowserPage() {
   const narrow = useIsNarrow();
   const deckDetected = useSettingsStore((s) => s.deckDetected);
   const compactBrowse = narrow || deckDetected;
-  const [searchExpanded, setSearchExpanded] = useState(false);
   const { controllerActive } = useGamepadRouterState();
   const autoFocusedRef = useRef(false);
 
@@ -145,20 +163,14 @@ function ModBrowserPage() {
   }, []);
 
   useEffect(() => {
-    if (!compactBrowse) {
-      setSearchExpanded(true);
-      return;
-    }
-    if (query.trim()) {
-      setSearchExpanded(true);
-    }
-  }, [compactBrowse, query]);
-
-  useEffect(() => {
-    const onExpandSearch = () => setSearchExpanded(true);
+    const onExpandSearch = () => {
+      if (compactBrowse) {
+        setSearchDialogOpen(true);
+      }
+    };
     window.addEventListener("nexusdeck-expand-mod-search", onExpandSearch);
     return () => window.removeEventListener("nexusdeck-expand-mod-search", onExpandSearch);
-  }, []);
+  }, [compactBrowse]);
 
   // Controller: once results land, move focus onto the first mod card so the
   // d-pad goes mod→mod immediately instead of starting on the page chrome.
@@ -169,7 +181,7 @@ function ModBrowserPage() {
       autoFocusedRef.current = false;
       return;
     }
-    if (autoFocusedRef.current || !controllerActive || mods.length === 0 || filtersOpen) {
+    if (autoFocusedRef.current || !controllerActive || mods.length === 0 || filtersDialogOpen || searchDialogOpen) {
       return;
     }
     const active = document.activeElement as HTMLElement | null;
@@ -179,7 +191,7 @@ function ModBrowserPage() {
       document.querySelector<HTMLElement>("[data-nexus-mod-id]")?.focus();
     });
     return () => cancelAnimationFrame(raf);
-  }, [loading, controllerActive, mods.length, filtersOpen]);
+  }, [loading, controllerActive, mods.length, filtersDialogOpen, searchDialogOpen]);
 
   useGamepadTabs([...SORT_OPTIONS], sort, setSort);
 
@@ -282,49 +294,47 @@ function ModBrowserPage() {
     navigate({
       to: "/games/$domain/mods",
       params: { domain },
-      search: {
-        q: currentQuery.trim() || undefined,
-        modId: undefined,
-        category: filters.category ?? undefined,
-        tags: filters.tags.length > 0 ? filters.tags.join(",") : undefined,
-        minEndorsements: filters.min_endorsements ?? undefined,
-        hideAdult: filters.hide_adult || undefined,
-        updatedDays: filters.updated_since_days ?? undefined,
-      },
+      search: buildSearchFromState(currentQuery, filters),
     });
+    setFiltersDialogOpen(false);
   };
 
   const handleSearch = () => {
     navigate({
       to: "/games/$domain/mods",
       params: { domain },
-      search: {
-        q: query.trim() || undefined,
-        modId: undefined,
-        category: search.category,
-        tags: search.tags,
-        minEndorsements: search.minEndorsements,
-        hideAdult: search.hideAdult,
-        updatedDays: search.updatedDays,
-      },
+      search: buildSearchFromState(query, filters),
+    });
+    setSearchDialogOpen(false);
+  };
+
+  const clearSearch = () => {
+    setQuery("");
+    navigate({
+      to: "/games/$domain/mods",
+      params: { domain },
+      search: buildSearchFromState("", filters),
+    });
+  };
+
+  const applyQuickPreset = (patch: Partial<ModSearchFilters>) => {
+    const next = { ...filters, ...patch };
+    setFilters(next);
+    navigate({
+      to: "/games/$domain/mods",
+      params: { domain },
+      search: buildSearchFromState(query, next),
     });
   };
 
   // One-tap category filter from the inline chip row (no need to open Filters).
   const selectCategory = (category: string | null) => {
-    setFilters({ ...filters, category });
+    const next = { ...filters, category };
+    setFilters(next);
     navigate({
       to: "/games/$domain/mods",
       params: { domain },
-      search: {
-        q: query.trim() || undefined,
-        modId: undefined,
-        category: category ?? undefined,
-        tags: search.tags,
-        minEndorsements: search.minEndorsements,
-        hideAdult: search.hideAdult,
-        updatedDays: search.updatedDays,
-      },
+      search: buildSearchFromState(query, next),
     });
   };
 
@@ -341,9 +351,14 @@ function ModBrowserPage() {
   const showWelcomeBanner = search.welcome === "1" && !welcomeDismissed;
 
   const isPremium = user?.is_premium ?? false;
-  const resultLabel = query.trim() ? `Results for "${query.trim()}"` : "Popular mods";
+  const resultLabel = filters.author?.trim()
+    ? `Mods by ${filters.author.trim()}`
+    : query.trim()
+      ? `Results for "${query.trim()}"`
+      : "Popular mods";
   const activeFilterCount = [
     filters.category,
+    filters.author,
     filters.min_endorsements,
     filters.updated_since_days,
     filters.hide_adult,
@@ -460,56 +475,127 @@ function ModBrowserPage() {
 
       {!user && <SignInPrompt className="mb-4" />}
 
-      {/* Search & filters — scrolls with the page so the mod list keeps full height */}
-      <div className="mods-toolbar">
-        <div className="mods-toolbar-inner flex flex-col gap-3 rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-3 shadow-[var(--shadow-md)] sm:gap-4 sm:p-5">
-          <ModSearchBar
-            value={query}
-            onChange={setQuery}
-            onSearch={handleSearch}
-            loading={loading}
-            placeholder={`Search ${profile.name} mods...`}
-            compact={compactBrowse}
-            collapsible={compactBrowse}
-            collapsed={compactBrowse && !searchExpanded}
-            onExpand={() => setSearchExpanded(true)}
-            onCollapse={() => setSearchExpanded(false)}
-          />
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <SegmentedControl
-              ariaLabel="Sort mods"
-              size="sm"
-              value={sort as SortValue}
-              onChange={(v) => setSort(v)}
-              options={compactBrowse ? SORT_SEGMENTS_COMPACT : SORT_SEGMENTS}
-              fill
-              className="w-full sm:w-auto"
-            />
-            <Button
-              variant={filtersOpen ? "default" : "secondary"}
-              size="lg"
-              onClick={() => setFiltersOpen(!filtersOpen)}
-              className="w-full shrink-0 sm:w-auto"
-              aria-expanded={filtersOpen}
-            >
-              <SlidersHorizontal className="h-5 w-5" />
-              Filters
-              {activeFilterCount > 0 && (
-                <Badge variant="default" className="ml-1">
-                  {activeFilterCount}
-                </Badge>
-              )}
-            </Button>
-          </div>
-
-          {filtersOpen && (
-            <ModFilterPanel onApply={applyFiltersToUrl} embedded />
+      {/* Results header — above controls so mod list starts sooner when scrolling */}
+      <div className="page-header mb-3 sm:mb-4">
+        <div className="min-w-0">
+          <h2 className="page-header-title truncate">{resultLabel}</h2>
+          {!loading && (
+            <p className="page-header-subtitle">
+              {totalCount > 0
+                ? `${mods.length.toLocaleString()} of ${totalCount.toLocaleString()}`
+                : mods.length > 0
+                  ? `${mods.length} mods`
+                  : "No results"}
+            </p>
           )}
         </div>
+        {!compactBrowse && !loading && mods.length > 0 && (
+          <div className="hidden flex-wrap gap-2 sm:flex">
+            <span className="stat-pill">
+              <Heart className="h-3.5 w-3.5" />
+              Sorted by {sort === "endorsements" ? "endorsements" : sort === "downloads" ? "downloads" : "update date"}
+            </span>
+            {(query.trim() || activeFilterCount > 0) && (
+              <span className="stat-pill">
+                <Search className="h-3.5 w-3.5" />
+                {query.trim() ? "Search active" : "Filters active"}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Category quick-filter chips — one tap, no need to open Filters */}
+      {/* Slim browse controls — scrolls away with content (never sticky) */}
+      <div className="mod-browse-actions">
+        {compactBrowse ? (
+          <Button
+            variant={query.trim() ? "default" : "secondary"}
+            size="lg"
+            onClick={() => setSearchDialogOpen(true)}
+            className="shrink-0"
+            data-mod-search
+            data-touch-target="true"
+          >
+            <Search className="h-5 w-5" />
+            {query.trim() ? "Search active" : "Search"}
+          </Button>
+        ) : (
+          <div className="mod-browse-search min-w-[min(100%,280px)] flex-1">
+            <ModSearchBar
+              value={query}
+              onChange={setQuery}
+              onSearch={handleSearch}
+              loading={loading}
+              placeholder={`Search ${profile.name} mods...`}
+              compact
+            />
+          </div>
+        )}
+
+        <Button
+          variant={activeFilterCount > 0 ? "default" : "secondary"}
+          size="lg"
+          onClick={() => setFiltersDialogOpen(true)}
+          className="shrink-0"
+          aria-expanded={filtersDialogOpen}
+        >
+          <SlidersHorizontal className="h-5 w-5" />
+          Filters
+          {activeFilterCount > 0 && (
+            <Badge variant="default" className="ml-1">
+              {activeFilterCount}
+            </Badge>
+          )}
+        </Button>
+
+        <SegmentedControl
+          ariaLabel="Sort mods"
+          size="sm"
+          value={sort as SortValue}
+          onChange={(v) => setSort(v)}
+          options={compactBrowse ? SORT_SEGMENTS_COMPACT : SORT_SEGMENTS}
+          fill={compactBrowse}
+          className={cn("shrink-0", compactBrowse ? "min-w-[9rem] flex-1" : "w-auto")}
+        />
+      </div>
+
+      {/* One-tap quick filters */}
+      <div className="mb-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <button
+          type="button"
+          onClick={() => applyQuickPreset({ min_endorsements: 1000 })}
+          className="game-nav-chip focusable shrink-0"
+          data-focusable="true"
+        >
+          Popular
+        </button>
+        <button
+          type="button"
+          onClick={() => applyQuickPreset({ updated_since_days: 30 })}
+          className="game-nav-chip focusable shrink-0"
+          data-focusable="true"
+        >
+          Recent
+        </button>
+        <button
+          type="button"
+          onClick={() => applyQuickPreset({ hide_adult: true })}
+          className="game-nav-chip focusable shrink-0"
+          data-focusable="true"
+        >
+          Hide adult
+        </button>
+      </div>
+
+      <ModActiveFilterPills
+        filters={filters}
+        query={query}
+        onClearQuery={clearSearch}
+        onUpdateFilters={(patch) => setFilters({ ...filters, ...patch })}
+        onApply={applyFiltersToUrl}
+      />
+
+      {/* Category quick-filter chips */}
       {categories.length > 0 && (
         <div className="mb-5 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
@@ -541,36 +627,6 @@ function ModBrowserPage() {
           ))}
         </div>
       )}
-
-      {/* Results header */}
-      <div className="page-header mb-4 sm:mb-5">
-        <div className="min-w-0">
-          <h2 className="page-header-title truncate">{resultLabel}</h2>
-          {!loading && (
-            <p className="page-header-subtitle">
-              {totalCount > 0
-                ? `${mods.length.toLocaleString()} of ${totalCount.toLocaleString()}`
-                : mods.length > 0
-                  ? `${mods.length} mods`
-                  : "No results"}
-            </p>
-          )}
-        </div>
-        {!compactBrowse && !loading && mods.length > 0 && (
-          <div className="hidden flex-wrap gap-2 sm:flex">
-            <span className="stat-pill">
-              <Heart className="h-3.5 w-3.5" />
-              Sorted by {sort === "endorsements" ? "endorsements" : sort === "downloads" ? "downloads" : "update date"}
-            </span>
-            {query.trim() && (
-              <span className="stat-pill">
-                <Search className="h-3.5 w-3.5" />
-                Search active
-              </span>
-            )}
-          </div>
-        )}
-      </div>
 
       {error && (
         <ApiErrorBanner
@@ -659,6 +715,36 @@ function ModBrowserPage() {
         onOpenChange={setImportOpen}
         profile={profile}
       />
+
+      <AppDialog
+        open={searchDialogOpen}
+        onOpenChange={setSearchDialogOpen}
+        title="Search mods"
+        description={`Find mods for ${profile.name}`}
+      >
+        <ModSearchBar
+          value={query}
+          onChange={setQuery}
+          onSearch={handleSearch}
+          loading={loading}
+          placeholder={`Search ${profile.name} mods...`}
+          compact
+        />
+      </AppDialog>
+
+      <AppDialog
+        open={filtersDialogOpen}
+        onOpenChange={setFiltersDialogOpen}
+        title="Filter mods"
+        description="Narrow results by author, category, endorsements, and more."
+        className="max-w-xl"
+      >
+        <ModFilterPanel
+          onApply={applyFiltersToUrl}
+          embedded
+          applyPresetsImmediately
+        />
+      </AppDialog>
     </div>
   );
 }

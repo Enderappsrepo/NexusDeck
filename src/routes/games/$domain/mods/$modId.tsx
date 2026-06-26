@@ -150,6 +150,14 @@ function ModDetailPage() {
     });
   };
 
+  const filterByAuthor = (author: string) => {
+    navigate({
+      to: "/games/$domain/mods",
+      params: { domain },
+      search: { author, modId: undefined },
+    });
+  };
+
   const galleryLength = useMemo(() => {
     if (!detail) return 0;
     if (detail.screenshots.length > 0) return detail.screenshots.length;
@@ -272,6 +280,7 @@ function ModDetailPage() {
         onTrack={toggleTrack}
         onOpenNexus={openOnNexus}
         onFilterTag={filterByTag}
+        onFilterAuthor={filterByAuthor}
       />
 
       {installFile && (

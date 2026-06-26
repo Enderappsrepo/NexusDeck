@@ -69,6 +69,8 @@ pub struct ModSearchFilters {
     pub min_endorsements: Option<u64>,
     pub hide_adult: bool,
     pub updated_since_days: Option<u32>,
+    #[serde(default)]
+    pub author: Option<String>,
 }
 
 impl Default for ModSearchFilters {
@@ -79,6 +81,7 @@ impl Default for ModSearchFilters {
             min_endorsements: None,
             hide_adult: false,
             updated_since_days: None,
+            author: None,
         }
     }
 }
@@ -472,6 +475,15 @@ impl NexusClient {
             filter_parts.push(serde_json::json!({
                 "updatedAt": [{ "value": since.to_rfc3339(), "op": "GTE" }]
             }));
+        }
+
+        if let Some(author) = &filters.author {
+            let author = author.trim();
+            if !author.is_empty() {
+                filter_parts.push(serde_json::json!({
+                    "author": [{ "value": author, "op": "EQUALS" }]
+                }));
+            }
         }
 
         if filter_parts.len() == 1 {

@@ -35,17 +35,37 @@ function FilterChip({
   );
 }
 
+const QUICK_PRESETS: { label: string; patch: Partial<ModSearchFilters> }[] = [
+  { label: "Popular (1k+)", patch: { min_endorsements: 1000 } },
+  { label: "Recent (30d)", patch: { updated_since_days: 30 } },
+  { label: "Hide adult", patch: { hide_adult: true } },
+];
+
 interface ModFilterPanelProps {
   onApply: () => void;
   embedded?: boolean;
+  /** Apply preset filters immediately (dialog mode). */
+  applyPresetsImmediately?: boolean;
 }
 
-export function ModFilterPanel({ onApply, embedded = false }: ModFilterPanelProps) {
+export function ModFilterPanel({
+  onApply,
+  embedded = false,
+  applyPresetsImmediately = false,
+}: ModFilterPanelProps) {
   const { filters, categories, categoriesLoading, setFilters } = useModsStore();
   const [expanded, setExpanded] = useState(embedded);
 
   const update = (patch: Partial<ModSearchFilters>) => {
     setFilters({ ...filters, ...patch });
+  };
+
+  const applyPreset = (patch: Partial<ModSearchFilters>) => {
+    const next = { ...filters, ...patch };
+    setFilters(next);
+    if (applyPresetsImmediately) {
+      onApply();
+    }
   };
 
   const clearFilters = () => {
@@ -55,6 +75,7 @@ export function ModFilterPanel({ onApply, embedded = false }: ModFilterPanelProp
 
   const activeCount = [
     filters.category,
+    filters.author,
     filters.min_endorsements,
     filters.updated_since_days,
     filters.hide_adult,
@@ -63,6 +84,21 @@ export function ModFilterPanel({ onApply, embedded = false }: ModFilterPanelProp
 
   const filterFields = (
     <div className="space-y-4">
+      <div className="space-y-2">
+        <span className="text-sm font-medium text-[var(--color-muted)]">Quick presets</span>
+        <div className="flex flex-wrap gap-2">
+          {QUICK_PRESETS.map((preset) => (
+            <FilterChip
+              key={preset.label}
+              active={false}
+              onClick={() => applyPreset(preset.patch)}
+            >
+              {preset.label}
+            </FilterChip>
+          ))}
+        </div>
+      </div>
+
       <div className="flex justify-end">
         <Button variant="ghost" size="sm" onClick={clearFilters}>
           Clear all
@@ -89,6 +125,19 @@ export function ModFilterPanel({ onApply, embedded = false }: ModFilterPanelProp
           ))}
         </div>
       </div>
+
+      <label className="block space-y-2">
+        <span className="text-sm font-medium text-[var(--color-muted)]">Author</span>
+        <input
+          type="text"
+          value={filters.author ?? ""}
+          onChange={(e) => update({ author: e.target.value.trim() || null })}
+          className="focusable h-12 w-full rounded-xl border-2 border-[var(--color-border)] bg-[var(--color-secondary)] px-3"
+          data-focusable="true"
+          placeholder="Exact author name"
+          autoComplete="off"
+        />
+      </label>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-2">

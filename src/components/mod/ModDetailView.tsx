@@ -21,7 +21,7 @@ import { Progress } from "@/components/ui/progress";
 import { ModFileSections, groupModFiles } from "@/components/mod/ModFileSections";
 import { DependencyPanel } from "@/components/deps/DependencyPanel";
 import type { DownloadProgress, InstalledMod, ModDetail, ModFileInfo, Profile } from "@/lib/nexus/types";
-import { formatBytes, formatDate, formatNumber, formatRelativeDate } from "@/lib/utils";
+import { formatBytes, formatDate, formatNumber, formatRelativeDate, cn } from "@/lib/utils";
 
 export const MOD_DETAIL_TABS = ["overview", "about", "files"] as const;
 export type ModDetailTab = (typeof MOD_DETAIL_TABS)[number];
@@ -54,6 +54,7 @@ interface ModDetailViewProps {
   onTrack: () => void;
   onOpenNexus: () => void;
   onFilterTag: (tag: string) => void;
+  onFilterAuthor?: (author: string) => void;
 }
 
 export function ModDetailView({
@@ -84,6 +85,7 @@ export function ModDetailView({
   onTrack,
   onOpenNexus,
   onFilterTag,
+  onFilterAuthor,
 }: ModDetailViewProps) {
   const { mainFiles } = useMemo(() => groupModFiles(files), [files]);
   const primaryFile = mainFiles.find((f) => f.is_primary) ?? mainFiles[0];
@@ -185,7 +187,19 @@ export function ModDetailView({
           <div className="flex flex-wrap gap-3">
             <MetricPill icon={Heart} label={formatNumber(detail.endorsements)} />
             <MetricPill icon={Download} label={formatNumber(detail.mod_downloads)} />
-            <MetricPill icon={User} label={detail.author} />
+            {onFilterAuthor && detail.author ? (
+              <button
+                type="button"
+                onClick={() => onFilterAuthor(detail.author)}
+                className="focusable"
+                data-focusable="true"
+                aria-label={`Browse more mods by ${detail.author}`}
+              >
+                <MetricPill icon={User} label={detail.author} interactive />
+              </button>
+            ) : (
+              <MetricPill icon={User} label={detail.author} />
+            )}
             <MetricPill label={formatRelativeDate(detail.updated_timestamp)} />
           </div>
 
@@ -242,7 +256,15 @@ export function ModDetailView({
               <Card className="p-5">
                 <h2 className="mb-4 text-lg font-semibold">Details</h2>
                 <dl className="grid gap-4 sm:grid-cols-2">
-                  <DetailRow label="Author" value={detail.author} />
+                  {onFilterAuthor && detail.author ? (
+                    <DetailRow
+                      label="Author"
+                      value={detail.author}
+                      onClick={() => onFilterAuthor(detail.author)}
+                    />
+                  ) : (
+                    <DetailRow label="Author" value={detail.author} />
+                  )}
                   <DetailRow label="Uploader" value={detail.uploader} />
                   <DetailRow label="Category" value={detail.category} />
                   <DetailRow label="Last updated" value={formatDate(detail.updated_timestamp)} />
@@ -413,6 +435,19 @@ export function ModDetailView({
             </Link>
           )}
 
+          {onFilterAuthor && detail.author && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => onFilterAuthor(detail.author)}
+              data-focusable="true"
+            >
+              <User className="h-4 w-4" />
+              More mods by {detail.author}
+            </Button>
+          )}
+
           {detail.tags.length > 0 && (
             <Card className="p-4">
               <h3 className="mb-3 text-sm font-semibold text-[var(--color-muted)]">Tags</h3>
@@ -440,19 +475,53 @@ export function ModDetailView({
 function MetricPill({
   icon: Icon,
   label,
+  interactive = false,
 }: {
   icon?: ComponentType<{ className?: string }>;
   label: string;
+  interactive?: boolean;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-card)]/80 px-3 py-1.5 text-sm backdrop-blur-sm">
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-card)]/80 px-3 py-1.5 text-sm backdrop-blur-sm",
+        interactive &&
+          "border-[var(--color-primary)]/40 transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
+      )}
+    >
       {Icon && <Icon className="h-3.5 w-3.5 text-[var(--color-muted)]" />}
       <span className="font-medium">{label}</span>
     </span>
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({
+  label,
+  value,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  onClick?: () => void;
+}) {
+  if (onClick) {
+    return (
+      <div>
+        <dt className="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{label}</dt>
+        <dd className="mt-1">
+          <button
+            type="button"
+            onClick={onClick}
+            className="focusable font-medium text-[var(--color-primary)] hover:underline"
+            data-focusable="true"
+          >
+            {value}
+          </button>
+        </dd>
+      </div>
+    );
+  }
+
   return (
     <div>
       <dt className="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{label}</dt>

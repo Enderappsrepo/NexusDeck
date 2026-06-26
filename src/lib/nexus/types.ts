@@ -379,6 +379,7 @@ export interface ModSearchFilters {
   min_endorsements?: number | null;
   hide_adult: boolean;
   updated_since_days?: number | null;
+  author?: string | null;
 }
 
 export interface ModSearchResult {

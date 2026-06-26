@@ -423,9 +423,25 @@ body:has([data-bottom-nav]) [data-controller-hint-bar] {
   color: var(--color-muted);
 }
 
+.mod-browse-actions {
+  position: static !important;
+  top: auto !important;
+  z-index: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.mod-browse-search {
+  min-width: 0;
+}
+
 .mods-toolbar {
-  position: relative;
-  z-index: 1;
+  position: static !important;
+  top: auto !important;
+  z-index: auto;
   margin-bottom: 1rem;
 }
 
