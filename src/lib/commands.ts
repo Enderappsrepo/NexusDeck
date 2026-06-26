@@ -44,6 +44,7 @@ import type {
   PlaytimeStats,
   SteamShortcutInfo,
   NexusDeckSteamShortcutResult,
+  SteamInputInstallResult,
   GameSettingsSchema,
   GameSettingsValues,
   ApplyGameSettingsResult,
@@ -615,6 +616,11 @@ export const api = {
     invoke<NexusDeckSteamShortcutResult>("add_nexusdeck_to_steam_when_ready", {
       name: name ?? null,
       timeoutSecs: timeoutSecs ?? null,
+    }),
+
+  installNexusDeckSteamInputLayout: (name?: string) =>
+    invoke<SteamInputInstallResult>("install_nexusdeck_steam_input_layout", {
+      name: name ?? null,
     }),
 
   getGameSettingsSchema: (profileId: string) =>

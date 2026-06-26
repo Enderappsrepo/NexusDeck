@@ -357,7 +357,10 @@ class GamepadRouterImpl {
           this.context === "discover" ||
           this.context === "gameHub"
         ) {
-          document.querySelector<HTMLElement>("[data-mod-search]")?.focus();
+          window.dispatchEvent(new CustomEvent("nexusdeck-expand-mod-search"));
+          requestAnimationFrame(() => {
+            document.querySelector<HTMLElement>("[data-mod-search]")?.focus();
+          });
         } else if (this.context === "games") {
           document.querySelector<HTMLElement>("[data-games-search]")?.focus();
         } else {

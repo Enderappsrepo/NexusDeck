@@ -275,6 +275,7 @@ pub fn run() {
             is_steam_running,
             quit_steam_client,
             add_nexusdeck_to_steam_when_ready,
+            install_nexusdeck_steam_input_layout,
             get_game_settings_schema,
             get_game_settings_values,
             apply_game_settings,

@@ -829,6 +829,13 @@ export interface SteamShortcutInfo {
   created_at: number;
 }
 
+export interface SteamInputInstallResult {
+  installed: boolean;
+  template_path: string | null;
+  configset_path: string | null;
+  message: string;
+}
+
 export interface NexusDeckSteamShortcutResult {
   display_name: string;
   executable: string;
@@ -837,6 +844,7 @@ export interface NexusDeckSteamShortcutResult {
   app_id_generated: number;
   already_existed: boolean;
   launch_method: string;
+  steam_input?: SteamInputInstallResult | null;
 }
 
 export interface PlatformInfo {

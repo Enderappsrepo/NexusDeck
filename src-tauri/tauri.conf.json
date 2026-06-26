@@ -35,7 +35,8 @@
     "resources": {
       "resources/7zip/*": "7zip/",
       "resources/decky/nexusdeck-host/*": "decky/nexusdeck-host/",
-      "resources/decky/nexusdeck-host/dist/*": "decky/nexusdeck-host/dist/"
+      "resources/decky/nexusdeck-host/dist/*": "decky/nexusdeck-host/dist/",
+      "resources/steam-input/*": "steam-input/"
     },
     "icon": [
       "icons/32x32.png",

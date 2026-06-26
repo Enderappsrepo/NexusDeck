@@ -18,11 +18,13 @@ use crate::services::steam_shortcut::{
     add_nexusdeck_to_steam as run_add_nexusdeck_to_steam,
     add_nexusdeck_to_steam_when_ready as run_add_when_ready,
     create_steam_shortcut as run_create_steam_shortcut,
+    install_nexusdeck_steam_input_layout as run_install_steam_input,
     is_steam_client_running,
     list_steam_shortcut_infos,
     request_steam_shutdown,
     write_shortcut_to_steam_vdf, NexusDeckSteamShortcutResult, SteamShortcutInfo,
 };
+use crate::services::steam_input_install::SteamInputInstallResult;
 use crate::services::tools::{
     bodyslide_catalog, cbbe_catalog, detect_bodyslide as run_detect_bodyslide,
     detect_sseedit as run_detect_sseedit, launch_bodyslide as run_launch_bodyslide,
@@ -220,6 +222,13 @@ pub async fn add_nexusdeck_to_steam_when_ready(
     timeout_secs: Option<u64>,
 ) -> Result<NexusDeckSteamShortcutResult> {
     run_add_when_ready(name, timeout_secs.unwrap_or(180)).await
+}
+
+#[tauri::command]
+pub fn install_nexusdeck_steam_input_layout(
+    name: Option<String>,
+) -> Result<SteamInputInstallResult> {
+    run_install_steam_input(name)
 }
 
 #[tauri::command]

@@ -1,6 +1,12 @@
 # NexusDeck Steam Input Profile
 
-NexusDeck is a non-Steam Tauri app. For **Gaming Mode**, add it as a non-Steam game and apply a custom layout.
+NexusDeck ships a **NexusDeck** Steam Input template for the Steam Deck (Neptune controller). It is installed automatically when you add NexusDeck to Steam from Settings or the Deck installer script.
+
+## Auto-install
+
+When you use **Settings → Add NexusDeck to Steam**, NexusDeck copies `nexusdeck_controller_config.vdf` into Steam’s `controller_base/templates/` folder and registers it in `configset_controller_neptune.vdf` for your Steam user. You can re-run install anytime with the in-app action or `install_nexusdeck_steam_input_layout`.
+
+If the layout is not active in Gaming Mode, open **NexusDeck → Controller → Change layout** and pick **NexusDeck**.
 
 ## Profile: NexusDeck — Mod Manager
 
@@ -29,10 +35,11 @@ NexusDeck is a non-Steam Tauri app. For **Gaming Mode**, add it as a non-Steam g
 
 ## Gaming Mode setup
 
-1. Add NexusDeck as a non-Steam game (Flatpak: `flatpak run com.nexusdeck.app`)
-2. Open Steam → NexusDeck → Controller → Use custom layout
-3. Ensure all face buttons and shoulders are **Gamepad Binding** (pass-through), not keyboard/mouse
-4. Launch from Gaming Mode (not Desktop Mode) for best results
+1. Add NexusDeck as a non-Steam game (Flatpak: `flatpak run com.nexusdeck.app`) — the bundled layout installs with **Add to Steam**
+2. Restart Steam if you just added the shortcut
+3. Open Steam → NexusDeck → Controller → pick the **NexusDeck** layout if it is not already active
+4. Ensure all face buttons and shoulders are **Gamepad Binding** (pass-through), not keyboard/mouse
+5. Launch from Gaming Mode (not Desktop Mode) for best results
 
 ## Button reference
 

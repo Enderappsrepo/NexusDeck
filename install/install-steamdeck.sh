@@ -267,6 +267,63 @@ EOF
   ok "Added \"${display_name}\" to Steam library"
 }
 
+install_steam_input_layout() {
+  local steam_path="$1"
+  local display_name="$2"
+  local app_id="$3"
+  local template_name="nexusdeck_controller_config.vdf"
+  local template_dir="${steam_path}/controller_base/templates"
+  local template_path="${template_dir}/${template_name}"
+  local template_url="https://raw.githubusercontent.com/${GITHUB_REPO}/overhaul/nexusdeck/src-tauri/resources/steam-input/${template_name}"
+
+  mkdir -p "$template_dir"
+  if ! curl -fsSL "$template_url" -o "$template_path" 2>/dev/null; then
+    warn "Could not download Steam Input template — install from Settings → Add to Steam in NexusDeck"
+    return 0
+  fi
+  ok "Installed Steam Input template for NexusDeck"
+
+  local userdata steam_user_id configset_path
+  userdata="$(find_steam_userdata "$steam_path")" || return 0
+  steam_user_id="$(basename "$userdata")"
+  configset_path="${steam_path}/steamapps/common/Steam Controller Configs/${steam_user_id}/config/configset_controller_neptune.vdf"
+  mkdir -p "$(dirname "$configset_path")"
+
+  python3 - "$configset_path" "$display_name" "$app_id" "$template_name" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+lookup_name = sys.argv[2].strip().lower()
+app_id_key = sys.argv[3]
+template = sys.argv[4]
+
+def merge_key(content: str, key: str) -> str:
+    needle = f'"{key}"'
+    if needle in content:
+        return content
+    block = f'"{key}"\n\t{{\n\t\t"template"\t\t"{template}"\n\t}}\n'
+    if '"configset"' in content:
+        pos = content.rfind("}")
+        if pos >= 0:
+            return content[:pos] + block + content[pos:]
+        return content + block
+    return f'"configset"\n{{\n{block}}}\n'
+
+if path.is_file():
+    text = path.read_text(encoding="utf-8", errors="replace")
+else:
+    text = ""
+
+text = merge_key(text, lookup_name)
+if lookup_name != app_id_key:
+    text = merge_key(text, app_id_key)
+path.write_text(text, encoding="utf-8")
+PY
+
+  ok "Linked NexusDeck Steam Input layout (Gaming Mode → Controller settings if needed)"
+}
+
 print_header() {
   echo
   echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
@@ -322,6 +379,8 @@ main() {
       local flatpak_exe="/usr/bin/flatpak"
       [[ -x "$flatpak_exe" ]] || flatpak_exe="flatpak"
       add_to_steam_shortcuts "$steam_path" "$APP_NAME" "$flatpak_exe" "$HOME" "run ${APP_ID}"
+      app_id="$(generate_shortcut_app_id "$APP_NAME" "$flatpak_exe")"
+      install_steam_input_layout "$steam_path" "$APP_NAME" "$app_id"
       warn "Restart Steam for the shortcut to appear"
       warn "Do not enable Proton on the NexusDeck shortcut — it is a native Linux app"
     fi

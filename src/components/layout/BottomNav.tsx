@@ -21,21 +21,21 @@ import { useGamepadTabs } from "@/hooks/useGamepadTabs";
 import { AppDialog } from "@/components/ui/dialog";
 
 const GLOBAL_NAV = [
-  { id: "/", to: "/" as const, label: "Home", icon: Home },
-  { id: "/games", to: "/games" as const, label: "Games", icon: Gamepad2 },
-  { id: "/settings", to: "/settings" as const, label: "Settings", icon: Settings },
+  { id: "/", to: "/" as const, label: "Home", icon: Home, color: "#ff7a3c" },
+  { id: "/games", to: "/games" as const, label: "Games", icon: Gamepad2, color: "#35e3ff" },
+  { id: "/settings", to: "/settings" as const, label: "Settings", icon: Settings, color: "#9aa3ba" },
 ] as const;
 
 // Full in-game destination list — mirrors Sidebar so controller L1/R1 cycling
 // reaches every screen. The visible bar shows the first four + a More sheet.
 const GAME_NAV = [
-  { id: "dashboard", to: "/games/$domain" as const, label: "Dashboard", icon: LayoutDashboard },
-  { id: "browse", to: "/games/$domain/mods" as const, label: "Browse", icon: Search },
-  { id: "library", to: "/games/$domain/library" as const, label: "Library", icon: FolderOpen },
-  { id: "load-order", to: "/games/$domain/load-order" as const, label: "Orders", icon: ListOrdered },
-  { id: "collections", to: "/games/$domain/collections" as const, label: "Collections", icon: Layers },
-  { id: "fix", to: "/games/$domain/troubleshoot" as const, label: "Fix", icon: Wrench },
-  { id: "setup", to: "/games/$domain/setup" as const, label: "Setup", icon: Settings2 },
+  { id: "dashboard", to: "/games/$domain" as const, label: "Dashboard", icon: LayoutDashboard, color: "#ff7a3c" },
+  { id: "browse", to: "/games/$domain/mods" as const, label: "Browse", icon: Search, color: "#35e3ff" },
+  { id: "library", to: "/games/$domain/library" as const, label: "Library", icon: FolderOpen, color: "#a78bfa" },
+  { id: "load-order", to: "/games/$domain/load-order" as const, label: "Orders", icon: ListOrdered, color: "#45e08a" },
+  { id: "collections", to: "/games/$domain/collections" as const, label: "Collections", icon: Layers, color: "#f472b6" },
+  { id: "fix", to: "/games/$domain/troubleshoot" as const, label: "Fix", icon: Wrench, color: "#fbbf24" },
+  { id: "setup", to: "/games/$domain/setup" as const, label: "Setup", icon: Settings2, color: "#9aa3ba" },
 ] as const;
 
 type GameNavItem = (typeof GAME_NAV)[number];
@@ -48,18 +48,20 @@ function itemClass(active: boolean) {
   return cn(
     "focusable flex min-h-[52px] flex-1 flex-col items-center justify-center gap-1 rounded-lg px-1 py-1.5 text-[0.6875rem] font-medium leading-none transition-colors",
     active
-      ? "text-[var(--color-primary)]"
+      ? "text-[var(--color-foreground)]"
       : "text-[var(--color-muted)] hover:text-[var(--color-foreground)]"
   );
 }
 
-function NavIcon({ Icon, active }: { Icon: LucideIcon; active: boolean }) {
+function NavIcon({ Icon, active, color }: { Icon: LucideIcon; active: boolean; color: string }) {
   return (
     <Icon
-      className={cn(
-        "h-6 w-6 shrink-0",
-        active && "drop-shadow-[0_0_8px_rgba(255,107,43,0.6)]"
-      )}
+      className="h-6 w-6 shrink-0"
+      style={{
+        color,
+        opacity: active ? 1 : 0.8,
+        filter: active ? `drop-shadow(0 0 8px ${color})` : undefined,
+      }}
     />
   );
 }
@@ -144,7 +146,7 @@ export function BottomNav() {
                     className={itemClass(active)}
                     data-focusable="true"
                   >
-                    <NavIcon Icon={item.icon} active={active} />
+                    <NavIcon Icon={item.icon} active={active} color={item.color} />
                     <span className="max-w-full truncate">{item.label}</span>
                   </Link>
                 );
@@ -156,7 +158,7 @@ export function BottomNav() {
                 data-focusable="true"
                 aria-haspopup="dialog"
               >
-                <NavIcon Icon={MoreHorizontal} active={moreActive} />
+                <NavIcon Icon={MoreHorizontal} active={moreActive} color="#aab2c8" />
                 <span>More</span>
               </button>
             </>
@@ -173,7 +175,7 @@ export function BottomNav() {
                   className={itemClass(active)}
                   data-focusable="true"
                 >
-                  <NavIcon Icon={item.icon} active={active} />
+                  <NavIcon Icon={item.icon} active={active} color={item.color} />
                   <span className="max-w-full truncate">{item.label}</span>
                 </Link>
               );

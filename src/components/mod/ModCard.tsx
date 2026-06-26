@@ -30,7 +30,7 @@ export const ModCard = memo(function ModCard({ mod, domain, className, compact =
       type="button"
       onClick={openMod}
       className={cn(
-        "nd-card focusable group flex w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] text-left shadow-[var(--shadow-sm)] transition-all hover:-translate-y-0.5 hover:border-[var(--color-primary)]/50 hover:shadow-[var(--shadow-lg)] motion-reduce:hover:translate-y-0",
+        "nd-card focusable group flex w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] text-left shadow-[var(--shadow-sm)] transition-all hover:-translate-y-0.5 hover:border-[var(--color-cyan)]/50 hover:shadow-[var(--shadow-card-hover)] motion-reduce:hover:translate-y-0",
         className
       )}
       data-focusable="true"

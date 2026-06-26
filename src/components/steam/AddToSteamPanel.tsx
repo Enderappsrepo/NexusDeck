@@ -48,15 +48,22 @@ export function AddToSteamPanel({ compact = false }: AddToSteamPanelProps) {
 
     setLastResult(detail);
 
+    const steamInputNote =
+      result.steam_input?.installed === true
+        ? ` ${result.steam_input.message}`
+        : result.steam_input?.message
+          ? ` (${result.steam_input.message})`
+          : "";
+
     addToast(
 
       result.already_existed ? "Already in Steam" : "Added to Steam",
 
-      result.already_existed
+      (result.already_existed
 
         ? `"${result.display_name}" is already in your library.`
 
-        : `Open Steam and launch "${result.display_name}" from your library.`,
+        : `Open Steam and launch "${result.display_name}" from your library.`) + steamInputNote,
 
       result.already_existed ? "default" : "success"
 

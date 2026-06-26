@@ -7,6 +7,7 @@ import {
   Search,
   SlidersHorizontal,
 } from "lucide-react";
+import { ModListRow } from "@/components/mod/ModListRow";
 import { ModSearchBar } from "@/components/mod/ModSearchBar";
 import { ModFilterPanel } from "@/components/mod/ModFilterPanel";
 import { ModCard } from "@/components/mod/ModCard";
@@ -19,8 +20,9 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { CardSkeleton, ModGridSkeleton } from "@/components/ui/LoadingSkeleton";
-import { useModsStore, useGamesStore, useAuthStore, useDownloadsStore } from "@/stores";
+import { CardSkeleton, ModGridSkeleton, ModListSkeleton } from "@/components/ui/LoadingSkeleton";
+import { useIsNarrow } from "@/hooks/useMediaQuery";
+import { useModsStore, useGamesStore, useAuthStore, useDownloadsStore, useSettingsStore } from "@/stores";
 import { api } from "@/lib/commands";
 import { DEFAULT_FILTERS } from "@/lib/nexus/filters";
 import { cn, gameGradient } from "@/lib/utils";
@@ -43,6 +45,12 @@ const SORT_SEGMENTS: { value: SortValue; label: string }[] = [
   { value: "endorsements", label: "Endorsed" },
   { value: "downloads", label: "Downloaded" },
   { value: "updated", label: "Updated" },
+];
+
+const SORT_SEGMENTS_COMPACT: { value: SortValue; label: string }[] = [
+  { value: "endorsements", label: "Top" },
+  { value: "downloads", label: "DLs" },
+  { value: "updated", label: "New" },
 ];
 
 function parseFiltersFromSearch(search: Record<string, unknown>): ModSearchFilters {
@@ -125,11 +133,31 @@ function ModBrowserPage() {
     () => sessionStorage.getItem(`nexusdeck_welcome_${domain}`) === "1"
   );
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const narrow = useIsNarrow();
+  const deckDetected = useSettingsStore((s) => s.deckDetected);
+  const compactBrowse = narrow || deckDetected;
+  const [searchExpanded, setSearchExpanded] = useState(() => !(narrow || deckDetected));
   const { controllerActive } = useGamepadRouterState();
   const autoFocusedRef = useRef(false);
 
   useEffect(() => {
     loadSupportedGames().then(setSupportedGames);
+  }, []);
+
+  useEffect(() => {
+    if (!compactBrowse) {
+      setSearchExpanded(true);
+      return;
+    }
+    if (query.trim()) {
+      setSearchExpanded(true);
+    }
+  }, [compactBrowse, query]);
+
+  useEffect(() => {
+    const onExpandSearch = () => setSearchExpanded(true);
+    window.addEventListener("nexusdeck-expand-mod-search", onExpandSearch);
+    return () => window.removeEventListener("nexusdeck-expand-mod-search", onExpandSearch);
   }, []);
 
   // Controller: once results land, move focus onto the first mod card so the
@@ -323,7 +351,7 @@ function ModBrowserPage() {
   ].filter(Boolean).length;
 
   return (
-    <div className="mx-auto max-w-6xl" data-scroll-pane>
+    <div className={cn("mx-auto max-w-6xl", compactBrowse && "mods-page-compact")} data-scroll-pane>
       {showWelcomeBanner && (
         <div className="mb-6">
           <PostSetupBanner
@@ -344,83 +372,117 @@ function ModBrowserPage() {
         </div>
       )}
 
-      {/* Page header */}
-      <header className="page-hero mb-6">
-        <div className="relative p-5 sm:p-8">
-          <div
-            className={cn(
-              "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-40",
-              gameGradient(domain)
+      {/* Page header — compact on Deck / narrow viewports */}
+      {compactBrowse ? (
+        <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <Link
+              to="/games/$domain"
+              params={{ domain }}
+              className="focusable mb-1 inline-block text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+              data-focusable="true"
+            >
+              ← {profile.name}
+            </Link>
+            <h1 className="text-xl font-bold tracking-tight">Browse Mods</h1>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {isPremium ? (
+              <Badge variant="success" className="text-[10px]">
+                Premium
+              </Badge>
+            ) : (
+              <Badge variant="warning" className="hidden text-[10px] sm:inline-flex">
+                Free
+              </Badge>
             )}
-          />
-          <div className="relative">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <Link
-                  to="/games/$domain"
-                  params={{ domain }}
-                  className="focusable mb-2 inline-block text-sm text-[var(--color-muted)] hover:text-[var(--color-primary)]"
-                  data-focusable="true"
-                >
-                  ← {profile.name}
-                </Link>
-                <h1 className="text-3xl font-bold tracking-tight">Mod Browser</h1>
-                <p className="mt-1 text-[var(--color-muted)]">
-                  Search and browse the Nexus Mods catalog
-                </p>
+            <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
+              <FolderInput className="h-4 w-4" />
+              Import
+            </Button>
+          </div>
+        </header>
+      ) : (
+        <header className="page-hero mb-6">
+          <div className="relative p-5 sm:p-8">
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-40",
+                gameGradient(domain)
+              )}
+            />
+            <div className="relative">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <Link
+                    to="/games/$domain"
+                    params={{ domain }}
+                    className="focusable mb-2 inline-block text-sm text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+                    data-focusable="true"
+                  >
+                    ← {profile.name}
+                  </Link>
+                  <h1 className="text-3xl font-bold tracking-tight">Mod Browser</h1>
+                  <p className="mt-1 text-[var(--color-muted)]">
+                    Search and browse the Nexus Mods catalog
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {isPremium ? (
+                    <Badge variant="success">Premium — API downloads</Badge>
+                  ) : (
+                    <Badge variant="warning">Free — browser download or Import</Badge>
+                  )}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {isPremium ? (
-                  <Badge variant="success">Premium — API downloads</Badge>
-                ) : (
-                  <Badge variant="warning">Free — browser download or Import</Badge>
-                )}
-              </div>
-            </div>
 
-            <div className="mt-5 flex flex-wrap gap-2">
-              <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
-                <FolderInput className="h-4 w-4" />
-                Import / Test install
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  await api.createPracticeMod(profile.id);
-                  setImportOpen(true);
-                }}
-              >
-                <FlaskConical className="h-4 w-4" />
-                Quick practice test
-              </Button>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
+                  <FolderInput className="h-4 w-4" />
+                  Import / Test install
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    await api.createPracticeMod(profile.id);
+                    setImportOpen(true);
+                  }}
+                >
+                  <FlaskConical className="h-4 w-4" />
+                  Quick practice test
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {!user && <SignInPrompt className="mb-4" />}
 
       {/* Sticky toolbar — stacks on mobile, spreads out on larger screens */}
       <div className="mods-toolbar">
-        <div className="flex flex-col gap-3 rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-3 shadow-[var(--shadow-md)] sm:gap-4 sm:p-5">
-          {/* Search gets its own full-width row */}
+        <div className="mods-toolbar-inner flex flex-col gap-3 rounded-2xl border border-[var(--color-border)] bg-[image:var(--gradient-surface)] p-3 shadow-[var(--shadow-md)] sm:gap-4 sm:p-5">
           <ModSearchBar
             value={query}
             onChange={setQuery}
             onSearch={handleSearch}
             loading={loading}
             placeholder={`Search ${profile.name} mods...`}
+            compact={compactBrowse}
+            collapsible={compactBrowse}
+            collapsed={compactBrowse && !searchExpanded}
+            onExpand={() => setSearchExpanded(true)}
+            onCollapse={() => setSearchExpanded(false)}
           />
 
-          {/* Sort + filters: full-width stacked controls on mobile, inline on sm+ */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <SegmentedControl
               ariaLabel="Sort mods"
               size="sm"
               value={sort as SortValue}
               onChange={(v) => setSort(v)}
-              options={SORT_SEGMENTS}
+              options={compactBrowse ? SORT_SEGMENTS_COMPACT : SORT_SEGMENTS}
               fill
               className="w-full sm:w-auto"
             />
@@ -456,7 +518,7 @@ function ModBrowserPage() {
             className={cn(
               "game-nav-chip focusable shrink-0",
               !filters.category &&
-                "border-[var(--color-primary)]/60 bg-[var(--color-primary)]/10 text-[var(--color-foreground)]"
+                "border-transparent bg-[image:var(--gradient-primary)] font-semibold text-[#2a1206]"
             )}
             data-focusable="true"
           >
@@ -470,7 +532,7 @@ function ModBrowserPage() {
               className={cn(
                 "game-nav-chip focusable shrink-0",
                 filters.category === c.name &&
-                  "border-[var(--color-primary)]/60 bg-[var(--color-primary)]/10 text-[var(--color-foreground)]"
+                  "border-transparent bg-[image:var(--gradient-primary)] font-semibold text-[#2a1206]"
               )}
               data-focusable="true"
             >
@@ -481,21 +543,21 @@ function ModBrowserPage() {
       )}
 
       {/* Results header */}
-      <div className="page-header mb-5">
-        <div>
-          <h2 className="page-header-title">{resultLabel}</h2>
+      <div className="page-header mb-4 sm:mb-5">
+        <div className="min-w-0">
+          <h2 className="page-header-title truncate">{resultLabel}</h2>
           {!loading && (
             <p className="page-header-subtitle">
               {totalCount > 0
-                ? `Showing ${mods.length.toLocaleString()} of ${totalCount.toLocaleString()}`
+                ? `${mods.length.toLocaleString()} of ${totalCount.toLocaleString()}`
                 : mods.length > 0
                   ? `${mods.length} mods`
                   : "No results"}
             </p>
           )}
         </div>
-        {!loading && mods.length > 0 && (
-          <div className="flex gap-2">
+        {!compactBrowse && !loading && mods.length > 0 && (
+          <div className="hidden flex-wrap gap-2 sm:flex">
             <span className="stat-pill">
               <Heart className="h-3.5 w-3.5" />
               Sorted by {sort === "endorsements" ? "endorsements" : sort === "downloads" ? "downloads" : "update date"}
@@ -519,7 +581,12 @@ function ModBrowserPage() {
         />
       )}
 
-      {loading && mods.length === 0 && <ModGridSkeleton count={6} className="mb-4" />}
+      {loading && mods.length === 0 &&
+        (compactBrowse ? (
+          <ModListSkeleton count={8} className="mb-4" />
+        ) : (
+          <ModGridSkeleton count={6} className="mb-4" />
+        ))}
 
       {!loading && !error && mods.length === 0 && (
         <EmptyState
@@ -534,20 +601,40 @@ function ModBrowserPage() {
         />
       )}
 
-      <div className="mod-grid">
-        {mods.map((mod) => (
-          <ModCard
-            key={mod.mod_id}
-            mod={mod}
-            domain={domain}
-            installed={installedIds.has(mod.mod_id)}
-          />
-        ))}
-        {loadingMore &&
-          Array.from({ length: 4 }).map((_, i) => (
-            <CardSkeleton key={`more-skeleton-${i}`} />
+      {compactBrowse ? (
+        <div className="mod-list">
+          {mods.map((mod) => (
+            <ModListRow
+              key={mod.mod_id}
+              mod={mod}
+              domain={domain}
+              installed={installedIds.has(mod.mod_id)}
+            />
           ))}
-      </div>
+          {loadingMore &&
+            Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={`more-list-skeleton-${i}`}
+                className="h-[5.5rem] animate-pulse rounded-xl bg-[var(--color-secondary)]"
+              />
+            ))}
+        </div>
+      ) : (
+        <div className="mod-grid">
+          {mods.map((mod) => (
+            <ModCard
+              key={mod.mod_id}
+              mod={mod}
+              domain={domain}
+              installed={installedIds.has(mod.mod_id)}
+            />
+          ))}
+          {loadingMore &&
+            Array.from({ length: 4 }).map((_, i) => (
+              <CardSkeleton key={`more-skeleton-${i}`} />
+            ))}
+        </div>
+      )}
 
       {hasMore && mods.length > 0 && (
         <>

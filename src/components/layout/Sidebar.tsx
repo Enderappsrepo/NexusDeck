@@ -22,29 +22,38 @@ import { useGamepadTabs } from "@/hooks/useGamepadTabs";
 import { useGamepadRouterState } from "@/hooks/useGamepadRouter";
 
 const GLOBAL_NAV = [
-  { to: "/", label: "Home", icon: Home },
-  { to: "/games", label: "Games", icon: Gamepad2 },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/", label: "Home", icon: Home, color: "#ff7a3c" },
+  { to: "/games", label: "Games", icon: Gamepad2, color: "#35e3ff" },
+  { to: "/settings", label: "Settings", icon: Settings, color: "#9aa3ba" },
 ] as const;
 
 const GAME_NAV = [
-  { id: "dashboard", to: "/games/$domain" as const, label: "Dashboard" },
-  { id: "browse", to: "/games/$domain/mods" as const, label: "Browse" },
-  { id: "library", to: "/games/$domain/library" as const, label: "Library" },
-  { id: "load-order", to: "/games/$domain/load-order" as const, label: "Load Order" },
-  { id: "collections", to: "/games/$domain/collections" as const, label: "Collections" },
-  { id: "fix", to: "/games/$domain/troubleshoot" as const, label: "Fix" },
-  { id: "setup", to: "/games/$domain/setup" as const, label: "Setup" },
+  { id: "dashboard", to: "/games/$domain" as const, label: "Dashboard", icon: LayoutDashboard, color: "#ff7a3c" },
+  { id: "browse", to: "/games/$domain/mods" as const, label: "Browse", icon: Search, color: "#35e3ff" },
+  { id: "library", to: "/games/$domain/library" as const, label: "Library", icon: FolderOpen, color: "#a78bfa" },
+  { id: "load-order", to: "/games/$domain/load-order" as const, label: "Load Order", icon: ListOrdered, color: "#45e08a" },
+  { id: "collections", to: "/games/$domain/collections" as const, label: "Collections", icon: Layers, color: "#f472b6" },
+  { id: "fix", to: "/games/$domain/troubleshoot" as const, label: "Fix", icon: Wrench, color: "#fbbf24" },
+  { id: "setup", to: "/games/$domain/setup" as const, label: "Setup", icon: Settings2, color: "#9aa3ba" },
 ] as const;
 
-function rowClass(active: boolean, collapsed: boolean) {
+function navRowClass(active: boolean, collapsed: boolean) {
   return cn(
     "focusable flex min-h-[52px] items-center gap-3 rounded-xl px-4 py-2.5 font-medium transition-all",
     collapsed ? "justify-center" : "justify-center md:justify-start",
     active
-      ? "bg-[var(--color-primary)]/12 text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-primary)]/30"
+      ? "text-[var(--color-foreground)]"
       : "text-[var(--color-muted)] hover:bg-[var(--color-card)] hover:text-[var(--color-foreground)]"
   );
+}
+
+/** Per-destination tinted background + inset ring for the active nav row. */
+function activeRowStyle(color: string) {
+  return { backgroundColor: `${color}1f`, boxShadow: `inset 0 0 0 1px ${color}55` };
+}
+
+function navIconStyle(color: string, active: boolean) {
+  return { color, filter: active ? `drop-shadow(0 0 8px ${color})` : undefined };
 }
 
 function labelClass(collapsed: boolean) {
@@ -108,22 +117,18 @@ export function Sidebar() {
       )}
     >
       <div className="flex w-full flex-col gap-1.5">
-        {GLOBAL_NAV.map(({ to, label, icon: Icon }) => {
+        {GLOBAL_NAV.map(({ to, label, icon: Icon, color }) => {
           const active =
             to === "/" ? pathname === "/" : pathname === to || pathname.startsWith(`${to}/`);
           return (
             <Link
               key={to}
               to={to}
-              className={rowClass(active, collapsed)}
+              className={navRowClass(active, collapsed)}
+              style={active ? activeRowStyle(color) : undefined}
               data-focusable="true"
             >
-              <Icon
-                className={cn(
-                  "h-6 w-6 shrink-0",
-                  active && "drop-shadow-[0_0_8px_rgba(255,107,43,0.6)]"
-                )}
-              />
+              <Icon className="h-6 w-6 shrink-0" style={navIconStyle(color, active)} />
               <span className={labelClass(collapsed)}>{label}</span>
             </Link>
           );
@@ -153,70 +158,28 @@ export function Sidebar() {
           </div>
 
           <div className="flex w-full flex-col gap-1">
-            <Link
-              to="/games/$domain"
-              params={{ domain }}
-              className={rowClass(pathname === `/games/${domain}`, collapsed)}
-              data-focusable="true"
-            >
-              <LayoutDashboard className="h-5 w-5 shrink-0" />
-              <span className={labelClass(collapsed)}>Dashboard</span>
-            </Link>
-            <Link
-              to="/games/$domain/mods"
-              params={{ domain }}
-              search={{ modId: undefined }}
-              className={rowClass(pathname.startsWith(`/games/${domain}/mods`), collapsed)}
-              data-focusable="true"
-            >
-              <Search className="h-5 w-5 shrink-0" />
-              <span className={labelClass(collapsed)}>Browse</span>
-            </Link>
-            <Link
-              to="/games/$domain/library"
-              params={{ domain }}
-              className={rowClass(pathname.startsWith(`/games/${domain}/library`), collapsed)}
-              data-focusable="true"
-            >
-              <FolderOpen className="h-5 w-5 shrink-0" />
-              <span className={labelClass(collapsed)}>Library</span>
-            </Link>
-            <Link
-              to="/games/$domain/collections"
-              params={{ domain }}
-              className={rowClass(pathname.startsWith(`/games/${domain}/collections`), collapsed)}
-              data-focusable="true"
-            >
-              <Layers className="h-5 w-5 shrink-0" />
-              <span className={labelClass(collapsed)}>Collections</span>
-            </Link>
-            <Link
-              to="/games/$domain/load-order"
-              params={{ domain }}
-              className={rowClass(pathname.startsWith(`/games/${domain}/load-order`), collapsed)}
-              data-focusable="true"
-            >
-              <ListOrdered className="h-5 w-5 shrink-0" />
-              <span className={labelClass(collapsed)}>Load Order</span>
-            </Link>
-            <Link
-              to="/games/$domain/troubleshoot"
-              params={{ domain }}
-              className={rowClass(pathname.startsWith(`/games/${domain}/troubleshoot`), collapsed)}
-              data-focusable="true"
-            >
-              <Wrench className="h-5 w-5 shrink-0" />
-              <span className={labelClass(collapsed)}>Fix</span>
-            </Link>
-            <Link
-              to="/games/$domain/setup"
-              params={{ domain }}
-              className={rowClass(pathname.startsWith(`/games/${domain}/setup`), collapsed)}
-              data-focusable="true"
-            >
-              <Settings2 className="h-5 w-5 shrink-0" />
-              <span className={labelClass(collapsed)}>Setup</span>
-            </Link>
+            {GAME_NAV.map((item) => {
+              const path = item.to.replace("$domain", domain);
+              const active =
+                item.id === "dashboard"
+                  ? pathname === path
+                  : pathname === path || pathname.startsWith(`${path}/`);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.id}
+                  to={item.to}
+                  params={{ domain }}
+                  search={item.id === "browse" ? { modId: undefined } : undefined}
+                  className={navRowClass(active, collapsed)}
+                  style={active ? activeRowStyle(item.color) : undefined}
+                  data-focusable="true"
+                >
+                  <Icon className="h-5 w-5 shrink-0" style={navIconStyle(item.color, active)} />
+                  <span className={labelClass(collapsed)}>{item.label}</span>
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}

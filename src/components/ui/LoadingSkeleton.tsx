@@ -41,9 +41,29 @@ export function CardSkeleton({ className }: { className?: string }) {
 
 export function ModGridSkeleton({ count = 6, className }: { count?: number; className?: string }) {
   return (
-    <div className={cn("grid gap-4 sm:grid-cols-2 lg:grid-cols-3", className)}>
+    <div className={cn("mod-grid", className)}>
       {Array.from({ length: count }).map((_, i) => (
         <CardSkeleton key={i} />
+      ))}
+    </div>
+  );
+}
+
+export function ModListSkeleton({ count = 8, className }: { count?: number; className?: string }) {
+  return (
+    <div className={cn("mod-list", className)}>
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-2.5"
+        >
+          <Bone className="h-[4.5rem] w-[4.5rem] shrink-0 rounded-lg" />
+          <div className="flex-1 space-y-2">
+            <Bone className="h-4 w-4/5" />
+            <Bone className="h-3 w-full" />
+            <Bone className="h-3 w-1/2" />
+          </div>
+        </div>
       ))}
     </div>
   );

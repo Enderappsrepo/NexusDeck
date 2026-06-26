@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { Star } from "lucide-react";
 import { GameRunningBanner } from "@/components/launch/GameRunningBanner";
 import { UpdateBanner } from "@/components/layout/UpdateBanner";
 import { Toaster } from "@/components/ui/toast";
@@ -61,6 +62,15 @@ export function AppShell({
           )}
         </div>
         <div className="flex items-center gap-3">
+          {user?.is_premium && (
+            <span
+              className="hidden items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-[#5a3a06] shadow-[0_0_16px_rgba(245,158,11,0.4)] sm:flex"
+              style={{ backgroundImage: "linear-gradient(135deg,#fde68a,#f59e0b)" }}
+            >
+              <Star className="h-3.5 w-3.5" />
+              Premium
+            </span>
+          )}
           {!user && !hideNav && (
             <Button variant="secondary" size="sm" asChild data-focusable="true">
               <Link to="/settings">Sign in</Link>

@@ -7,6 +7,7 @@ use crate::db::{self, LaunchConfig, Profile, SteamShortcutRecord};
 use crate::error::{NexusDeckError, Result};
 use crate::games::GameRegistry;
 use crate::services::platform;
+use crate::services::steam_input_install::{self, SteamInputInstallResult};
 use crate::services::steam::find_game_by_app_id;
 use crate::services::steam_launch::detect_steam_launch_info;
 
@@ -54,6 +55,8 @@ pub struct NexusDeckSteamShortcutResult {
     pub app_id_generated: u32,
     pub already_existed: bool,
     pub launch_method: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steam_input: Option<SteamInputInstallResult>,
 }
 
 pub fn add_nexusdeck_to_steam(display_name: Option<String>) -> Result<NexusDeckSteamShortcutResult> {
@@ -63,6 +66,7 @@ pub fn add_nexusdeck_to_steam(display_name: Option<String>) -> Result<NexusDeckS
 
     if shortcut_exists_on_host(&shortcuts_path, &spec.exe, &name, &spec.launch_options)? {
         let app_id = generate_shortcut_app_id(&name, &spec.exe);
+        let steam_input = steam_input_install::install_nexusdeck_steam_input(&name, app_id).ok();
         return Ok(NexusDeckSteamShortcutResult {
             display_name: name,
             executable: spec.exe,
@@ -71,6 +75,7 @@ pub fn add_nexusdeck_to_steam(display_name: Option<String>) -> Result<NexusDeckS
             app_id_generated: app_id,
             already_existed: true,
             launch_method: spec.launch_method,
+            steam_input,
         });
     }
 
@@ -82,6 +87,7 @@ pub fn add_nexusdeck_to_steam(display_name: Option<String>) -> Result<NexusDeckS
         &spec.start_dir,
     )?;
     let app_id = generate_shortcut_app_id(&name, &spec.exe);
+    let steam_input = steam_input_install::install_nexusdeck_steam_input(&name, app_id).ok();
 
     Ok(NexusDeckSteamShortcutResult {
         display_name: name,
@@ -91,7 +97,17 @@ pub fn add_nexusdeck_to_steam(display_name: Option<String>) -> Result<NexusDeckS
         app_id_generated: app_id,
         already_existed: false,
         launch_method: spec.launch_method,
+        steam_input,
     })
+}
+
+pub fn install_nexusdeck_steam_input_layout(
+    display_name: Option<String>,
+) -> Result<SteamInputInstallResult> {
+    let name = display_name.unwrap_or_else(|| "NexusDeck".to_string());
+    let spec = resolve_nexusdeck_launch_spec()?;
+    let app_id = generate_shortcut_app_id(&name, &spec.exe);
+    steam_input_install::install_nexusdeck_steam_input(&name, app_id)
 }
 
 fn running_as_flatpak() -> bool {
