@@ -13,7 +13,8 @@ use crate::services::pre_launch::{profile_has_loose_assets, validate_launch, Lau
 use crate::services::process_monitor::ProcessMonitor;
 use crate::services::repair::repair_deployment;
 use crate::services::steam_launch::{
-    launch_direct_executable, launch_steam_game, launch_through_proton, proton_compat_data_path,
+    is_steam_delegated_method, launch_direct_executable, launch_steam_game,
+    launch_through_proton, proton_compat_data_path,
 };
 use crate::services::steam_shortcut::resolve_config;
 
@@ -127,7 +128,7 @@ pub fn launch_game(
         let _ = ensure_archive_invalidation(&profile);
     }
 
-    if pre_actions.iter().any(|a| a == "repair_loose_files") || cfg!(target_os = "linux") {
+    if pre_actions.iter().any(|a| a == "repair_loose_files") {
         if profile_has_loose_assets(&profile).unwrap_or(false) {
             emit_progress(app, profile_id, "repairing_loose_files");
             let _ = repair_deployment(profile_id);
@@ -195,6 +196,16 @@ pub fn launch_game(
         direct_pid,
     )?;
 
+    #[cfg(target_os = "linux")]
+    if crate::services::platform::is_flatpak_sandbox()
+        && direct_pid.is_none()
+        && is_steam_delegated_method(&method)
+    {
+        // Host wine processes are not visible inside the Flatpak sandbox, so
+        // polling would leave the UI stuck in "launching" for two minutes.
+        let _ = monitor.clear_tracking(profile_id);
+    }
+
     let message = format!("Launched via {method}");
     let _ = app.emit(
         "launch:progress",
@@ -222,6 +233,15 @@ fn should_launch_direct(profile: &Profile, config: &LaunchConfig) -> bool {
     if config.launch_method == "direct" || config.launch_method == "custom" {
         return true;
     }
+
+    #[cfg(target_os = "linux")]
+    if config.launch_method == "steam" {
+        // Route F4SE/SKSE through Steam on Linux. Direct `proton run f4se_loader`
+        // often hangs on startup when the Steam client is active (Gaming Mode) or
+        // when it contends with Steam's wineserver for the same prefix.
+        return false;
+    }
+
     if !config.use_f4se {
         return false;
     }
@@ -291,4 +311,64 @@ pub fn batch_launch_tools(
         }
     }
     Ok(launched)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::LaunchConfig;
+
+    fn sample_config(launch_method: &str, use_f4se: bool) -> LaunchConfig {
+        LaunchConfig {
+            id: "test".into(),
+            profile_id: "p1".into(),
+            name: "Test".into(),
+            use_f4se,
+            launch_method: launch_method.into(),
+            custom_executable: None,
+            args_json: "[]".into(),
+            pre_launch_actions_json: "[]".into(),
+            is_default: true,
+            last_used_at: None,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn linux_steam_launch_does_not_bypass_steam_for_f4se() {
+        if !cfg!(target_os = "linux") {
+            return;
+        }
+        let profile = Profile {
+            id: "p1".into(),
+            game_domain: "fallout4".into(),
+            name: "Fallout 4".into(),
+            game_path: "/games/Fallout4".into(),
+            staging_path: "/staging".into(),
+            proton_prefix_path: Some("/pfx".into()),
+            mod_manager: None,
+            created_at: 0,
+        };
+        let config = sample_config("steam", true);
+        assert!(
+            !should_launch_direct(&profile, &config),
+            "F4SE on Linux should launch through Steam, not direct Proton"
+        );
+    }
+
+    #[test]
+    fn direct_launch_method_still_uses_direct_path() {
+        let profile = Profile {
+            id: "p1".into(),
+            game_domain: "fallout4".into(),
+            name: "Fallout 4".into(),
+            game_path: "/games/Fallout4".into(),
+            staging_path: "/staging".into(),
+            proton_prefix_path: Some("/pfx".into()),
+            mod_manager: None,
+            created_at: 0,
+        };
+        let config = sample_config("direct", true);
+        assert!(should_launch_direct(&profile, &config));
+    }
 }

@@ -92,6 +92,14 @@ pub fn launch_steam_game(
     Ok("steam_uri".to_string())
 }
 
+/// True when the game was started via the Steam client (not a direct Proton spawn).
+pub fn is_steam_delegated_method(method: &str) -> bool {
+    matches!(
+        method,
+        "steam_cli" | "steam_uri" | "steam_host_applaunch" | "steam_host_uri"
+    )
+}
+
 pub fn launch_via_steam_cli(
     app_id: u32,
     args: &[String],
