@@ -307,7 +307,8 @@ install_steam_input_layout() {
   local template_name="nexusdeck_controller_config.vdf"
   local template_dir="${steam_path}/controller_base/templates"
   local template_path="${template_dir}/${template_name}"
-  local template_url="https://raw.githubusercontent.com/${GITHUB_REPO}/main/src-tauri/resources/steam-input/${template_name}"
+  local install_branch="${NEXUSDECK_INSTALL_BRANCH:-overhaul}"
+  local template_url="https://raw.githubusercontent.com/${GITHUB_REPO}/${install_branch}/src-tauri/resources/steam-input/${template_name}"
 
   progress_info "controller" "Installing Steam Input controller template…"
   mkdir -p "$template_dir"

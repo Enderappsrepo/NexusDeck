@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.29] - 2026-06-28
+
+### Fixed
+- **Installer bootstrap** — `install-common.sh` download no longer points at missing `main` branch; tries release asset, GitHub Pages, then `overhaul`/`main`.
+- Steam Input template URL in install script uses `overhaul` branch (matches default repo branch).
+
 ## [1.1.28] - 2026-06-28
 
 ### Added
@@ -96,6 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Proton prefix auto-heal and hardened dependency install.
 
+[1.1.29]: https://github.com/Enderappsrepo/NexusDeck/compare/v1.1.28...v1.1.29
 [1.1.28]: https://github.com/Enderappsrepo/NexusDeck/compare/v1.1.27...v1.1.28
 [1.1.27]: https://github.com/Enderappsrepo/NexusDeck/compare/v1.1.26...v1.1.27
 [1.1.26]: https://github.com/Enderappsrepo/NexusDeck/compare/v1.1.25...v1.1.26

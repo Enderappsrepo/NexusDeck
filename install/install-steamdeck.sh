@@ -12,6 +12,7 @@ set -euo pipefail
 APP_NAME="NexusDeck"
 APP_ID="com.nexusdeck.app"
 GITHUB_REPO="${NEXUSDECK_GITHUB_REPO:-Enderappsrepo/NexusDeck}"
+GITHUB_INSTALL_BRANCH="${NEXUSDECK_INSTALL_BRANCH:-overhaul}"
 
 resolve_script_dir() {
   local src="${BASH_SOURCE[0]}"
@@ -22,20 +23,50 @@ resolve_script_dir() {
   cd "$(dirname "$src")" && pwd
 }
 
+download_installer_file() {
+  local rel_path="$1"
+  local dest="$2"
+  local pages_rel="${3:-${rel_path#install/}}"
+  local release_name="${4:-${pages_rel##*/}}"
+  local owner="${GITHUB_REPO%%/*}"
+  local name="${GITHUB_REPO#*/}"
+  local pages_base="https://${owner,,}.github.io/${name}"
+  local urls=(
+    "https://github.com/${GITHUB_REPO}/releases/latest/download/${release_name}"
+    "${pages_base}/${pages_rel}"
+    "https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_INSTALL_BRANCH}/${rel_path}"
+    "https://raw.githubusercontent.com/${GITHUB_REPO}/main/${rel_path}"
+  )
+  local url
+  for url in "${urls[@]}"; do
+    if curl -fsSL "$url" -o "$dest" 2>/dev/null && [[ -s "$dest" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 bootstrap_installer_files() {
   local dir="$1"
   mkdir -p "${dir}/gui"
-  local base="https://raw.githubusercontent.com/${GITHUB_REPO}/main/install"
+
   if [[ ! -f "${dir}/install-common.sh" ]]; then
-    curl -fsSL "${base}/install-common.sh" -o "${dir}/install-common.sh" \
-      || { echo "Could not download install-common.sh" >&2; exit 1; }
+    download_installer_file "install/install-common.sh" "${dir}/install-common.sh" \
+      || {
+        echo "Could not download install-common.sh (tried GitHub release, Pages, and ${GITHUB_INSTALL_BRANCH}/main branches)." >&2
+        echo "Download both files from the latest release into the same folder:" >&2
+        echo "  i.sh  and  install-common.sh" >&2
+        echo "Then run: bash i.sh --gui" >&2
+        exit 1
+      }
   fi
+
   if [[ ! -f "${dir}/gui/server.py" ]]; then
-    curl -fsSL "${base}/gui/server.py" -o "${dir}/gui/server.py" || true
-    curl -fsSL "${base}/gui/launch-gui.sh" -o "${dir}/gui/launch-gui.sh" || true
-    curl -fsSL "${base}/gui/index.html" -o "${dir}/gui/index.html" || true
-    curl -fsSL "${base}/gui/styles.css" -o "${dir}/gui/styles.css" || true
-    curl -fsSL "${base}/gui/app.js" -o "${dir}/gui/app.js" || true
+    download_installer_file "install/gui/server.py" "${dir}/gui/server.py" || true
+    download_installer_file "install/gui/launch-gui.sh" "${dir}/gui/launch-gui.sh" || true
+    download_installer_file "install/gui/index.html" "${dir}/gui/index.html" || true
+    download_installer_file "install/gui/styles.css" "${dir}/gui/styles.css" || true
+    download_installer_file "install/gui/app.js" "${dir}/gui/app.js" || true
     chmod +x "${dir}/gui/launch-gui.sh" 2>/dev/null || true
   fi
 }
