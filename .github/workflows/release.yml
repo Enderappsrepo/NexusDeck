@@ -229,8 +229,8 @@ jobs:
           sed -i "s|Enderappsrepo/NexusDeck|${GITHUB_REPOSITORY}|g" release/uninstall-steamdeck.sh
           sed -i "s|Enderappsrepo/NexusDeck|${GITHUB_REPOSITORY}|g" release/u.sh
           chmod +x release/install-steamdeck.sh release/i.sh release/uninstall-steamdeck.sh release/u.sh
-          cd release && sha256sum * > SHA256SUMS.txt
-          ls -la
+          cd release && find . -type f ! -name SHA256SUMS.txt | sort | xargs sha256sum > SHA256SUMS.txt
+          ls -laR
 
       - name: Sync docs for short install URL
         run: node scripts/sync-install-docs.mjs "${{ github.repository }}"
