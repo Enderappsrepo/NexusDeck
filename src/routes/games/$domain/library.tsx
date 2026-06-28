@@ -67,6 +67,7 @@ function LibraryPage() {
   const [repairNote, setRepairNote] = useState<string | null>(null);
   const [rescanning, setRescanning] = useState(false);
   const [rescanNote, setRescanNote] = useState<string | null>(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [deployMode, setDeployMode] = useState<DeployMode | null>(null);
   const [updateProgress, setUpdateProgress] = useState<Record<string, ModUpdateProgress>>({});
   const [safetyPrompt, setSafetyPrompt] = useState<{
@@ -484,94 +485,67 @@ function LibraryPage() {
           </div>
         )}
       </AppDialog>
-      <div className="mb-4">
-        <LaunchButton profileId={profile.id} gameDomain={domain} compact className="w-full sm:w-auto" />
+      {/* Content-first header: Launch + quick nav up top; advanced actions live
+          in the Tools disclosure so the mod list is reachable without scrolling. */}
+      <div>
+        <h1 className="page-header-title">Installed Mods</h1>
+        <p className="mt-1 text-sm text-[var(--color-muted)]">
+          {mods.length} installed · {mods.filter((m) => m.enabled).length} enabled
+        </p>
+        {repairNote && (
+          <p className="mt-1 text-sm text-[var(--color-success)]">{repairNote}</p>
+        )}
+        {rescanNote && (
+          <p className="mt-1 text-sm text-[var(--color-success)]">{rescanNote}</p>
+        )}
+        {deployMode && (
+          <Badge
+            variant={deployMode.hardlink ? "success" : "warning"}
+            className="mt-2 w-fit"
+          >
+            {deployMode.hardlink
+              ? "Instant deploy — files are hardlinked (no extra disk)"
+              : "Copy deploy — game is on a different drive than NexusDeck"}
+          </Badge>
+        )}
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Installed Mods</h1>
-          <p className="mt-1 text-sm text-[var(--color-muted)]">
-            {mods.length} installed · {mods.filter((m) => m.enabled).length} enabled ·{" "}
-            <Link
-              to="/games/$domain/load-order"
-              params={{ domain }}
-              className="text-[var(--color-primary)] underline-offset-2 hover:underline"
-            >
-              Load order & plugins
-            </Link>
-          </p>
-          {repairNote && (
-            <p className="mt-1 text-sm text-[var(--color-success)]">{repairNote}</p>
-          )}
-          {rescanNote && (
-            <p className="mt-1 text-sm text-[var(--color-success)]">{rescanNote}</p>
-          )}
-          {deployMode && (
-            <Badge
-              variant={deployMode.hardlink ? "success" : "warning"}
-              className="mt-2 w-fit"
-            >
-              {deployMode.hardlink
-                ? "Instant deploy — files are hardlinked (no extra disk)"
-                : "Copy deploy — game is on a different drive than NexusDeck"}
-            </Badge>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link to="/games/$domain/load-order" params={{ domain }}>
-            <Button variant="secondary" data-focusable="true">
-              <ListOrdered className="h-4 w-4" />
-              Load order
+
+      <div className="flex flex-wrap items-center gap-2">
+        <LaunchButton
+          profileId={profile.id}
+          gameDomain={domain}
+          compact
+          className="flex-1 sm:flex-none"
+        />
+        <Link to="/games/$domain/load-order" params={{ domain }} className="focusable" data-focusable="true">
+          <Button variant="secondary" data-focusable="true">
+            <ListOrdered className="h-4 w-4" />
+            Load order
+          </Button>
+        </Link>
+        <Button
+          variant={toolsOpen ? "default" : "secondary"}
+          onClick={() => setToolsOpen((v) => !v)}
+          aria-expanded={toolsOpen}
+          data-focusable="true"
+        >
+          <Wrench className="h-4 w-4" />
+          Tools
+        </Button>
+        {compareA && compareB && (
+          <Link
+            to="/games/$domain/compare"
+            params={{ domain }}
+            search={{ modA: compareA, modB: compareB }}
+            className="focusable"
+            data-focusable="true"
+          >
+            <Button>
+              <GitCompare className="h-4 w-4" />
+              View comparison
             </Button>
           </Link>
-          <Button
-            variant="outline"
-            disabled={sorting || mods.length === 0}
-            loading={sorting}
-            onClick={() => void autoSortLoadOrder()}
-            data-focusable="true"
-          >
-            <ArrowDownAZ className="h-4 w-4" />
-            Auto-sort load order
-          </Button>
-          <Button
-            variant="outline"
-            disabled={repairing || mods.length === 0}
-            loading={repairing}
-            onClick={() => void repairDeployment()}
-            data-focusable="true"
-            title="Fix case-variant folders so all textures and mod files load (Steam Deck)"
-          >
-            <Wrench className="h-4 w-4" />
-            Repair deployment
-          </Button>
-          <Button
-            variant={compareMode ? "default" : "outline"}
-            onClick={() => {
-              setCompareMode(!compareMode);
-              setCompareA(null);
-              setCompareB(null);
-            }}
-            data-focusable="true"
-          >
-            <GitCompare className="h-4 w-4" />
-            {compareMode ? "Cancel compare" : "Compare mode"}
-          </Button>
-          {compareA && compareB && (
-            <Link
-              to="/games/$domain/compare"
-              params={{ domain }}
-              search={{ modA: compareA, modB: compareB }}
-              className="focusable"
-              data-focusable="true"
-            >
-              <Button>
-                <GitCompare className="h-4 w-4" />
-                View comparison
-              </Button>
-            </Link>
-          )}
-        </div>
+        )}
       </div>
 
       <div className="relative">
@@ -590,36 +564,74 @@ function LibraryPage() {
         <ApiErrorBanner context="generic" error={error} onRetry={() => setError(null)} />
       )}
 
-      <ConflictDashboard profileId={profile.id} gameDomain={domain} />
-      <DeployScanPanel profileId={profile.id} />
-
       {updates.length > 0 && (
         <ModUpdatesPanel profileId={profile.id} gameDomain={domain} />
       )}
 
-      <Card className="p-4">
-        <p className="mb-3 text-sm font-semibold text-[var(--color-muted)]">Export mod list</p>
-        <div className="flex flex-wrap gap-2">
-          {EXPORT_FORMATS.map((fmt) => (
+      {/* Tools & checks — collapsed by default; opening it pushes the list down
+          only when the user asks for it. Holds load-order, repair, compare,
+          export, and the conflict / deploy diagnostics. */}
+      {toolsOpen && (
+        <div className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)]/40 p-3 sm:p-4">
+          <div className="flex flex-wrap gap-2">
             <Button
-              key={fmt.id}
               variant="outline"
               size="sm"
-              disabled={exporting}
-              loading={exporting}
-              onClick={() => exportModlist(fmt.id)}
+              disabled={sorting || mods.length === 0}
+              loading={sorting}
+              onClick={() => void autoSortLoadOrder()}
               data-focusable="true"
             >
-              Export {fmt.label}
+              <ArrowDownAZ className="h-4 w-4" />
+              Auto-sort load order
             </Button>
-          ))}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={repairing || mods.length === 0}
+              loading={repairing}
+              onClick={() => void repairDeployment()}
+              data-focusable="true"
+              title="Fix case-variant folders so all textures and mod files load (Steam Deck)"
+            >
+              <Wrench className="h-4 w-4" />
+              Repair deployment
+            </Button>
+            <Button
+              variant={compareMode ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setCompareMode(!compareMode);
+                setCompareA(null);
+                setCompareB(null);
+              }}
+              data-focusable="true"
+            >
+              <GitCompare className="h-4 w-4" />
+              {compareMode ? "Cancel compare" : "Compare mode"}
+            </Button>
+            {EXPORT_FORMATS.map((fmt) => (
+              <Button
+                key={fmt.id}
+                variant="outline"
+                size="sm"
+                disabled={exporting}
+                loading={exporting}
+                onClick={() => exportModlist(fmt.id)}
+                data-focusable="true"
+              >
+                Export {fmt.label}
+              </Button>
+            ))}
+          </div>
+          <ConflictDashboard profileId={profile.id} gameDomain={domain} />
+          <DeployScanPanel profileId={profile.id} />
+          {exportContent && (
+            <pre className="max-h-48 overflow-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-secondary)] p-4 text-xs" data-scroll-pane>
+              {exportContent}
+            </pre>
+          )}
         </div>
-      </Card>
-
-      {exportContent && (
-        <pre className="max-h-48 overflow-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-secondary)] p-4 text-xs" data-scroll-pane>
-          {exportContent}
-        </pre>
       )}
 
       {compareMode && (

@@ -43,10 +43,17 @@ let focusIndex = 0;
 type FocusDirection = "next" | "prev" | "up" | "down";
 
 /**
- * Pick the best element in the pressed direction using 2D geometry: nearest in
- * the travel axis with a strong penalty for cross-axis misalignment, so grids
- * move column-by-column and lists row-by-row instead of jumping to whatever
- * happens to be closest by top edge. Returns -1 when nothing lies that way.
+ * Pick the best element in the pressed direction using 2D geometry.
+ *
+ * The key rule is *band alignment*: a candidate whose perpendicular extent
+ * overlaps the current element's (i.e. it's in the same column when moving
+ * up/down, or the same row when moving left/right) is treated as "in line" and
+ * chosen by nearest travel-axis distance. Only when nothing overlaps the band do
+ * we fall back to a weighted center distance. This stops the focus ring from
+ * drifting diagonally to whatever happens to be closest by center — the #1 cause
+ * of "I pressed down and it jumped somewhere random" on a controller.
+ *
+ * Returns -1 when nothing lies that way.
  */
 function directionalPick(
   items: HTMLElement[],
@@ -58,41 +65,49 @@ function directionalPick(
   const cy = cur.top + cur.height / 2;
   let best = -1;
   let bestScore = Infinity;
+  // Large constant so any band-aligned candidate always outranks a misaligned one.
+  const OFF_BAND = 1_000_000;
 
   items.forEach((el, i) => {
     if (el === current) return;
     const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return;
     const dx = r.left + r.width / 2 - cx;
     const dy = r.top + r.height / 2 - cy;
 
     let primary: number;
     let cross: number;
+    let aligned: boolean;
     switch (direction) {
       case "down":
         if (dy <= 1) return;
         primary = dy;
         cross = Math.abs(dx);
+        aligned = r.left < cur.right && r.right > cur.left;
         break;
       case "up":
         if (dy >= -1) return;
         primary = -dy;
         cross = Math.abs(dx);
+        aligned = r.left < cur.right && r.right > cur.left;
         break;
       case "next":
         if (dx <= 1) return;
         primary = dx;
         cross = Math.abs(dy);
+        aligned = r.top < cur.bottom && r.bottom > cur.top;
         break;
       default:
         if (dx >= -1) return;
         primary = -dx;
         cross = Math.abs(dy);
+        aligned = r.top < cur.bottom && r.bottom > cur.top;
         break;
     }
 
-    // Distance along the travel axis, plus a heavy penalty for drifting off the
-    // line so the nearest *aligned* element wins.
-    const score = primary + cross * 2;
+    // Aligned: rank by travel distance with a light cross tiebreak. Misaligned:
+    // only reachable when no aligned candidate exists, ranked like before.
+    const score = aligned ? primary + cross * 0.25 : OFF_BAND + primary + cross * 2;
     if (score < bestScore) {
       bestScore = score;
       best = i;

@@ -198,12 +198,10 @@ function LoadOrderPage() {
             <ChevronLeft className="h-4 w-4" />
             Library
           </Link>
-          <h1 className="text-3xl font-bold tracking-tight">Load Order</h1>
+          <h1 className="page-header-title">Load Order</h1>
           <p className="mt-1 max-w-2xl text-sm text-[var(--color-muted)]">
-            Mods here are scanned from your game's <code className="text-xs">Data</code> folder, so
-            the list matches what's actually deployed. NexusDeck writes{" "}
-            <code className="text-xs">plugins.txt</code> before launch so mods stay enabled in
-            Creations — no manual toggling needed.
+            Scanned from your game's <code className="text-xs">Data</code> folder. NexusDeck writes{" "}
+            <code className="text-xs">plugins.txt</code> before launch — no manual toggling needed.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

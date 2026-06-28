@@ -37,7 +37,9 @@ const SCROLL_REPEAT_MS = 60;
 // controls are *always* "connected", so a perpetual rAF loop pins the CPU/GPU and
 // drains battery even when the user isn't touching anything.
 const IDLE_AFTER_MS = 1500;
-const IDLE_POLL_MS = 50;
+// ~31 ms (2 frames) keeps the idle CPU cost low while halving the worst-case
+// latency before the first press after idle is noticed (was 50 ms).
+const IDLE_POLL_MS = 32;
 const BUTTON_DEBOUNCE_MS = 120;
 
 type Listener = () => void;
@@ -207,10 +209,18 @@ class GamepadRouterImpl {
 
   private getPad(): Gamepad | null {
     const pads = navigator.getGamepads?.() ?? [];
+    // A Steam Deck can enumerate several gamepads (built-in controls, virtual
+    // pads, an attached controller). Prefer whichever one currently has input so
+    // presses are never stranded on an idle index; fall back to the first
+    // connected pad otherwise. Switching only ever happens while idle (no input
+    // on any pad), so the shared edge-detection state can't desync mid-press.
+    let firstConnected: Gamepad | null = null;
     for (const pad of pads) {
-      if (pad) return pad;
+      if (!pad) continue;
+      if (firstConnected === null) firstConnected = pad;
+      if (this.padHasInput(pad)) return pad;
     }
-    return null;
+    return firstConnected;
   }
 
   private markControllerActive(): void {
@@ -227,6 +237,7 @@ class GamepadRouterImpl {
     this.padConnected = !!pad;
     if (pad) {
       this.processButtons(pad);
+      this.processDpadRepeat(pad);
       this.processAxes(pad);
       this.processTriggers(pad);
       if (this.padHasInput(pad)) this.lastActivity = performance.now();
@@ -254,6 +265,15 @@ class GamepadRouterImpl {
         this.pressed.add(i);
         this.markControllerActive();
         this.handleButtonPress(i);
+        // Seed the held-repeat clock for the d-pad so processDpadRepeat waits the
+        // initial delay before the *second* move (the first move just fired here).
+        if (i >= GP.DPAD_UP && i <= GP.DPAD_RIGHT) {
+          this.repeatStates.set(`btn-${i}`, {
+            key: `btn-${i}`,
+            lastFire: performance.now(),
+            fired: false,
+          });
+        }
       } else if (!btn.pressed) {
         this.pressed.delete(i);
         if (i >= GP.DPAD_UP && i <= GP.DPAD_RIGHT) {
@@ -261,6 +281,25 @@ class GamepadRouterImpl {
         }
       }
     });
+  }
+
+  // Hold-to-repeat for the d-pad: tapping moves once, holding scrolls through a
+  // long list/grid. The stick already auto-repeats (processAxes); without this
+  // the d-pad felt unresponsive on the Deck because each step needed a re-tap.
+  private dpadRepeatMap: ReadonlyArray<[number, FocusDir]> = [
+    [GP.DPAD_UP, "up"],
+    [GP.DPAD_DOWN, "down"],
+    [GP.DPAD_LEFT, "prev"],
+    [GP.DPAD_RIGHT, "next"],
+  ];
+
+  private processDpadRepeat(pad: Gamepad): void {
+    if (isTypingElement(document.activeElement)) return;
+    for (const [btn, dir] of this.dpadRepeatMap) {
+      if (pad.buttons[btn]?.pressed) {
+        this.fireRepeat(`btn-${btn}`, () => moveFocus(dir), INITIAL_REPEAT_MS, REPEAT_MS);
+      }
+    }
   }
 
   private resolveTabHandler(): TabHandler | undefined {

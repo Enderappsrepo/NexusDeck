@@ -287,7 +287,9 @@ fn fomod_cache_key(archive_path: &Path) -> Result<String> {
 }
 
 fn load_cached_fomod_groups(archive_path: &Path) -> Result<Option<InstallWizard>> {
-    let path = fomod_cache_dir()?.join(format!("{}.json", fomod_cache_key(archive_path)?));
+    // `.v2`: bumped when the parser learned to read <visible> step conditions, so
+    // pre-fix caches (which lack them) are ignored and re-parsed.
+    let path = fomod_cache_dir()?.join(format!("{}.v2.json", fomod_cache_key(archive_path)?));
     if !path.is_file() {
         return Ok(None);
     }
@@ -323,7 +325,9 @@ fn load_cached_fomod_groups(archive_path: &Path) -> Result<Option<InstallWizard>
 }
 
 fn save_cached_fomod_groups(archive_path: &Path, wizard: &InstallWizard) -> Result<()> {
-    let path = fomod_cache_dir()?.join(format!("{}.json", fomod_cache_key(archive_path)?));
+    // `.v2`: bumped when the parser learned to read <visible> step conditions, so
+    // pre-fix caches (which lack them) are ignored and re-parsed.
+    let path = fomod_cache_dir()?.join(format!("{}.v2.json", fomod_cache_key(archive_path)?));
     std::fs::write(path, serde_json::to_string(wizard)?)?;
     Ok(())
 }
@@ -1136,6 +1140,40 @@ fn read_fomod_flag(e: &quick_xml::events::BytesStart<'_>) -> Option<FomodFlag> {
     }
 }
 
+/// Read a `<flagDependency flag="X" value="Y"/>` used inside a step's `<visible>`
+/// dependency or a conditionalFileInstalls pattern.
+fn read_flag_dependency(e: &quick_xml::events::BytesStart<'_>) -> Option<FomodFlag> {
+    let mut name = String::new();
+    let mut value = String::new();
+    for attr in e.attributes().flatten() {
+        let key = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
+        let val = attr.unescape_value().unwrap_or_default().to_string();
+        match key.as_str() {
+            "flag" => name = val,
+            "value" => value = val,
+            _ => {}
+        }
+    }
+    if name.is_empty() {
+        None
+    } else {
+        Some(FomodFlag { name, value })
+    }
+}
+
+fn read_dependency_operator(e: &quick_xml::events::BytesStart<'_>) -> Option<String> {
+    for attr in e.attributes().flatten() {
+        let key = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
+        if key == "operator" {
+            let val = attr.unescape_value().unwrap_or_default().to_string();
+            if !val.is_empty() {
+                return Some(val);
+            }
+        }
+    }
+    None
+}
+
 fn read_fomod_files_folder(e: &quick_xml::events::BytesStart<'_>, folders: &mut Vec<String>) {
     if let Some(file) = read_fomod_file_ref(e) {
         folders.push(fomod_install_path(&file));
@@ -1304,6 +1342,8 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
     let mut in_group = false;
     let mut in_option = false;
     let mut in_description = false;
+    // Inside an <installStep>'s <visible> dependency (gates whether the step shows).
+    let mut in_step_visible = false;
 
     let mut in_files = false;
 
@@ -1377,6 +1417,28 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                         } else {
                             "step"
                         };
+                    }
+                    // An <installStep>'s <visible> dependency decides if the step shows
+                    // at all (e.g. only after a prior option set a flag). Without this
+                    // every step rendered, so picking "clean skin" still showed the
+                    // "dirty skin" step.
+                    "visible" if in_install_step && !in_optional_groups => {
+                        in_step_visible = true;
+                        if let Some(op) = read_dependency_operator(&e) {
+                            current_step_condition.operator = op;
+                        }
+                    }
+                    "dependencies" if in_step_visible => {
+                        if current_step_condition.operator.is_empty() {
+                            if let Some(op) = read_dependency_operator(&e) {
+                                current_step_condition.operator = op;
+                            }
+                        }
+                    }
+                    "flagdependency" if in_step_visible => {
+                        if let Some(flag) = read_flag_dependency(&e) {
+                            current_step_condition.flags.push(flag);
+                        }
                     }
                     "flagdependency" if in_pattern_dependencies => {
                         let mut flag_name = String::new();
@@ -1484,6 +1546,12 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                 match name.as_str() {
                     "moduleimage" => {
                         wizard.module_image_path = read_fomod_image_path(&e);
+                    }
+                    // Self-closing <flagDependency/> inside a step's <visible>.
+                    "flagdependency" if in_step_visible => {
+                        if let Some(flag) = read_flag_dependency(&e) {
+                            current_step_condition.flags.push(flag);
+                        }
                     }
                     "flagdependency" if in_pattern_dependencies => {
                         let mut flag_name = String::new();
@@ -1629,6 +1697,7 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                     }
                     "installstep" if in_install_step => {
                         in_install_step = false;
+                        in_step_visible = false;
                         if !current_step_groups.is_empty() {
                             wizard.steps.push(InstallWizardStep {
                                 id: format!("step-{step_index}"),
@@ -1652,6 +1721,7 @@ fn parse_fomod_wizard(xml: &str) -> Option<InstallWizard> {
                             step_index += 1;
                         }
                     }
+                    "visible" if in_step_visible => in_step_visible = false,
                     "optionalfilegroups" => in_optional_groups = false,
                     _ => {}
                 }
@@ -1941,6 +2011,94 @@ mod tests {
         let groups = parse_fomod_module_config(xml).unwrap();
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].options.len(), 2);
+    }
+
+    #[test]
+    fn step_visible_flag_dependency_filters_dependent_steps() {
+        // "Clean vs dirty skin, then options for the chosen skin": the follow-up
+        // steps are gated by <visible><flagDependency/></visible>. Regression for
+        // the bug where both the clean and dirty follow-up steps always showed.
+        let xml = r#"
+        <config>
+          <installSteps>
+            <installStep name="Skin Type">
+              <optionalFileGroups>
+                <group name="Skin" type="SelectExactlyOne">
+                  <plugins>
+                    <plugin name="Clean">
+                      <conditionFlags><flag name="SkinType">Clean</flag></conditionFlags>
+                      <files><folder source="Clean"/></files>
+                    </plugin>
+                    <plugin name="Dirty">
+                      <conditionFlags><flag name="SkinType">Dirty</flag></conditionFlags>
+                      <files><folder source="Dirty"/></files>
+                    </plugin>
+                  </plugins>
+                </group>
+              </optionalFileGroups>
+            </installStep>
+            <installStep name="Clean Options">
+              <visible>
+                <flagDependency flag="SkinType" value="Clean"/>
+              </visible>
+              <optionalFileGroups>
+                <group name="CleanSub" type="SelectAny">
+                  <plugins>
+                    <plugin name="Freckles"><files><folder source="Freckles"/></files></plugin>
+                  </plugins>
+                </group>
+              </optionalFileGroups>
+            </installStep>
+            <installStep name="Dirty Options">
+              <visible>
+                <flagDependency flag="SkinType" value="Dirty"/>
+              </visible>
+              <optionalFileGroups>
+                <group name="DirtySub" type="SelectAny">
+                  <plugins>
+                    <plugin name="Mud"><files><folder source="Mud"/></files></plugin>
+                  </plugins>
+                </group>
+              </optionalFileGroups>
+            </installStep>
+          </installSteps>
+        </config>"#;
+
+        let wizard = parse_fomod_wizard(xml).unwrap();
+        assert_eq!(wizard.steps.len(), 3);
+
+        // The first step is unconditional; the follow-ups carry a visible condition.
+        assert!(wizard.steps[0].condition.is_none());
+        let clean_cond = wizard.steps[1]
+            .condition
+            .as_ref()
+            .expect("clean step parsed a <visible> condition");
+        assert_eq!(clean_cond.flags.len(), 1);
+        assert_eq!(clean_cond.flags[0].name, "SkinType");
+        assert_eq!(clean_cond.flags[0].value, "Clean");
+        assert_eq!(
+            wizard.steps[2].condition.as_ref().unwrap().flags[0].value,
+            "Dirty"
+        );
+
+        // Selecting "Clean" reveals only the clean follow-up step.
+        let clean_opt = wizard.steps[0].groups[0]
+            .options
+            .iter()
+            .find(|o| o.label == "Clean")
+            .unwrap();
+        let selections = vec![SelectedInstallOption {
+            group_id: wizard.steps[0].groups[0].id.clone(),
+            option_ids: vec![clean_opt.id.clone()],
+        }];
+        let visible = filter_visible_wizard(&wizard, &selections);
+        let names: Vec<&str> = visible.steps.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"Skin Type"));
+        assert!(names.contains(&"Clean Options"));
+        assert!(
+            !names.contains(&"Dirty Options"),
+            "dirty step must be hidden when clean skin is selected, got {names:?}"
+        );
     }
 
     #[test]

@@ -604,6 +604,30 @@ body:has([data-bottom-nav]) [data-controller-hint-bar] {
   width: 1.75rem;
 }
 
+/* Deck / touch density: tighten vertical rhythm and oversized page titles so
+   the primary content (mod lists, plugins) sits higher on the 800px-tall
+   screen. Keyed off the same attributes as the touch-target rules above. */
+[data-deck="true"] .page-section,
+[data-touch="true"] .page-section {
+  gap: 1rem;
+}
+
+[data-deck="true"] .page-header-title,
+[data-touch="true"] .page-header-title {
+  font-size: 1.375rem;
+}
+
+[data-deck="true"] .page-header-subtitle,
+[data-touch="true"] .page-header-subtitle {
+  font-size: 0.875rem;
+}
+
+/* Heroes that survive on compact screens get less vertical padding. */
+[data-deck="true"] .page-hero .relative.p-5,
+[data-touch="true"] .page-hero .relative.p-5 {
+  padding: 1rem 1.25rem;
+}
+
 /* Theme-styled native range slider. Targets the two Tauri webviews
    (Chromium/WebView2 + WebKitGTK), both -webkit-. The orange fill is driven by
    the `--nd-fill` custom property set inline per value. */

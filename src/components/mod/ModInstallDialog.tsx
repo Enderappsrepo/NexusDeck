@@ -1118,7 +1118,10 @@ export function ModInstallDialog({
           </div>
         )}
 
-        <div className="flex gap-3">
+        {/* Sticky action bar: on the Deck's short screen the dialog body scrolls,
+            so pin Cancel / Back / Install to the bottom edge — the primary action
+            is always reachable without scrolling to the end of a long review. */}
+        <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex gap-3 border-t border-[var(--color-border)] bg-[var(--color-card)] px-4 py-3 sm:-mx-6 sm:-mb-6 sm:px-6 sm:py-4">
           <Button
             variant="outline"
             className="flex-1"

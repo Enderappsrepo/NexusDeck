@@ -80,7 +80,11 @@ export function InstallQueuePanel() {
   const clearFailedJobs = useInstallQueueStore((s) => s.clearFailedJobs);
   const clearDoneJobs = useInstallQueueStore((s) => s.clearDoneJobs);
 
-  const pending = jobs.filter((j) => j.status === "queued" || j.status === "active");
+  // The active job is always shown in the ModInstallDialog, so don't duplicate it
+  // here — this panel lists only jobs still waiting their turn. (Showing the
+  // active job floated this z-[55] panel over the dialog footer and said
+  // "Installing now…" while the user was still configuring it.)
+  const pending = jobs.filter((j) => j.status === "queued");
   const failedJobs = jobs.filter((j) => j.status === "failed");
   const doneJobs = jobs.filter((j) => j.status === "done");
 
