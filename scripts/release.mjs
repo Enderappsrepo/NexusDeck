@@ -52,7 +52,7 @@ if (!/github\.com/i.test(remoteUrl)) {
   console.warn(`Warning: origin does not look like GitHub: ${remoteUrl}`);
 }
 
-const dirty = runCapture("git status --porcelain");
+const dirty = runCapture("git status --porcelain --untracked-files=no");
 if (dirty) {
   console.error("Working tree has uncommitted changes. Commit or stash first.");
   process.exit(1);
