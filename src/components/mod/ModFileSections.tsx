@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { formatBytes } from "@/lib/utils";
+import { formatBytes, cn } from "@/lib/utils";
 import { modFileDownloadName, type ModFileInfo } from "@/lib/nexus/types";
 
 const HIDDEN_CATEGORIES = new Set(["REMOVED", "ARCHIVED"]);
@@ -27,6 +27,7 @@ interface ModFileSectionsProps {
   onDownload: (file: ModFileInfo) => void;
   onBrowserDownload: (file: ModFileInfo) => void;
   onInstall: (file: ModFileInfo) => void;
+  deckMode?: boolean;
 }
 
 export function ModFileSections({
@@ -36,6 +37,7 @@ export function ModFileSections({
   onDownload,
   onBrowserDownload,
   onInstall,
+  deckMode = false,
 }: ModFileSectionsProps) {
   const { mainFiles, otherFiles } = groupModFiles(files);
 
@@ -47,8 +49,8 @@ export function ModFileSections({
     <div className="space-y-8">
       {mainFiles.length > 0 && (
         <section>
-          <h3 className="mb-1 text-lg font-semibold">Main files</h3>
-          <p className="mb-4 text-sm text-[var(--color-muted)]">
+          <h3 className={deckMode ? "mb-1 text-xl font-semibold" : "mb-1 text-lg font-semibold"}>Main files</h3>
+          <p className={cn("mb-4 text-[var(--color-muted)]", deckMode ? "text-base" : "text-sm")}>
             Primary mod archives and updates — install these first.
           </p>
           <div className="space-y-3">
@@ -61,6 +63,7 @@ export function ModFileSections({
                 onDownload={onDownload}
                 onBrowserDownload={onBrowserDownload}
                 onInstall={onInstall}
+                deckMode={deckMode}
               />
             ))}
           </div>
@@ -69,8 +72,8 @@ export function ModFileSections({
 
       {otherFiles.length > 0 && (
         <section>
-          <h3 className="mb-1 text-lg font-semibold">Optional & other files</h3>
-          <p className="mb-4 text-sm text-[var(--color-muted)]">
+          <h3 className={deckMode ? "mb-1 text-xl font-semibold" : "mb-1 text-lg font-semibold"}>Optional & other files</h3>
+          <p className={cn("mb-4 text-[var(--color-muted)]", deckMode ? "text-base" : "text-sm")}>
             Optional patches, resources, older versions, and extras.
           </p>
           <div className="space-y-3">
@@ -83,6 +86,7 @@ export function ModFileSections({
                 onDownload={onDownload}
                 onBrowserDownload={onBrowserDownload}
                 onInstall={onInstall}
+                deckMode={deckMode}
               />
             ))}
           </div>
@@ -99,6 +103,7 @@ function ModFileRow({
   onDownload,
   onBrowserDownload,
   onInstall,
+  deckMode = false,
 }: {
   file: ModFileInfo;
   isPremium: boolean;
@@ -106,40 +111,57 @@ function ModFileRow({
   onDownload: (file: ModFileInfo) => void;
   onBrowserDownload: (file: ModFileInfo) => void;
   onInstall: (file: ModFileInfo) => void;
+  deckMode?: boolean;
 }) {
   const archiveName = modFileDownloadName(file);
+  const btnSize = deckMode ? "lg" : "sm";
+  const btnClass = deckMode ? "min-h-[52px] flex-1 text-base sm:flex-none" : undefined;
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-[var(--shadow-sm)] sm:flex-row sm:items-center sm:justify-between">
+    <div
+      className={cn(
+        "flex flex-col gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-[var(--shadow-sm)]",
+        deckMode ? "p-5" : "p-4 sm:flex-row sm:items-center sm:justify-between"
+      )}
+      data-focusable="true"
+    >
       <div className="min-w-0 flex-1">
-        <p className="font-semibold leading-snug">{file.name}</p>
+        <p className={cn("font-semibold leading-snug", deckMode && "text-lg")}>{file.name}</p>
         <div className="mt-2 flex flex-wrap gap-2">
-          <Badge variant="muted">v{file.version}</Badge>
-          <Badge variant="muted">{file.category_name || "Uncategorized"}</Badge>
+          <Badge variant="muted" className={deckMode ? "text-sm" : undefined}>v{file.version}</Badge>
+          <Badge variant="muted" className={deckMode ? "text-sm" : undefined}>{file.category_name || "Uncategorized"}</Badge>
           {file.is_primary && <Badge variant="default">Primary</Badge>}
-          <Badge variant="muted">{formatBytes(file.size_kb * 1024)}</Badge>
+          <Badge variant="muted" className={deckMode ? "text-sm" : undefined}>{formatBytes(file.size_kb * 1024)}</Badge>
         </div>
         {archiveName !== file.name && (
-          <p className="mt-2 truncate text-xs text-[var(--color-muted)]">{archiveName}</p>
+          <p className={cn("mt-2 truncate text-[var(--color-muted)]", deckMode ? "text-sm" : "text-xs")}>{archiveName}</p>
         )}
       </div>
-      <div className="flex shrink-0 flex-wrap gap-2">
+      <div className={cn("flex shrink-0 gap-2", deckMode ? "flex-row" : "flex-wrap")}>
         {isPremium ? (
           <Button
-            size="sm"
+            size={btnSize}
             variant="secondary"
+            className={btnClass}
             disabled={downloading}
             onClick={() => onDownload(file)}
+            data-focusable="true"
           >
             Download
           </Button>
         ) : (
-          <Button size="sm" variant="secondary" onClick={() => onBrowserDownload(file)}>
-            Download (browser)
+          <Button
+            size={btnSize}
+            variant="secondary"
+            className={btnClass}
+            onClick={() => onBrowserDownload(file)}
+            data-focusable="true"
+          >
+            Get file
           </Button>
         )}
-        <Button size="sm" onClick={() => onInstall(file)}>
-          Install...
+        <Button size={btnSize} className={btnClass} onClick={() => onInstall(file)} data-focusable="true">
+          Install
         </Button>
       </div>
     </div>

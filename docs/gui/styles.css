@@ -1,0 +1,349 @@
+:root {
+  color-scheme: dark;
+  --bg: #0a0b10;
+  --card: #15161f;
+  --card-border: #2a2e3d;
+  --text: #f2f3f8;
+  --muted: #9499b0;
+  --primary: #ff6b2b;
+  --primary-hover: #ff8552;
+  --success: #4ade80;
+  --danger: #f87171;
+  --radius: 18px;
+  --shadow: 0 18px 44px -10px rgba(0, 0, 0, 0.65);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  font-family: "Segoe UI", "Inter", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(255, 107, 43, 0.18), transparent 40%),
+    radial-gradient(circle at 80% 0%, rgba(53, 227, 255, 0.12), transparent 35%),
+    var(--bg);
+  z-index: -1;
+}
+
+.shell {
+  width: min(640px, 100%);
+  display: grid;
+  gap: 1rem;
+}
+
+.hero {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.25rem 0.25rem 0.5rem;
+}
+
+.logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 1.25rem;
+  background: linear-gradient(135deg, #ff7c3f, #ff5a1f);
+  box-shadow: 0 8px 24px rgba(255, 107, 43, 0.45);
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+h1 {
+  margin: 0.15rem 0 0;
+  font-size: 1.75rem;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.panel {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+}
+
+.panel.hidden {
+  display: none;
+}
+
+h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+.lead {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.feature-list,
+.next-steps {
+  margin: 0 0 1.25rem;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.badge-row {
+  margin-bottom: 1rem;
+}
+
+.badge {
+  display: inline-flex;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.badge.success {
+  background: rgba(74, 222, 128, 0.15);
+  color: var(--success);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+
+.option-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.option {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--card-border);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+}
+
+.option input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.15rem;
+  accent-color: var(--primary);
+}
+
+.option strong {
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+.option small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.btn {
+  min-height: 48px;
+  padding: 0.65rem 1.25rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn.primary {
+  background: linear-gradient(135deg, #ff7c3f, #ff5a1f);
+  color: white;
+  box-shadow: 0 6px 22px rgba(255, 107, 43, 0.45);
+}
+
+.btn.primary:hover {
+  filter: brightness(1.05);
+}
+
+.btn.ghost {
+  background: transparent;
+  border-color: var(--card-border);
+  color: var(--text);
+}
+
+.progress-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--primary), #35e3ff);
+  transition: width 0.35s ease;
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.step {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--card-border);
+}
+
+.step-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.step.running .step-icon {
+  background: rgba(255, 107, 43, 0.2);
+  color: var(--primary);
+}
+
+.step.done .step-icon {
+  background: rgba(74, 222, 128, 0.18);
+  color: var(--success);
+}
+
+.step.warn .step-icon,
+.step.info .step-icon {
+  background: rgba(148, 153, 176, 0.15);
+  color: var(--muted);
+}
+
+.step.error .step-icon {
+  background: rgba(248, 113, 113, 0.18);
+  color: var(--danger);
+}
+
+.step-body strong {
+  display: block;
+  margin-bottom: 0.15rem;
+}
+
+.step-body span {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.log {
+  margin-top: 1rem;
+  max-height: 180px;
+  overflow: auto;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: #0d0e14;
+  border: 1px solid var(--card-border);
+  font-size: 0.78rem;
+  color: #b8bdd1;
+  white-space: pre-wrap;
+}
+
+.done-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 1.75rem;
+  font-weight: 800;
+  margin-bottom: 0.75rem;
+  background: rgba(74, 222, 128, 0.15);
+  color: var(--success);
+  border: 2px solid rgba(74, 222, 128, 0.35);
+}
+
+.done-icon.error {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 0.25rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  cursor: pointer;
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+}
+
+@media (max-width: 520px) {
+  body {
+    padding: 1rem;
+  }
+
+  .hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .actions .btn {
+    flex: 1 1 100%;
+  }
+}

@@ -19,6 +19,7 @@ import { ControllerHintBar } from "@/components/controller/ControllerHintBar";
 import { CommandPalette } from "@/components/controller/CommandPalette";
 import { useFocusNavigation } from "@/hooks/useFocusNavigation";
 import { useGamepadBack } from "@/hooks/useGamepadBack";
+import { usePowerLifecycle } from "@/hooks/usePowerLifecycle";
 import { GamepadRouterProvider } from "@/hooks/useGamepadRouter";
 import { resolveContextFromPath } from "@/lib/gamepad/contexts";
 import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
@@ -205,6 +206,7 @@ function RootLayout() {
 
   useFocusNavigation(containerRef);
   useGamepadBack();
+  usePowerLifecycle();
 
   useEffect(() => {
     gamepadRouter.setRouteContext(resolveContextFromPath(pathname));

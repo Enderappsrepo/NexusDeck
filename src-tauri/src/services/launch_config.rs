@@ -4,9 +4,12 @@ use crate::db;
 use crate::error::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LaunchSettings {
     pub always_ask_before_launch: bool,
     pub close_app_after_launch: bool,
+    pub hide_on_launch: bool,
+    pub gamescope_handoff: bool,
     pub safe_launch_default: bool,
     pub default_deck_args: bool,
     pub global_launch_hotkey: Option<String>,
@@ -14,9 +17,12 @@ pub struct LaunchSettings {
 
 impl Default for LaunchSettings {
     fn default() -> Self {
+        let deck = crate::services::platform::is_steam_deck();
         Self {
             always_ask_before_launch: false,
             close_app_after_launch: false,
+            hide_on_launch: deck,
+            gamescope_handoff: deck,
             safe_launch_default: false,
             default_deck_args: true,
             global_launch_hotkey: None,

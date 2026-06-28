@@ -336,7 +336,11 @@ impl ProcessMonitor {
     fn emit_game_exited(&self, profile_id: &str) {
         if let Some(handle) = self.inner.lock().app_handle.clone() {
             let state = self.get_state(profile_id);
-            let _ = handle.emit("game:exited", state);
+            let _ = handle.emit("game:exited", state.clone());
+            let settings = crate::services::launch_config::LaunchSettings::load().unwrap_or_default();
+            if settings.hide_on_launch && !settings.close_app_after_launch {
+                let _ = crate::services::gamescope::restore_after_game_session(&handle);
+            }
         }
     }
 }

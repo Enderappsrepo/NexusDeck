@@ -44,3 +44,15 @@ If the layout is not active in Gaming Mode, open **NexusDeck → Controller → 
 ## Button reference
 
 See the in-app hint bar (bottom of screen when a controller is connected) for context-specific bindings.
+
+## Quick actions (Y button)
+
+On Steam Deck, the in-app **Deck Action Bar** (above the bottom nav) shows context actions. Map **Y** to quick actions in the NexusDeck Steam Input layout:
+
+| Screen | Y action |
+|--------|----------|
+| Browse | Endorse focused mod |
+| Library | Open context menu (enable, uninstall, compare) |
+| Dashboard | Quick launch / browse shortcut |
+
+These mirror a radial “quick action” ring without requiring a separate Steam Input radial mode.

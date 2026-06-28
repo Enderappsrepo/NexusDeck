@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.28] - 2026-06-28
+
+### Added
+- **Graphical installer** — Desktop Mode setup wizard (`bash install.sh --gui`) with progress steps, install options, and NexusDeck-themed UI.
+- **Safe Steam shortcuts** — binary `shortcuts.vdf` read/write via `steam_shortcuts_util` (CRC32 app IDs, backup before write, surgical removal).
+- **Repair Steam shortcuts** — Settings action to restore corrupted shortcuts from backup.
+- **Mod Details (Deck)** — single-column layout, fixed Install bar, large touch targets, `A: Install` gamepad hint, L2/R2 gallery.
+- **Deck Action Bar** — context actions above bottom nav in Gaming Mode.
+- **Game Hub (Deck)** — single-scroll dashboard replacing multi-tab layout on compact screens.
+- **Virtual mod browse** — virtualized list and shelf carousels; `A` quick-install, `X` download on browse.
+- **Essential fixes panel** — one-tap orchestrated fixes for Fallout 4 / Skyrim setup.
+- **Launch handoff** — hide window + gamescope focus release on game launch; restore on exit.
+- **Suspend/resume** — pause downloads on sleep, WAL checkpoint, WebView reload after resume.
+
+### Changed
+- **Add to Steam panel** — Install controller template and Repair shortcuts buttons; clearer copy.
+- **Steam Input** — `A: Install` hint on mod detail; template linked with standard app ID algorithm.
+- **Install scripts** — shared `install-common.sh`; release bundles GUI assets alongside `i.sh`.
+
+### Fixed
+- **Collection install duplicates** — dedupe by mod id; skip mods already downloading or queued.
+- **Add to Steam corruption** — no more text append into binary VDF; errors propagate instead of silent failure.
+- Per-game shortcut app ID now matches the executable written to `shortcuts.vdf`.
+
 ## [1.1.27] - 2026-06-26
 
 ### Added
@@ -72,6 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Proton prefix auto-heal and hardened dependency install.
 
+[1.1.28]: https://github.com/Enderappsrepo/NexusDeck/compare/v1.1.27...v1.1.28
 [1.1.27]: https://github.com/Enderappsrepo/NexusDeck/compare/v1.1.26...v1.1.27
 [1.1.26]: https://github.com/Enderappsrepo/NexusDeck/compare/v1.1.25...v1.1.26
 [1.1.25]: https://github.com/Enderappsrepo/NexusDeck/compare/v1.1.24...v1.1.25

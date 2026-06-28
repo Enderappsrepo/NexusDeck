@@ -177,6 +177,44 @@ body:has([data-bottom-nav]) [data-controller-hint-bar] {
   bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
 }
 
+body:has([data-bottom-nav]) [data-deck-action-bar] {
+  bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+}
+
+body:has([data-bottom-nav]):has([data-deck-action-bar]) .app-scroll-pane {
+  padding-bottom: calc(8.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Mod detail: fixed install bar sits above bottom nav on Deck / compact layouts */
+body:has([data-bottom-nav]) .mod-detail-action-bar {
+  bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+}
+
+body:has([data-bottom-nav]):has([data-mod-detail-deck]) .app-scroll-pane {
+  padding-bottom: calc(11rem + env(safe-area-inset-bottom, 0px));
+  scroll-padding-bottom: calc(11rem + env(safe-area-inset-bottom, 0px));
+}
+
+body:has([data-controller-hint-bar]) .mod-detail-action-bar {
+  bottom: calc(2.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+[data-deck="true"] .mod-detail-deck,
+[data-touch="true"] .mod-detail-deck {
+  font-size: 1rem;
+}
+
+[data-deck="true"] .mod-description-deck,
+[data-touch="true"] .mod-description-deck {
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+[data-deck="true"] .mod-detail-deck [data-focus-group="gallery"] .focusable:focus-visible,
+[data-touch="true"] .mod-detail-deck [data-focus-group="gallery"] .focusable:focus-visible {
+  box-shadow: var(--shadow-neon);
+}
+
 @media (min-width: 1280px) {
   [data-controller="true"] nav.flex.shrink-0 {
     width: 5rem !important;
@@ -552,6 +590,7 @@ body:has([data-bottom-nav]) [data-controller-hint-bar] {
 [data-touch="true"] [role="tab"],
 [data-touch="true"] [data-focusable="true"] {
   touch-action: manipulation;
+  min-height: 56px;
 }
 
 [data-deck="true"] .game-nav-chip,

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/commands";
+import { gamepadRouter } from "@/hooks/useGamepadRouter";
 import type { ToastMessage } from "@/components/ui/toast";
 import type {
   GameRunningState,
@@ -45,6 +46,8 @@ export const useLaunchStore = create<LaunchState>((set, get) => ({
   settings: {
     always_ask_before_launch: false,
     close_app_after_launch: false,
+    hide_on_launch: true,
+    gamescope_handoff: true,
     safe_launch_default: false,
     default_deck_args: true,
     global_launch_hotkey: null,
@@ -77,7 +80,13 @@ export const useLaunchStore = create<LaunchState>((set, get) => ({
 
   loadSettings: async () => {
     const settings = await api.getLaunchSettings();
-    set({ settings });
+    set({
+      settings: {
+        ...settings,
+        hide_on_launch: settings.hide_on_launch ?? true,
+        gamescope_handoff: settings.gamescope_handoff ?? true,
+      },
+    });
   },
 
   saveSettings: async (settings) => {
@@ -169,6 +178,14 @@ export const useLaunchStore = create<LaunchState>((set, get) => ({
       get().addToast("Launch error", e.payload.message, "error");
     }).then((u) => unsubs.push(u));
 
+    listen<{ steam_app_id?: number }>("launch:handoff", () => {
+      gamepadRouter.pause();
+    }).then((u) => unsubs.push(u));
+
+    listen("launch:restored", () => {
+      gamepadRouter.resume();
+    }).then((u) => unsubs.push(u));
+
     listen<GameRunningState>("game:started", (e) => {
       set((s) => ({
         runningByProfile: {
@@ -185,6 +202,8 @@ export const useLaunchStore = create<LaunchState>((set, get) => ({
           [e.payload.profile_id]: { ...e.payload, running: false },
         },
       }));
+      gamepadRouter.resume();
+      void api.restoreWindowAfterGame().catch(() => {});
       get().addToast("Game closed", "Mod status refreshed.", "default");
       get().loadPlaytime(e.payload.profile_id);
     }).then((u) => unsubs.push(u));

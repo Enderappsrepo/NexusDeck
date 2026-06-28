@@ -1,0 +1,35 @@
+{
+  "id": "essential_fixes",
+  "domain": "fallout4",
+  "display_name": "Fallout 4 Essential Fixes",
+  "steps": [
+    {
+      "id": "proton_deps",
+      "label": "Proton dependencies",
+      "remedy_id": "fallout4/proton_deps_missing"
+    },
+    {
+      "id": "bethesda_audio",
+      "label": "Bethesda audio (XAudio2)",
+      "remedy_id": null
+    },
+    {
+      "id": "script_extender",
+      "label": "F4SE",
+      "remedy_id": "fallout4/f4se_not_loading"
+    },
+    {
+      "id": "archive_invalidation",
+      "label": "Archive invalidation",
+      "remedy_id": "fallout4/archive_invalidation"
+    },
+    {
+      "id": "plugins_sync",
+      "label": "Sync plugins.txt",
+      "remedy_id": "fallout4/plugins_txt_sync"
+    }
+  ],
+  "recommended_mods": [
+    { "name": "Unofficial Fallout 4 Patch", "nexus_mod_id": 4598 }
+  ]
+}

@@ -11,6 +11,7 @@ import {
   ModDetailView,
   type ModDetailTab,
 } from "@/components/mod/ModDetailView";
+import { groupModFiles } from "@/components/mod/ModFileSections";
 import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { ListRowSkeleton } from "@/components/ui/LoadingSkeleton";
 import { useGamepadTabs } from "@/hooks/useGamepadTabs";
@@ -182,6 +183,18 @@ function ModDetailPage() {
     setActiveTab("files");
     return true;
   }, "modDetail");
+
+  useGamepadContextAction(
+    GP.A,
+    () => {
+      const { mainFiles } = groupModFiles(files);
+      const primary = mainFiles.find((f) => f.is_primary) ?? mainFiles[0];
+      if (!primary) return false;
+      setInstallFile(primary);
+      return true;
+    },
+    "modDetail"
+  );
 
   useGamepadContextAction(
     GP.Y,

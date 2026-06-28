@@ -90,6 +90,12 @@ fn connection() -> Result<Connection> {
     Ok(conn)
 }
 
+pub fn wal_checkpoint() -> Result<()> {
+    let conn = connection()?;
+    conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);")?;
+    Ok(())
+}
+
 fn migrate_profiles_table(conn: &Connection) -> Result<()> {
     let columns: Vec<String> = conn
         .prepare("PRAGMA table_info(profiles)")?

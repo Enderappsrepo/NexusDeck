@@ -152,6 +152,16 @@ pub fn run() {
                 });
             }
 
+            #[cfg(target_os = "linux")]
+            {
+                let _ = crate::services::gamescope::claim_gamescope_focus_if_needed(app.handle());
+                crate::services::power_lifecycle::start_monitor(
+                    app.handle().clone(),
+                    download_manager.clone(),
+                    nexus_client.clone(),
+                );
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -276,6 +286,7 @@ pub fn run() {
             quit_steam_client,
             add_nexusdeck_to_steam_when_ready,
             install_nexusdeck_steam_input_layout,
+            repair_steam_shortcuts,
             get_game_settings_schema,
             get_game_settings_values,
             apply_game_settings,
@@ -359,6 +370,11 @@ pub fn run() {
             write_text_file,
             get_decky_host_status,
             install_decky_host_plugin,
+            restore_window_after_game,
+            reload_webview,
+            claim_gamescope_focus,
+            get_essential_fixes_manifest,
+            apply_essential_fixes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

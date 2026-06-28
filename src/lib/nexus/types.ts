@@ -752,6 +752,8 @@ export interface LaunchResult {
 export interface LaunchSettings {
   always_ask_before_launch: boolean;
   close_app_after_launch: boolean;
+  hide_on_launch: boolean;
+  gamescope_handoff: boolean;
   safe_launch_default: boolean;
   default_deck_args: boolean;
   global_launch_hotkey?: string | null;
@@ -761,6 +763,31 @@ export interface PlaytimeStats {
   total_secs: number;
   last_played_at?: number | null;
   session_count: number;
+}
+
+export interface EssentialFixStep {
+  id: string;
+  label: string;
+  remedy_id?: string | null;
+}
+
+export interface EssentialFixesManifest {
+  id: string;
+  domain: string;
+  display_name: string;
+  steps: EssentialFixStep[];
+}
+
+export interface EssentialFixStepResult {
+  id: string;
+  label: string;
+  success: boolean;
+  skipped: boolean;
+  message: string;
+}
+
+export interface EssentialFixesResult {
+  steps: EssentialFixStepResult[];
 }
 
 export interface BodySlideInfo {

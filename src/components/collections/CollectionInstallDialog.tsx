@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Package } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { AppDialog } from "@/components/ui/dialog";
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/commands";
+import { dedupeCollectionMods, modDownloadInFlight } from "@/lib/nexus/collections";
 import { useDownloadsStore, useInstallQueueStore } from "@/stores";
 import { useCollectionInstallStore } from "@/stores/collectionInstallStore";
 import type { CollectionDetail, Profile } from "@/lib/nexus/types";
@@ -33,14 +34,16 @@ export function CollectionInstallDialog({
   const registerPendingInstall = useInstallQueueStore((s) => s.registerPendingInstall);
   const startBatch = useCollectionInstallStore((s) => s.startBatch);
   const bindDownload = useCollectionInstallStore((s) => s.bindDownload);
+  const batchActive = useCollectionInstallStore((s) => s.active);
 
-  const requiredMods = collection.mods.filter((m) => !m.optional);
-  const optionalMods = collection.mods.filter((m) => m.optional);
-  const targetMods = includeOptional ? collection.mods : requiredMods;
+  const uniqueMods = useMemo(() => dedupeCollectionMods(collection.mods), [collection.mods]);
+  const requiredMods = uniqueMods.filter((m) => !m.optional);
+  const optionalMods = uniqueMods.filter((m) => m.optional);
+  const targetMods = includeOptional ? uniqueMods : requiredMods;
 
-  const queueMod = async (entry: (typeof collection.mods)[number]) => {
+  const queueMod = async (entry: (typeof uniqueMods)[number]) => {
     if (!entry.file_id) return;
-    const files = await api.getModFiles(gameDomain, entry.mod_id);
+    if (modDownloadInFlight(entry.mod_id, useDownloadsStore.getState().active)) return;    const files = await api.getModFiles(gameDomain, entry.mod_id);
     const file = files.find((f) => f.file_id === entry.file_id) ?? files[0];
     if (!file) return;
     const progress = await api.startModDownload({
@@ -65,15 +68,27 @@ export function CollectionInstallDialog({
   };
 
   const installAll = async () => {
+    if (
+      batchActive?.slug === collection.slug &&
+      batchActive.mods.some(
+        (m) => m.status !== "done" && m.status !== "failed" && m.status !== "skipped"
+      )
+    ) {
+      setError("This collection is already installing.");
+      return;
+    }
+
     setInstalling(true);
     setError(null);
     try {
-      startBatch({
+      const toQueue = targetMods.filter(
+        (m) => !modDownloadInFlight(m.mod_id, useDownloadsStore.getState().active)
+      );      startBatch({
         slug: collection.slug,
         name: collection.name,
         gameDomain,
         profile,
-        mods: targetMods.map((m) => ({
+        mods: toQueue.map((m) => ({
           modId: m.mod_id,
           name: m.name,
           fileId: m.file_id,
@@ -82,10 +97,9 @@ export function CollectionInstallDialog({
         })),
       });
 
-      for (const entry of targetMods) {
+      for (const entry of toQueue) {
         await queueMod(entry);
-      }
-      onOpenChange(false);
+      }      onOpenChange(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -112,10 +126,9 @@ export function CollectionInstallDialog({
       )}
 
       <div className="mb-4 max-h-48 space-y-2 overflow-y-auto scrollbar-thin" data-scroll-pane>
-        {collection.mods.map((mod) => (
+        {uniqueMods.map((mod) => (
           <div
-            key={mod.mod_id}
-            className="flex items-center justify-between rounded-lg bg-[var(--color-secondary)] p-3 text-sm"
+            key={`${mod.mod_id}-${mod.file_id ?? "x"}`}            className="flex items-center justify-between rounded-lg bg-[var(--color-secondary)] p-3 text-sm"
           >
             <span>{mod.name}</span>
             {mod.optional ? (

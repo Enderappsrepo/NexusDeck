@@ -14,6 +14,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { BackButton } from "@/components/layout/BackButton";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { DeckActionBar } from "@/components/layout/DeckActionBar";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { useIsNarrow } from "@/hooks/useMediaQuery";
 import { resolveCompactNav } from "@/lib/platform";
@@ -55,7 +56,13 @@ export function AppShell({
       {updateInfo && (
         <UpdateBanner info={updateInfo} onDismiss={onDismissUpdate} />
       )}
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[image:var(--gradient-surface)] px-4 sm:h-16 sm:px-6">
+      <header
+        className={
+          compactNav && deckDetected
+            ? "flex h-12 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[image:var(--gradient-surface)] px-3"
+            : "flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[image:var(--gradient-surface)] px-4 sm:h-16 sm:px-6"
+        }
+      >
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <BackButton />
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
@@ -111,6 +118,7 @@ export function AppShell({
         </main>
       </div>
       {!hideNav && compactNav && <BottomNav />}
+      <DeckActionBar />
       <Toaster toasts={toasts} onDismiss={dismissToast} />
     </div>
   );

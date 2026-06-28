@@ -54,13 +54,23 @@ function findMod(
 export const useCollectionInstallStore = create<CollectionInstallState>((set, get) => ({
   active: null,
 
-  startBatch: (batch) =>
+  startBatch: (batch) => {
+    const existing = get().active;
+    if (
+      existing?.slug === batch.slug &&
+      existing.mods.some(
+        (m) => m.status !== "done" && m.status !== "failed" && m.status !== "skipped"
+      )
+    ) {
+      return;
+    }
     set({
       active: {
         ...batch,
         startedAt: Date.now(),
       },
-    }),
+    });
+  },
 
   bindDownload: (modId, downloadId) =>
     set((s) => {

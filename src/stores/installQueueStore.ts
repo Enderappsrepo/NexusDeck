@@ -115,6 +115,10 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
     }),
 
   enqueueFromDownload: async (download, source, profiles, options) => {
+    if (get().jobs.some((j) => j.downloadId === download.id)) {
+      return true;
+    }
+
     const profile = download.profile_id
       ? profiles.find((p) => p.id === download.profile_id)
       : profiles.find((p) => p.game_domain === download.game_domain);

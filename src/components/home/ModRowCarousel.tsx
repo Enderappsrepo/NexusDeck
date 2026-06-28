@@ -4,7 +4,9 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModCard } from "@/components/mod/ModCard";
 import { cn } from "@/lib/utils";
-import type { ModSummary } from "@/lib/nexus/types";
+import type { ModSearchFilters, ModSummary } from "@/lib/nexus/types";
+import type { ModSort } from "@/lib/nexus/modSorts";
+import { useModsStore } from "@/stores";
 
 interface ModRowCarouselProps {
   title: string;
@@ -12,6 +14,9 @@ interface ModRowCarouselProps {
   mods: ModSummary[];
   domain: string;
   compact?: boolean;
+  sort?: ModSort;
+  category?: string | null;
+  filterPatch?: Partial<ModSearchFilters>;
 }
 
 export function ModRowCarousel({
@@ -20,8 +25,12 @@ export function ModRowCarousel({
   mods,
   domain,
   compact = false,
+  sort,
+  category,
+  filterPatch,
 }: ModRowCarouselProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const setSort = useModsStore((s) => s.setSort);
 
   const scroll = (direction: "left" | "right") => {
     const el = scrollerRef.current;
@@ -31,6 +40,14 @@ export function ModRowCarousel({
   };
 
   if (mods.length === 0) return null;
+
+  const seeAllSearch = {
+    modId: undefined,
+    category: category ?? undefined,
+    updatedDays: filterPatch?.updated_since_days ?? undefined,
+    minEndorsements: filterPatch?.min_endorsements ?? undefined,
+    hideAdult: filterPatch?.hide_adult || undefined,
+  };
 
   return (
     <section>
@@ -46,9 +63,12 @@ export function ModRowCarousel({
             <Link
               to="/games/$domain/mods"
               params={{ domain }}
-              search={{ modId: undefined }}
+              search={seeAllSearch}
               className="focusable"
               data-focusable="true"
+              onClick={() => {
+                if (sort) setSort(sort);
+              }}
             >
               See all
             </Link>
@@ -88,6 +108,9 @@ export function ModRowCarousel({
               "shrink-0 snap-start",
               compact ? "w-[220px] sm:w-[240px]" : "w-[min(100%,280px)] sm:w-[300px]"
             )}
+            data-nexus-mod-id={mod.mod_id}
+            data-focusable="true"
+            tabIndex={-1}
           >
             <ModCard mod={mod} domain={domain} className="h-full" compact={compact} />
           </div>

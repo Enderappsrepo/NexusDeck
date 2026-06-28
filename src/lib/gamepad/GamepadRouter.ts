@@ -50,6 +50,7 @@ class GamepadRouterImpl {
   private timer = 0;
   private lastActivity = 0;
   private running = false;
+  private paused = false;
   private pressed = new Set<number>();
   private lastButtonFire = new Map<number, number>();
   private stickDir: FocusDir | null = null;
@@ -80,10 +81,37 @@ class GamepadRouterImpl {
 
   stop(): void {
     this.running = false;
+    this.paused = false;
     cancelAnimationFrame(this.raf);
     clearTimeout(this.timer);
     window.removeEventListener("gamepadconnected", this.onConnect);
     window.removeEventListener("gamepaddisconnected", this.onDisconnect);
+  }
+
+  /** Pause input while a game owns the controller (NexusDeck hidden). */
+  pause(): void {
+    if (this.paused) return;
+    this.paused = true;
+    cancelAnimationFrame(this.raf);
+    clearTimeout(this.timer);
+    this.pressed.clear();
+    this.repeatStates.clear();
+    this.controllerActive = false;
+    document.documentElement.removeAttribute("data-controller");
+    this.notify();
+  }
+
+  /** Resume polling after returning from a game session. */
+  resume(): void {
+    if (!this.running || !this.paused) return;
+    this.paused = false;
+    this.lastActivity = performance.now();
+    this.poll();
+    this.notify();
+  }
+
+  isPaused(): boolean {
+    return this.paused;
   }
 
   subscribe(listener: Listener): () => void {
@@ -232,7 +260,7 @@ class GamepadRouterImpl {
   }
 
   private poll = (): void => {
-    if (!this.running) return;
+    if (!this.running || this.paused) return;
     const pad = this.getPad();
     this.padConnected = !!pad;
     if (pad) {

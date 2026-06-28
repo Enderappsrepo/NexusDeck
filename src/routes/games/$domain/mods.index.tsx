@@ -29,7 +29,6 @@ import { api } from "@/lib/commands";
 import { DEFAULT_FILTERS } from "@/lib/nexus/filters";
 import { cn, gameGradient } from "@/lib/utils";
 import type { ModSearchFilters, SupportedGameInfo } from "@/lib/nexus/types";
-import { modFileDownloadName } from "@/lib/nexus/types";
 import { getGameMeta, loadSupportedGames } from "@/lib/games";
 import {
   useGamepadContextAction,
@@ -39,21 +38,20 @@ import {
 import { GP } from "@/lib/gamepad/buttons";
 import { focusedBrowseModId } from "@/lib/gamepad/domHelpers";
 import { useEndorseFocusedMod } from "@/hooks/useEndorseFocusedMod";
+import {
+  MOD_SORT_OPTIONS,
+  MOD_SORT_SEGMENTS,
+  MOD_SORT_SEGMENTS_COMPACT,
+  modSortLabel,
+  type ModSort,
+} from "@/lib/nexus/modSorts";
+import { ModCategoryChips } from "@/components/mod/ModCategoryChips";
+import { VirtualModList } from "@/components/mod/VirtualModList";
+import { ModBrowseShelves } from "@/components/mod/ModBrowseShelves";
+import { useInstallQueueStore } from "@/stores/installQueueStore";
+import { quickDownloadMod, findModName } from "@/lib/nexus/quickDownload";
 
-const SORT_OPTIONS = ["endorsements", "downloads", "updated"] as const;
-type SortValue = (typeof SORT_OPTIONS)[number];
-
-const SORT_SEGMENTS: { value: SortValue; label: string }[] = [
-  { value: "endorsements", label: "Endorsed" },
-  { value: "downloads", label: "Downloaded" },
-  { value: "updated", label: "Updated" },
-];
-
-const SORT_SEGMENTS_COMPACT: { value: SortValue; label: string }[] = [
-  { value: "endorsements", label: "Top" },
-  { value: "downloads", label: "DLs" },
-  { value: "updated", label: "New" },
-];
+type SortValue = ModSort;
 
 function parseFiltersFromSearch(search: Record<string, unknown>): ModSearchFilters {
   const tagsRaw = search.tags;
@@ -130,6 +128,7 @@ function ModBrowserPage() {
     sort,
     filters,
     categories,
+    categoriesLoading,
     totalCount,
     hasMore,
     setQuery,
@@ -142,6 +141,8 @@ function ModBrowserPage() {
   const { getProfile } = useGamesStore();
   const user = useAuthStore((s) => s.user);
   const setProgress = useDownloadsStore((s) => s.setProgress);
+  const downloadSettings = useSettingsStore((s) => s.downloadSettings);
+  const enqueueFromDownload = useInstallQueueStore((s) => s.enqueueFromDownload);
   const profile = getProfile(domain);
   const [importOpen, setImportOpen] = useState(false);
   const [filtersDialogOpen, setFiltersDialogOpen] = useState(false);
@@ -193,7 +194,7 @@ function ModBrowserPage() {
     return () => cancelAnimationFrame(raf);
   }, [loading, controllerActive, mods.length, filtersDialogOpen, searchDialogOpen]);
 
-  useGamepadTabs([...SORT_OPTIONS], sort, setSort);
+  useGamepadTabs([...MOD_SORT_OPTIONS], sort, setSort);
 
   useGamepadContextAction(
     GP.X,
@@ -202,26 +203,57 @@ function ModBrowserPage() {
       if (!modIdNum || !profile) return;
       void (async () => {
         try {
-          const modFiles = await api.getModFiles(domain, modIdNum);
-          const primary = modFiles.find((f) => f.is_primary) ?? modFiles[0];
-          if (!primary) {
+          const result = await quickDownloadMod({
+            domain,
+            modId: modIdNum,
+            profile,
+            modName: findModName(mods, modIdNum),
+          });
+          if (!result.started || !result.progress) {
             navigate({
               to: "/games/$domain/mods/$modId",
               params: { domain, modId: String(modIdNum) },
             });
             return;
           }
-          const progress = await api.startModDownload({
-            gameDomain: domain,
-            modId: modIdNum,
-            fileId: primary.file_id,
-            fileName: modFileDownloadName(primary),
-            stagingPath: profile.staging_path,
-            expectedSizeKb: primary.size_kb,
-            modName: mods.find((m) => m.mod_id === modIdNum)?.name,
-            profileId: profile.id,
+          setProgress(result.progress);
+          if (downloadSettings.auto_install_after_download) {
+            await enqueueFromDownload(result.progress, "auto", [profile], { front: false });
+          }
+        } catch {
+          navigate({
+            to: "/games/$domain/mods/$modId",
+            params: { domain, modId: String(modIdNum) },
           });
-          setProgress(progress);
+        }
+      })();
+      return true;
+    },
+    "browse"
+  );
+
+  useGamepadContextAction(
+    GP.A,
+    () => {
+      const modIdNum = focusedBrowseModId();
+      if (!modIdNum || !profile || !user?.is_premium) return false;
+      void (async () => {
+        try {
+          const result = await quickDownloadMod({
+            domain,
+            modId: modIdNum,
+            profile,
+            modName: findModName(mods, modIdNum),
+          });
+          if (!result.started || !result.progress) {
+            navigate({
+              to: "/games/$domain/mods/$modId",
+              params: { domain, modId: String(modIdNum) },
+            });
+            return;
+          }
+          setProgress(result.progress);
+          await enqueueFromDownload(result.progress, "auto", [profile], { front: true });
         } catch {
           navigate({
             to: "/games/$domain/mods/$modId",
@@ -493,7 +525,7 @@ function ModBrowserPage() {
           <div className="hidden flex-wrap gap-2 sm:flex">
             <span className="stat-pill">
               <Heart className="h-3.5 w-3.5" />
-              Sorted by {sort === "endorsements" ? "endorsements" : sort === "downloads" ? "downloads" : "update date"}
+              Sorted by {modSortLabel(sort)}
             </span>
             {(query.trim() || activeFilterCount > 0) && (
               <span className="stat-pill">
@@ -548,15 +580,17 @@ function ModBrowserPage() {
           )}
         </Button>
 
-        <SegmentedControl
-          ariaLabel="Sort mods"
-          size="sm"
-          value={sort as SortValue}
-          onChange={(v) => setSort(v)}
-          options={compactBrowse ? SORT_SEGMENTS_COMPACT : SORT_SEGMENTS}
-          fill={compactBrowse}
-          className={cn("shrink-0", compactBrowse ? "min-w-[9rem] flex-1" : "w-auto")}
-        />
+        <div className={cn("shrink-0", compactBrowse && "max-w-full overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden")}>
+          <SegmentedControl
+            ariaLabel="Sort mods"
+            size="sm"
+            value={sort as SortValue}
+            onChange={(v) => setSort(v)}
+            options={compactBrowse ? MOD_SORT_SEGMENTS_COMPACT : MOD_SORT_SEGMENTS}
+            fill={compactBrowse}
+            className={cn(compactBrowse ? "min-w-[9rem] flex-1" : "w-auto")}
+          />
+        </div>
       </div>
 
       {/* One-tap quick filters */}
@@ -579,6 +613,14 @@ function ModBrowserPage() {
         </button>
         <button
           type="button"
+          onClick={() => applyQuickPreset({ updated_since_days: 7 })}
+          className="game-nav-chip focusable shrink-0"
+          data-focusable="true"
+        >
+          Hot this week
+        </button>
+        <button
+          type="button"
           onClick={() => applyQuickPreset({ hide_adult: true })}
           className="game-nav-chip focusable shrink-0"
           data-focusable="true"
@@ -596,36 +638,16 @@ function ModBrowserPage() {
       />
 
       {/* Category quick-filter chips */}
-      {categories.length > 0 && (
-        <div className="mb-5 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <button
-            type="button"
-            onClick={() => selectCategory(null)}
-            className={cn(
-              "game-nav-chip focusable shrink-0",
-              !filters.category &&
-                "border-transparent bg-[image:var(--gradient-primary)] font-semibold text-[#2a1206]"
-            )}
-            data-focusable="true"
-          >
-            All
-          </button>
-          {categories.map((c) => (
-            <button
-              key={c.category_id}
-              type="button"
-              onClick={() => selectCategory(c.name)}
-              className={cn(
-                "game-nav-chip focusable shrink-0",
-                filters.category === c.name &&
-                  "border-transparent bg-[image:var(--gradient-primary)] font-semibold text-[#2a1206]"
-              )}
-              data-focusable="true"
-            >
-              {c.name}
-            </button>
-          ))}
-        </div>
+      <ModCategoryChips
+        categories={categories}
+        selected={filters.category}
+        onSelect={selectCategory}
+        loading={categoriesLoading}
+        className="mb-5"
+      />
+
+      {!query.trim() && activeFilterCount === 0 && !loading && (
+        <ModBrowseShelves domain={domain} compact={compactBrowse} />
       )}
 
       {error && (
@@ -658,23 +680,25 @@ function ModBrowserPage() {
       )}
 
       {compactBrowse ? (
-        <div className="mod-list">
-          {mods.map((mod) => (
-            <ModListRow
-              key={mod.mod_id}
-              mod={mod}
+        mods.length > 0 ? (
+          <>
+            <VirtualModList
+              mods={mods}
               domain={domain}
-              installed={installedIds.has(mod.mod_id)}
+              installedIds={installedIds}
+              onNearEnd={() => {
+                if (hasMore && !loadingMore) void loadMore(domain);
+              }}
             />
-          ))}
-          {loadingMore &&
-            Array.from({ length: 4 }).map((_, i) => (
-              <div
-                key={`more-list-skeleton-${i}`}
-                className="h-[5.5rem] animate-pulse rounded-xl bg-[var(--color-secondary)]"
-              />
-            ))}
-        </div>
+            {loadingMore &&
+              Array.from({ length: 3 }).map((_, i) => (
+                <div
+                  key={`more-list-skeleton-${i}`}
+                  className="mt-2 h-[5.5rem] animate-pulse rounded-xl bg-[var(--color-secondary)]"
+                />
+              ))}
+          </>
+        ) : null
       ) : (
         <div className="mod-grid">
           {mods.map((mod) => (

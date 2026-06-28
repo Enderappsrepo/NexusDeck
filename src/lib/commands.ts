@@ -623,6 +623,9 @@ export const api = {
       name: name ?? null,
     }),
 
+  repairSteamShortcuts: () =>
+    invoke<import("@/lib/autofix-types").ProtontricksFixResult>("repair_steam_shortcuts"),
+
   getGameSettingsSchema: (profileId: string) =>
     invoke<GameSettingsSchema>("get_game_settings_schema", { profileId }),
 
@@ -706,6 +709,16 @@ export const api = {
     invoke<import("@/lib/autofix-types").GameManifestEntry[]>("list_game_manifests"),
 
   getWabbajackChecklist: () => invoke<string[]>("get_wabbajack_checklist"),
+
+  getEssentialFixesManifest: (domain: string) =>
+    invoke<import("@/lib/nexus/types").EssentialFixesManifest>("get_essential_fixes_manifest", {
+      domain,
+    }),
+
+  applyEssentialFixes: (profileId: string) =>
+    invoke<import("@/lib/nexus/types").EssentialFixesResult>("apply_essential_fixes", {
+      profileId,
+    }),
 
   checkPrefixStatus: (
     protonPrefixPath: string | null,
@@ -877,6 +890,12 @@ export const api = {
   releaseWakeLock: () => invoke<void>("release_wake_lock"),
 
   isWakeLockActive: () => invoke<boolean>("is_wake_lock_active"),
+
+  restoreWindowAfterGame: () => invoke<void>("restore_window_after_game"),
+
+  reloadWebView: () => invoke<void>("reload_webview"),
+
+  claimGamescopeFocus: () => invoke<void>("claim_gamescope_focus"),
 
   diffCollectionInstall: (profileId: string, collectionMods: CollectionModInput[]) =>
     invoke<CollectionDiffResult>("diff_collection_install", { profileId, collectionMods }),

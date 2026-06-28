@@ -1,0 +1,35 @@
+{
+  "id": "essential_fixes",
+  "domain": "skyrimspecialedition",
+  "display_name": "Skyrim SE Essential Fixes",
+  "steps": [
+    {
+      "id": "proton_deps",
+      "label": "Proton dependencies",
+      "remedy_id": "skyrim/proton_deps_missing"
+    },
+    {
+      "id": "bethesda_audio",
+      "label": "Bethesda audio (XAudio2)",
+      "remedy_id": null
+    },
+    {
+      "id": "script_extender",
+      "label": "SKSE",
+      "remedy_id": "skyrim/skse_not_loading"
+    },
+    {
+      "id": "archive_invalidation",
+      "label": "Archive invalidation",
+      "remedy_id": "skyrim/archive_invalidation"
+    },
+    {
+      "id": "plugins_sync",
+      "label": "Sync plugins.txt",
+      "remedy_id": "skyrim/plugins_txt_sync"
+    }
+  ],
+  "recommended_mods": [
+    { "name": "Unofficial Skyrim Special Edition Patch", "nexus_mod_id": 164 }
+  ]
+}

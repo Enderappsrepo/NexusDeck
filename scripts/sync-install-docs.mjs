@@ -44,6 +44,12 @@ function patchScript(path) {
 }
 
 writeFileSync(join(docsDir, "i.sh"), patchScript(join(root, "install", "install-steamdeck.sh")), "utf8");
+writeFileSync(join(docsDir, "install-common.sh"), patchScript(join(root, "install", "install-common.sh")), "utf8");
+
+import { cpSync, rmSync } from "node:fs";
+const docsGui = join(docsDir, "gui");
+rmSync(docsGui, { recursive: true, force: true });
+cpSync(join(root, "install", "gui"), docsGui, { recursive: true });
 writeFileSync(join(docsDir, "u.sh"), patchScript(join(root, "install", "uninstall-steamdeck.sh")), "utf8");
 
 const html = `<!DOCTYPE html>
@@ -65,7 +71,9 @@ const html = `<!DOCTYPE html>
   <h1>NexusDeck on Steam Deck</h1>
 
   <h2>Install</h2>
-  <p>Open Konsole in Desktop Mode and run:</p>
+  <p><strong>Recommended:</strong> graphical installer in Desktop Mode (Konsole):</p>
+  <pre><code>curl -fsSL ${installPagesUrl} -o install.sh &amp;&amp; bash install.sh --gui</code></pre>
+  <p class="muted">Or one-line terminal install:</p>
   <pre><code>curl -fsSL ${installPagesUrl} | bash</code></pre>
   <p class="muted">Direct release link (alternative):</p>
   <pre><code>curl -fsSL ${installReleaseUrl} | bash</code></pre>

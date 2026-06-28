@@ -139,6 +139,7 @@ pub fn launch_game(
 
     let history_id = uuid::Uuid::new_v4().to_string();
     let started_at = chrono::Utc::now().timestamp();
+
     db::insert_launch_history(&LaunchHistoryEntry {
         id: history_id.clone(),
         profile_id: profile_id.to_string(),
@@ -153,6 +154,11 @@ pub fn launch_game(
 
     let plugin = GameRegistry::get(&profile.game_domain)?;
     let app_id = plugin.steam_app_id().unwrap_or(377160);
+
+    if settings.hide_on_launch && !settings.close_app_after_launch {
+        let _ = crate::services::gamescope::prepare_for_game_launch(app, &settings, app_id);
+    }
+
     let mut args: Vec<String> = serde_json::from_str(&config.args_json).unwrap_or_default();
     args.extend(options.extra_args);
 

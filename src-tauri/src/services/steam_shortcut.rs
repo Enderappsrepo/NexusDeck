@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +7,7 @@ use crate::error::{NexusDeckError, Result};
 use crate::games::GameRegistry;
 use crate::services::platform;
 use crate::services::host_shell::run_host_bash;
+use crate::services::shortcuts_vdf::{self, ShortcutUpsert};
 use crate::services::steam_input_install::{self, SteamInputInstallResult};
 use crate::services::steam::find_game_by_app_id;
 use crate::services::steam_launch::detect_steam_launch_info;
@@ -66,7 +66,7 @@ pub fn add_nexusdeck_to_steam(display_name: Option<String>) -> Result<NexusDeckS
     let shortcuts_path = resolve_steam_shortcuts_path()?;
 
     if shortcut_exists_on_host(&shortcuts_path, &spec.exe, &name, &spec.launch_options)? {
-        let app_id = generate_shortcut_app_id(&name, &spec.exe);
+        let app_id = shortcuts_vdf::generate_shortcut_app_id(&name, &spec.exe);
         let steam_input = steam_input_install::install_nexusdeck_steam_input(&name, app_id).ok();
         return Ok(NexusDeckSteamShortcutResult {
             display_name: name,
@@ -87,7 +87,7 @@ pub fn add_nexusdeck_to_steam(display_name: Option<String>) -> Result<NexusDeckS
         &spec.launch_options,
         &spec.start_dir,
     )?;
-    let app_id = generate_shortcut_app_id(&name, &spec.exe);
+    let app_id = shortcuts_vdf::generate_shortcut_app_id(&name, &spec.exe);
     let steam_input = steam_input_install::install_nexusdeck_steam_input(&name, app_id).ok();
 
     Ok(NexusDeckSteamShortcutResult {
@@ -107,7 +107,7 @@ pub fn install_nexusdeck_steam_input_layout(
 ) -> Result<SteamInputInstallResult> {
     let name = display_name.unwrap_or_else(|| "NexusDeck".to_string());
     let spec = resolve_nexusdeck_launch_spec()?;
-    let app_id = generate_shortcut_app_id(&name, &spec.exe);
+    let app_id = shortcuts_vdf::generate_shortcut_app_id(&name, &spec.exe);
     steam_input_install::install_nexusdeck_steam_input(&name, app_id)
 }
 
@@ -197,21 +197,35 @@ fn shortcut_exists_on_host(
     name: &str,
     launch_options: &str,
 ) -> Result<bool> {
-    let path_s = shell_escape(path.display().to_string());
-    let exe_s = shell_escape(exe.to_string());
-    let name_s = shell_escape(name.to_string());
-    let opts_s = shell_escape(launch_options.to_string());
-    let script = format!(
-        r#"p={path_s}
+    if !path.is_file() && !shortcuts_vdf::host_file_exists(path).unwrap_or(false) {
+        return Ok(false);
+    }
+    let upsert = ShortcutUpsert {
+        app_name: name.to_string(),
+        exe: exe.to_string(),
+        start_dir: String::new(),
+        launch_options: launch_options.to_string(),
+    };
+    match shortcuts_vdf::load_shortcuts(path) {
+        Ok(entries) => Ok(shortcuts_vdf::shortcut_exists(&entries, &upsert)),
+        Err(_) => {
+            // Legacy text format — fall back to grep for existence check only.
+            let path_s = shell_escape(path.display().to_string());
+            let exe_s = shell_escape(exe.to_string());
+            let name_s = shell_escape(name.to_string());
+            let opts_s = shell_escape(launch_options.to_string());
+            let script = format!(
+                r#"p={path_s}
 if [ ! -f "$p" ]; then exit 1; fi
 grep -Fq "\"Exe\"\t\t\"{exe_s}\"" "$p" && exit 0
 grep -Fq "\"AppName\"\t\t\"{name_s}\"" "$p" && exit 0
 grep -Fq "com.nexusdeck.app" "$p" && exit 0
 grep -Fq "{opts_s}" "$p" && exit 0
 exit 1"#
-    );
-    let output = run_host_bash(&script)?;
-    Ok(output.status.success())
+            );
+            Ok(run_host_bash(&script)?.status.success())
+        }
+    }
 }
 
 fn append_shortcut_on_host(
@@ -221,122 +235,13 @@ fn append_shortcut_on_host(
     launch_options: &str,
     start_dir: &str,
 ) -> Result<()> {
-    let app_id = generate_shortcut_app_id(name, exe);
-    let block = format!(
-        r#"
-"AppName"		"{name}"
-"Exe"		"{exe}"
-"StartDir"		"{start_dir}"
-"LaunchOptions"		"{launch_options}"
-"icon"		""
-"ShortcutPath"		""
-"IsHidden"		"0"
-"AllowDesktopConfig"		"1"
-"AllowOverlay"		"1"
-"OpenVR"		"0"
-"Devkit"		"0"
-"DevkitGameID"		""
-"DevkitOverrideAppID"		"0"
-"LastPlayTime"		"0"
-"tags"		"{{}}"
-"appid"		"{app_id}"
-"Playtime"		"0"
-"Playtime2wks"		"0"
-"SortAs"		""
-"UseLaunchOptions"		"1"
-"LastUpdated"		"0"
-"FlatpakAppID"		"{flatpak_app_id}"
-"GameID"		"{app_id}"
-"#,
-        name = name.replace('"', "\\\""),
-        exe = exe.replace('"', "\\\""),
-        start_dir = start_dir.replace('"', "\\\""),
-        launch_options = launch_options.replace('"', "\\\""),
-        flatpak_app_id = NEXUSDECK_APP_ID,
-        app_id = app_id,
-    );
-
-    let path_s = shell_escape(path.display().to_string());
-    let exe_s = shell_escape(exe.to_string());
-    let block_b64 = base64_encode(block.as_bytes());
-    let script = format!(
-        r#"set -e
-python3 - <<'PY'
-import base64, pathlib, sys
-path = pathlib.Path({path_s})
-exe = {exe_s}
-block = base64.b64decode("{block_b64}").decode("utf-8")
-backup = path.parent / (path.name + ".nexusdeck_backup")
-path.parent.mkdir(parents=True, exist_ok=True)
-if path.is_file():
-    head = path.read_bytes()[:2]
-    if len(head) >= 2 and head[0] == 0 and head[1] == 1:
-        print("binary_vdf")
-        sys.exit(3)
-if path.is_file() and not backup.is_file():
-    backup.write_bytes(path.read_bytes())
-needle = '"Exe"\t\t"' + exe + '"'
-if path.is_file():
-    text = path.read_text(encoding="utf-8", errors="replace")
-    if needle in text:
-        print("ok")
-        sys.exit(0)
-    if '"Shortcuts"' in text:
-        stripped = text.rstrip()
-        if stripped.endswith("}}"):
-            text = stripped[:-1] + block + "\n}}\n"
-        else:
-            text = text + block + "\n"
-    else:
-        text = '"Shortcuts"\n{{\n' + block + "\n}}\n"
-else:
-    text = '"Shortcuts"\n{{\n' + block + "\n}}\n"
-path.write_text(text, encoding="utf-8")
-print("ok")
-PY"#
-    );
-    let output = run_host_bash(&script)?;
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if stdout.trim() == "binary_vdf" {
-            return Err(NexusDeckError::Other(
-                "Steam shortcuts.vdf is in binary format. Quit Steam completely, then use \
-                 \"Add to Steam (auto)\" in Settings — or launch NexusDeck with: \
-                 flatpak run com.nexusdeck.app"
-                    .into(),
-            ));
-        }
-        return Err(NexusDeckError::Other(format!(
-            "Could not write Steam shortcut on host: {}",
-            err.trim()
-        )));
-    }
-    Ok(())
-}
-
-fn base64_encode(bytes: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-        let n = (b0 << 16) | (b1 << 8) | b2;
-        out.push(TABLE[((n >> 18) & 63) as usize] as char);
-        out.push(TABLE[((n >> 12) & 63) as usize] as char);
-        out.push(if chunk.len() > 1 {
-            TABLE[((n >> 6) & 63) as usize] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            TABLE[(n & 63) as usize] as char
-        } else {
-            '='
-        });
-    }
-    out
+    let upsert = ShortcutUpsert {
+        app_name: name.to_string(),
+        exe: exe.to_string(),
+        start_dir: start_dir.to_string(),
+        launch_options: launch_options.to_string(),
+    };
+    shortcuts_vdf::upsert_shortcut(path, &upsert).map(|_| ())
 }
 
 fn shell_escape(value: String) -> String {
@@ -481,8 +386,10 @@ pub fn create_steam_shortcut(
     let app_id = plugin.steam_app_id().unwrap_or(377160);
     let name = display_name.unwrap_or_else(|| format!("{} - {}", profile.name, config.name));
 
+    let exe_path = resolve_launch_executable(profile, config)?;
+    let generated_id = shortcuts_vdf::generate_shortcut_app_id(&name, &exe_path);
+
     let steam_info = detect_steam_launch_info(app_id)?;
-    let generated_id = generate_shortcut_app_id(&name, &profile.game_path);
 
     let record = SteamShortcutRecord {
         id: uuid::Uuid::new_v4().to_string(),
@@ -503,6 +410,21 @@ pub fn create_steam_shortcut(
         app_id_generated: record.app_id_generated,
         created_at: record.created_at,
     })
+}
+
+fn resolve_launch_executable(profile: &Profile, config: &LaunchConfig) -> Result<String> {
+    let plugin = GameRegistry::get(&profile.game_domain)?;
+    let targets = plugin.launch_targets(Path::new(&profile.game_path));
+    let exe = if config.use_f4se {
+        targets
+            .iter()
+            .find(|t| t.is_f4se)
+            .or_else(|| targets.first())
+    } else {
+        targets.iter().find(|t| !t.is_f4se).or_else(|| targets.first())
+    }
+    .ok_or_else(|| NexusDeckError::LaunchFailed("No launch target".into()))?;
+    Ok(exe.executable.clone())
 }
 
 pub fn list_steam_shortcut_infos(profile_id: &str) -> Result<Vec<SteamShortcutInfo>> {
@@ -529,16 +451,6 @@ pub fn list_steam_shortcut_infos(profile_id: &str) -> Result<Vec<SteamShortcutIn
         .collect())
 }
 
-/// Steam's algorithm for non-Steam app IDs (for metadata tracking).
-fn generate_shortcut_app_id(name: &str, exe_path: &str) -> u32 {
-    let combined = format!("{name}{exe_path}\0", name = name, exe_path = exe_path);
-    let mut crc: u32 = 0;
-    for byte in combined.bytes() {
-        crc = crc.wrapping_shl(8) ^ byte as u32;
-    }
-    crc | 0x80000000
-}
-
 pub fn write_shortcut_to_steam_vdf(
     profile: &Profile,
     config: &LaunchConfig,
@@ -547,18 +459,7 @@ pub fn write_shortcut_to_steam_vdf(
     let _steam = crate::services::steam::detect_steam()?
         .ok_or_else(|| NexusDeckError::SteamNotFound("Steam not found".into()))?;
 
-    let plugin = GameRegistry::get(&profile.game_domain)?;
-    let targets = plugin.launch_targets(Path::new(&profile.game_path));
-    let exe = if config.use_f4se {
-        targets
-            .iter()
-            .find(|t| t.is_f4se)
-            .or_else(|| targets.first())
-    } else {
-        targets.iter().find(|t| !t.is_f4se).or_else(|| targets.first())
-    }
-    .ok_or_else(|| NexusDeckError::LaunchFailed("No launch target".into()))?;
-
+    let exe_path = resolve_launch_executable(profile, config)?;
     let userdata = resolve_steam_shortcuts_path()?;
     let args: Vec<String> = serde_json::from_str(&config.args_json).unwrap_or_default();
     let launch_options = args.join(" ");
@@ -566,7 +467,7 @@ pub fn write_shortcut_to_steam_vdf(
     append_shortcut_on_host(
         &userdata,
         display_name,
-        &exe.executable,
+        &exe_path,
         &launch_options,
         &profile.game_path,
     )?;
@@ -595,74 +496,6 @@ fn find_steam_userdata(steam_path: &str) -> Result<std::path::PathBuf> {
     ))
 }
 
-fn append_shortcut_vdf_text(
-    path: &Path,
-    name: &str,
-    exe: &str,
-    launch_options: &str,
-    start_dir: &str,
-) -> Result<()> {
-    let app_id = generate_shortcut_app_id(name, exe);
-    let block = format!(
-        r#"
-"AppName"		"{name}"
-"Exe"		"{exe}"
-"StartDir"		"{start_dir}"
-"LaunchOptions"		"{launch_options}"
-"icon"		""
-"ShortcutPath"		""
-"IsHidden"		"0"
-"AllowDesktopConfig"		"1"
-"AllowOverlay"		"1"
-"OpenVR"		"0"
-"Devkit"		"0"
-"DevkitGameID"		""
-"DevkitOverrideAppID"		"0"
-"LastPlayTime"		"0"
-"tags"		"{{}}"
-"appid"		"{app_id}"
-"Playtime"		"0"
-"Playtime2wks"		"0"
-"SortAs"		""
-"UseLaunchOptions"		"1"
-"LastUpdated"		"0"
-"FlatpakAppID"		"{flatpak_app_id}"
-"GameID"		"{app_id}"
-"#,
-        name = name.replace('"', "\\\""),
-        exe = exe.replace('"', "\\\""),
-        start_dir = start_dir.replace('"', "\\\""),
-        launch_options = launch_options.replace('"', "\\\""),
-        flatpak_app_id = NEXUSDECK_APP_ID,
-        app_id = app_id,
-    );
-
-    if path.exists() {
-        let mut existing = std::fs::read_to_string(path).unwrap_or_default();
-        if !existing.contains("\"AppName\"") {
-            existing = "\"Shortcuts\"\n{\n".to_string();
-        }
-        if existing.ends_with("\n}") {
-            existing = existing.trim_end_matches("\n}").to_string();
-            existing.push_str(&block);
-            existing.push_str("\n}\n");
-        } else {
-            existing.push_str(&block);
-            if !existing.contains("\"Shortcuts\"") {
-                existing = format!("\"Shortcuts\"\n{{\n{existing}\n}}\n");
-            }
-        }
-        std::fs::write(path, existing)?;
-    } else {
-        std::fs::create_dir_all(path.parent().unwrap())?;
-        std::fs::write(
-            path,
-            format!("\"Shortcuts\"\n{{\n{block}\n}}\n"),
-        )?;
-    }
-    Ok(())
-}
-
 pub fn resolve_library_path(profile: &Profile, app_id: u32) -> Option<String> {
     if let Ok(candidates) = find_game_by_app_id(app_id) {
         for c in &candidates {
@@ -682,106 +515,24 @@ pub fn remove_nexusdeck_from_steam_library() -> Result<bool> {
         return Ok(false);
     }
 
-    let script = r#"
-set -euo pipefail
-APP_NAME="NexusDeck"
-APP_ID="com.nexusdeck.app"
-FLATPAK_CMD="flatpak run ${APP_ID}"
-LEGACY_INSTALL_DIR="${NEXUSDECK_INSTALL_DIR:-$HOME/.local/share/nexusdeck}"
-LEGACY_LAUNCHER="${LEGACY_INSTALL_DIR}/nexusdeck-launch.sh"
-LEGACY_APPIMAGE="${LEGACY_INSTALL_DIR}/NexusDeck.AppImage"
+    let path = match resolve_steam_shortcuts_path() {
+        Ok(p) => p,
+        Err(_) => return Ok(false),
+    };
 
-find_steam_path() {
-  local candidates=(
-    "${STEAM_COMPAT_CLIENT_INSTALL_PATH:-}"
-    "${HOME}/.steam/steam"
-    "${HOME}/.local/share/Steam"
-    "/usr/share/steam"
-    "/home/deck/.steam/steam"
-    "${HOME}/.var/app/com.valvesoftware.Steam/data/Steam"
-  )
-  for path in "${candidates[@]}"; do
-    [[ -n "$path" && -d "$path" ]] && { echo "$path"; return 0; }
-  done
-  return 1
+    let needles = [
+        "NexusDeck",
+        "com.nexusdeck.app",
+        "nexusdeck-launch.sh",
+        "NexusDeck.AppImage",
+        ".local/share/nexusdeck",
+    ];
+    shortcuts_vdf::remove_shortcuts_matching(&path, &needles)
 }
 
-find_steam_userdata() {
-  local steam_path="$1"
-  local userdata="${steam_path}/userdata"
-  [[ -d "$userdata" ]] || return 1
-  local entry
-  for entry in "$userdata"/*; do
-    [[ -d "$entry/config" ]] && { echo "$entry"; return 0; }
-  done
-  return 1
-}
-
-steam_path="$(find_steam_path)" || { echo "no_steam"; exit 0; }
-userdata="$(find_steam_userdata "$steam_path")" || { echo "no_userdata"; exit 0; }
-shortcuts_path="${userdata}/config/shortcuts.vdf"
-[[ -f "$shortcuts_path" ]] || { echo "no_file"; exit 0; }
-
-if [[ -f "${shortcuts_path}.nexusdeck_backup" ]]; then
-  cp "${shortcuts_path}.nexusdeck_backup" "$shortcuts_path"
-  echo "restored_backup"
-  exit 0
-fi
-
-python3 - "$shortcuts_path" "$APP_NAME" "$FLATPAK_CMD" "$LEGACY_LAUNCHER" "$LEGACY_APPIMAGE" "$LEGACY_INSTALL_DIR" <<'PY'
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-needles = [n for n in sys.argv[2:] if n]
-text = path.read_text(encoding="utf-8", errors="replace")
-if '"Shortcuts"' not in text:
-    print("missing")
-    sys.exit(0)
-
-lines = text.splitlines(keepends=True)
-result = []
-removed = False
-i = 0
-
-while i < len(lines):
-    line = lines[i]
-    if line.strip().startswith('"AppName"'):
-        block = []
-        j = i
-        while j < len(lines):
-            block.append(lines[j])
-            if j > i and lines[j].strip().startswith('"AppName"'):
-                block.pop()
-                break
-            if lines[j].strip() == "}" and j > i:
-                break
-            j += 1
-
-        block_text = "".join(block)
-        if any(needle in block_text for needle in needles):
-            removed = True
-            i = j
-            continue
-
-        result.extend(block)
-        i = j
-        continue
-
-    result.append(line)
-    i += 1
-
-if removed:
-    path.write_text("".join(result), encoding="utf-8")
-    print("removed")
-else:
-    print("not_found")
-PY
-"#;
-
-    let output = run_host_bash(script)?;
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(matches!(stdout.as_str(), "removed" | "restored_backup"))
+/// Repair corrupted Steam shortcuts (text format / parse errors) via backup restore.
+pub fn repair_steam_shortcuts() -> Result<crate::services::protontricks_health::ProtontricksFixResult> {
+    crate::services::protontricks_health::fix_protontricks_shortcuts(None)
 }
 
 #[cfg(test)]

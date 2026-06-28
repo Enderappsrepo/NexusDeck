@@ -46,6 +46,7 @@ sysinfo = "0.33"
 which = "6"
 libloot = "0.29.5"
 pelite = "0.10"
+steam_shortcuts_util = "1.1.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "2.0", features = ["v2_16"] }

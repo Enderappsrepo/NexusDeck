@@ -108,7 +108,7 @@ export function CollectionInstallProgressPanel() {
               mod.status === "downloading" ||
               mod.status === "installing";
             return (
-              <li key={mod.modId} className="flex items-center gap-2 py-1">
+              <li key={`${mod.modId}-${mod.fileId ?? "x"}`} className="flex items-center gap-2 py-1">
                 <Icon
                   className={cn(
                     "h-4 w-4 shrink-0",

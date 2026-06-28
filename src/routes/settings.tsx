@@ -642,6 +642,37 @@ function SettingsPage() {
           </div>
           <div className="flex items-center justify-between gap-4">
             <div>
+              <Label>Hide NexusDeck when game launches</Label>
+              <p className="text-sm text-[var(--color-muted)]">
+                Minimize the window so the game receives controller input (recommended on Deck).
+              </p>
+            </div>
+            <Switch
+              checked={launchSettings.hide_on_launch ?? true}
+              onCheckedChange={(checked) =>
+                saveLaunchSettings({ ...launchSettings, hide_on_launch: checked })
+              }
+              data-focusable="true"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label>Gamescope handoff</Label>
+              <p className="text-sm text-[var(--color-muted)]">
+                Release gamescope focus to Steam when launching (Gaming Mode).
+              </p>
+            </div>
+            <Switch
+              checked={launchSettings.gamescope_handoff ?? true}
+              disabled={!launchSettings.hide_on_launch}
+              onCheckedChange={(checked) =>
+                saveLaunchSettings({ ...launchSettings, gamescope_handoff: checked })
+              }
+              data-focusable="true"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <div>
               <Label>Close NexusDeck after launch</Label>
               <p className="text-sm text-[var(--color-muted)]">
                 Exit the app once the game starts (Steam Deck friendly).

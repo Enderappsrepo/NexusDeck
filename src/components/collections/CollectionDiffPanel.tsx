@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Download, RefreshCw } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { api } from "@/lib/commands";
+import { dedupeCollectionMods, modDownloadInFlight } from "@/lib/nexus/collections";
 import type { CollectionDetail, CollectionDiffResult, Profile } from "@/lib/nexus/types";
 import { useDownloadsStore, useInstallQueueStore } from "@/stores";
 import { modFileDownloadName } from "@/lib/nexus/types";
@@ -28,12 +29,13 @@ export function CollectionDiffPanel({ profile, gameDomain, collection }: Collect
   const [fixing, setFixing] = useState(false);
   const setProgress = useDownloadsStore((s) => s.setProgress);
   const registerPendingInstall = useInstallQueueStore((s) => s.registerPendingInstall);
+  const uniqueMods = useMemo(() => dedupeCollectionMods(collection.mods), [collection.mods]);
 
   const refresh = () => {
     api
       .diffCollectionInstall(
         profile.id,
-        collection.mods.map((m) => ({
+        uniqueMods.map((m) => ({
           mod_id: m.mod_id,
           file_id: m.file_id,
           name: m.name,
@@ -50,7 +52,7 @@ export function CollectionDiffPanel({ profile, gameDomain, collection }: Collect
     const handler = () => refresh();
     window.addEventListener("nexusdeck-mod-installed", handler);
     return () => window.removeEventListener("nexusdeck-mod-installed", handler);
-  }, [profile.id, collection.slug]);
+  }, [profile.id, collection.slug, uniqueMods]);
 
   if (!diff) return null;
 
@@ -60,8 +62,10 @@ export function CollectionDiffPanel({ profile, gameDomain, collection }: Collect
   const fixMissing = async () => {
     setFixing(true);
     try {
+      const active = useDownloadsStore.getState().active;
       for (const entry of diff.mods.filter((m) => m.status !== "installed")) {
-        const cm = collection.mods.find((c) => c.mod_id === entry.mod_id);
+        if (modDownloadInFlight(entry.mod_id, active)) continue;
+        const cm = uniqueMods.find((c) => c.mod_id === entry.mod_id);
         if (!cm?.file_id) continue;
         const files = await api.getModFiles(gameDomain, cm.mod_id);
         const file = files.find((f) => f.file_id === cm.file_id) ?? files[0];

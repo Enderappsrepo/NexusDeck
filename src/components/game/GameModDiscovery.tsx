@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Check, LayoutGrid, Search, ShieldAlert, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,36 +8,64 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { ModHeroCarousel } from "@/components/home/ModHeroCarousel";
 import { ModRowCarousel } from "@/components/home/ModRowCarousel";
 import { ModCard } from "@/components/mod/ModCard";
+import { ModCategoryChips } from "@/components/mod/ModCategoryChips";
 import { api } from "@/lib/commands";
 import { getUserMessage } from "@/lib/apiError";
 import { DEFAULT_FILTERS } from "@/lib/nexus/filters";
+import {
+  MOD_SORT_OPTIONS,
+  MOD_SORT_SEGMENTS,
+  MOD_SORT_SEGMENTS_COMPACT,
+  type ModSort,
+} from "@/lib/nexus/modSorts";
+import type { ModSearchFilters } from "@/lib/nexus/types";
 import { cn } from "@/lib/utils";
 import { useGamepadTabs } from "@/hooks/useGamepadTabs";
 import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
 import { GP } from "@/lib/gamepad/buttons";
 import { focusedBrowseModId } from "@/lib/gamepad/domHelpers";
 import { useEndorseFocusedMod } from "@/hooks/useEndorseFocusedMod";
-import { useGamesStore, useDownloadsStore } from "@/stores";
+import { useGamesStore, useDownloadsStore, useModsStore } from "@/stores";
 import { modFileDownloadName, type ModSummary } from "@/lib/nexus/types";
 
 interface DiscoveryFeeds {
   featured: ModSummary[];
   topEndorsed: ModSummary[];
   mostDownloaded: ModSummary[];
+  trending: ModSummary[];
+  newlyAdded: ModSummary[];
   recentlyUpdated: ModSummary[];
+  hotThisWeek: ModSummary[];
 }
 
 const EMPTY_FEEDS: DiscoveryFeeds = {
   featured: [],
   topEndorsed: [],
   mostDownloaded: [],
+  trending: [],
+  newlyAdded: [],
   recentlyUpdated: [],
+  hotThisWeek: [],
 };
 
 type DiscoverView = "highlights" | "browse";
-type BrowseSort = "endorsements" | "downloads" | "updated";
 
 const BROWSE_PAGE = 24;
+const FEED_COUNT = 12;
+
+const DISCOVERY_FEED_ROWS: {
+  key: keyof Omit<DiscoveryFeeds, "featured">;
+  title: string;
+  sort: ModSort;
+  filterPatch?: Partial<ModSearchFilters>;
+}[] = [
+  { key: "topEndorsed", title: "Most endorsed", sort: "endorsements" },
+  { key: "mostDownloaded", title: "Most downloaded", sort: "downloads" },
+  { key: "trending", title: "Trending now", sort: "trending", filterPatch: { updated_since_days: 30 } },
+  { key: "newlyAdded", title: "Newly added", sort: "created" },
+  { key: "recentlyUpdated", title: "Recently updated", sort: "updated" },
+  { key: "hotThisWeek", title: "Hot this week", sort: "endorsements", filterPatch: { updated_since_days: 7 } },
+];
 
 interface GameModDiscoveryProps {
   domain: string;
@@ -55,9 +83,10 @@ export function GameModDiscovery({
   const [feeds, setFeeds] = useState<DiscoveryFeeds>(EMPTY_FEEDS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   const [view, setView] = useState<DiscoverView>("highlights");
-  const [sort, setSort] = useState<BrowseSort>("endorsements");
+  const [sort, setSort] = useState<ModSort>("endorsements");
   const [hideAdult, setHideAdult] = useState(false);
   const [browseMods, setBrowseMods] = useState<ModSummary[]>([]);
   const [browseLoading, setBrowseLoading] = useState(false);
@@ -67,13 +96,13 @@ export function GameModDiscovery({
   const [browseHasMore, setBrowseHasMore] = useState(false);
   const [browseNonce, setBrowseNonce] = useState(0);
 
+  const { categories, categoriesLoading, loadCategories } = useModsStore();
+
   const showHero = sections === "hero" || sections === "all";
   const showRows = sections === "rows" || sections === "all";
 
   const discoverTabIds =
-    view === "browse"
-      ? (["endorsements", "downloads", "updated"] as const)
-      : (["highlights", "browse"] as const);
+    view === "browse" ? [...MOD_SORT_OPTIONS] : (["highlights", "browse"] as const);
   const activeDiscoverTab = view === "browse" ? sort : view;
 
   useGamepadTabs(
@@ -81,7 +110,7 @@ export function GameModDiscovery({
     activeDiscoverTab,
     (tab) => {
       if (view === "browse") {
-        setSort(tab as BrowseSort);
+        setSort(tab as ModSort);
       } else {
         setView(tab as DiscoverView);
       }
@@ -91,6 +120,18 @@ export function GameModDiscovery({
   const { getProfile } = useGamesStore();
   const profile = getProfile(domain);
   const setProgress = useDownloadsStore((s) => s.setProgress);
+
+  const categoryFilters = useMemo(
+    (): ModSearchFilters => ({
+      ...DEFAULT_FILTERS,
+      category: selectedCategory,
+    }),
+    [selectedCategory]
+  );
+
+  useEffect(() => {
+    if (showRows) loadCategories(domain);
+  }, [domain, showRows, loadCategories]);
 
   useGamepadContextAction(
     GP.X,
@@ -129,36 +170,62 @@ export function GameModDiscovery({
   const endorseMods =
     view === "browse"
       ? browseMods
-      : [...feeds.topEndorsed, ...feeds.mostDownloaded, ...feeds.recentlyUpdated];
+      : [
+          ...feeds.topEndorsed,
+          ...feeds.mostDownloaded,
+          ...feeds.trending,
+          ...feeds.newlyAdded,
+          ...feeds.recentlyUpdated,
+          ...feeds.hotThisWeek,
+        ];
   useEndorseFocusedMod(domain, endorseMods, "discover");
 
-  const loadDiscovery = () => {
+  const loadDiscovery = useCallback(() => {
     setLoading(true);
     setError(null);
 
-    Promise.all([
-      api.searchModsFiltered(domain, "", "endorsements", 0, 12, DEFAULT_FILTERS),
-      api.getTrendingMods(domain, 12),
-      api.searchModsFiltered(domain, "", "updated", 0, 12, DEFAULT_FILTERS),
-    ])
-      .then(([endorsedResult, downloaded, updatedResult]) => {
-        setFeeds({
-          featured: endorsedResult.mods.slice(0, 6),
-          topEndorsed: endorsedResult.mods,
-          mostDownloaded: downloaded,
-          recentlyUpdated: updatedResult.mods,
-        });
-      })
-      .catch((e) => {
-        setError(e);
-        setFeeds(EMPTY_FEEDS);
-      })
-      .finally(() => setLoading(false));
-  };
+    void Promise.allSettled(
+      DISCOVERY_FEED_ROWS.map((row) =>
+        api.searchModsFiltered(
+          domain,
+          "",
+          row.sort,
+          0,
+          FEED_COUNT,
+          { ...categoryFilters, ...row.filterPatch }
+        )
+      )
+    ).then((results) => {
+      const next = { ...EMPTY_FEEDS } as DiscoveryFeeds;
+      let anySuccess = false;
+
+      DISCOVERY_FEED_ROWS.forEach((row, i) => {
+        const result = results[i];
+        if (result.status === "fulfilled") {
+          next[row.key] = result.value.mods;
+          anySuccess = true;
+        } else {
+          console.warn(`[NexusDeck] Discovery feed "${row.title}" failed:`, result.reason);
+        }
+      });
+
+      next.featured = next.topEndorsed.slice(0, 6);
+      setFeeds(next);
+
+      if (!anySuccess) {
+        const firstFailure = results.find((r) => r.status === "rejected");
+        setError(
+          firstFailure && firstFailure.status === "rejected"
+            ? firstFailure.reason
+            : new Error("Could not load mods")
+        );
+      }
+    }).finally(() => setLoading(false));
+  }, [domain, categoryFilters]);
 
   useEffect(() => {
-    loadDiscovery();
-  }, [domain]);
+    if (showRows || showHero) loadDiscovery();
+  }, [loadDiscovery, showRows, showHero]);
 
   // Browse grid — paginated, driven by the toolbar. Reset on sort/filter change.
   useEffect(() => {
@@ -168,7 +235,7 @@ export function GameModDiscovery({
     setBrowseError(null);
     api
       .searchModsFiltered(domain, "", sort, 0, BROWSE_PAGE, {
-        ...DEFAULT_FILTERS,
+        ...categoryFilters,
         hide_adult: hideAdult,
       })
       .then((result) => {
@@ -188,14 +255,14 @@ export function GameModDiscovery({
     return () => {
       active = false;
     };
-  }, [showRows, view, domain, sort, hideAdult, browseNonce]);
+  }, [showRows, view, domain, sort, hideAdult, browseNonce, categoryFilters]);
 
   const loadMoreBrowse = () => {
     setBrowseLoadingMore(true);
     setBrowseError(null);
     api
       .searchModsFiltered(domain, "", sort, browseMods.length, BROWSE_PAGE, {
-        ...DEFAULT_FILTERS,
+        ...categoryFilters,
         hide_adult: hideAdult,
       })
       .then((result) => {
@@ -206,11 +273,9 @@ export function GameModDiscovery({
       .finally(() => setBrowseLoadingMore(false));
   };
 
-  const hasAnyMods =
-    feeds.featured.length > 0 ||
-    feeds.topEndorsed.length > 0 ||
-    feeds.mostDownloaded.length > 0 ||
-    feeds.recentlyUpdated.length > 0;
+  const hasAnyMods = Object.values(feeds).some((list) => list.length > 0);
+
+  const sortSegments = compact ? MOD_SORT_SEGMENTS_COMPACT : MOD_SORT_SEGMENTS;
 
   const emptyState = (
     <EmptyState
@@ -245,6 +310,16 @@ export function GameModDiscovery({
     />
   );
 
+  const categoryChips = showRows && (
+    <ModCategoryChips
+      categories={categories}
+      selected={selectedCategory}
+      onSelect={setSelectedCategory}
+      loading={categoriesLoading}
+      className="mb-4"
+    />
+  );
+
   // Hero-only usage (Play tab) — unchanged behavior.
   if (!showRows) {
     if (loading) return <ModGridSkeleton count={3} />;
@@ -274,17 +349,15 @@ export function GameModDiscovery({
         />
         {view === "browse" && (
           <div className="flex flex-wrap items-center gap-2">
-            <SegmentedControl
-              ariaLabel="Sort mods"
-              size="sm"
-              value={sort}
-              onChange={setSort}
-              options={[
-                { value: "endorsements", label: "Endorsed" },
-                { value: "downloads", label: "Downloaded" },
-                { value: "updated", label: "Updated" },
-              ]}
-            />
+            <div className="max-w-full overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <SegmentedControl
+                ariaLabel="Sort mods"
+                size="sm"
+                value={sort}
+                onChange={setSort}
+                options={sortSegments}
+              />
+            </div>
             <button
               type="button"
               onClick={() => setHideAdult((v) => !v)}
@@ -305,6 +378,8 @@ export function GameModDiscovery({
         )}
       </div>
 
+      {categoryChips}
+
       {view === "highlights" ? (
         loading ? (
           <ModGridSkeleton count={3} />
@@ -312,24 +387,18 @@ export function GameModDiscovery({
           emptyState
         ) : (
           <div className={compact ? "space-y-6" : "space-y-8"}>
-            <ModRowCarousel
-              title="Most endorsed"
-              mods={feeds.topEndorsed}
-              domain={domain}
-              compact={compact}
-            />
-            <ModRowCarousel
-              title="Most downloaded"
-              mods={feeds.mostDownloaded}
-              domain={domain}
-              compact={compact}
-            />
-            <ModRowCarousel
-              title="Recently updated"
-              mods={feeds.recentlyUpdated}
-              domain={domain}
-              compact={compact}
-            />
+            {DISCOVERY_FEED_ROWS.map((row) => (
+              <ModRowCarousel
+                key={row.key}
+                title={row.title}
+                mods={feeds[row.key]}
+                domain={domain}
+                compact={compact}
+                sort={row.sort}
+                category={selectedCategory}
+                filterPatch={row.filterPatch}
+              />
+            ))}
           </div>
         )
       ) : browseLoading ? (
@@ -350,7 +419,7 @@ export function GameModDiscovery({
         <EmptyState
           icon={Search}
           title="No mods found"
-          description="Try a different sort, or turn off the adult-content filter."
+          description="Try a different sort, category, or turn off the adult-content filter."
           className="py-10"
         />
       ) : (

@@ -74,10 +74,25 @@ flatpak-builder --force-clean build-dir flatpak/com.nexusdeck.app.yml
 
 ## Steam Deck Install
 
-**Short URL** (after GitHub Pages is enabled — see below):
+**Recommended — graphical installer** (Desktop Mode → Konsole):
+
+```bash
+curl -fsSL https://YOUR_USER.github.io/NexusDeck/i.sh -o install.sh
+bash install.sh --gui
+```
+
+This opens a setup wizard in your browser with progress steps, install options, and a one-click finish.
+
+**One-line terminal install** (after GitHub Pages is enabled — see below):
 
 ```bash
 curl -fsSL https://YOUR_USER.github.io/NexusDeck/i.sh | bash
+```
+
+Or force the GUI from a pipe:
+
+```bash
+curl -fsSL https://YOUR_USER.github.io/NexusDeck/i.sh | NEXUSDECK_GUI=1 bash
 ```
 
 Run `npm run install:url` to print your exact URLs after the repo is on GitHub.

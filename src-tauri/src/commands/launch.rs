@@ -21,6 +21,7 @@ use crate::services::steam_shortcut::{
     install_nexusdeck_steam_input_layout as run_install_steam_input,
     is_steam_client_running,
     list_steam_shortcut_infos,
+    repair_steam_shortcuts as run_repair_steam_shortcuts,
     request_steam_shutdown,
     write_shortcut_to_steam_vdf, NexusDeckSteamShortcutResult, SteamShortcutInfo,
 };
@@ -185,7 +186,7 @@ pub fn create_steam_shortcut(
     let info = run_create_steam_shortcut(&profile, &config, name)?;
 
     if write_vdf.unwrap_or(false) {
-        let _ = write_shortcut_to_steam_vdf(&profile, &config, &info.display_name);
+        write_shortcut_to_steam_vdf(&profile, &config, &info.display_name)?;
     }
 
     Ok(info)
@@ -229,6 +230,12 @@ pub fn install_nexusdeck_steam_input_layout(
     name: Option<String>,
 ) -> Result<SteamInputInstallResult> {
     run_install_steam_input(name)
+}
+
+#[tauri::command]
+pub fn repair_steam_shortcuts(
+) -> Result<crate::services::protontricks_health::ProtontricksFixResult> {
+    run_repair_steam_shortcuts()
 }
 
 #[tauri::command]

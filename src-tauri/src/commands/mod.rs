@@ -25,8 +25,10 @@ mod app_reset;
 mod app_update;
 mod profile_insights;
 mod logs;
+mod essential_fixes;
 mod decky_host;
 mod wake;
+mod window;
 
 pub use app_prefs::*;
 pub use auth::*;
@@ -55,5 +57,7 @@ pub use app_reset::*;
 pub use app_update::*;
 pub use profile_insights::*;
 pub use logs::*;
+pub use essential_fixes::*;
 pub use decky_host::*;
 pub use wake::*;
+pub use window::*;

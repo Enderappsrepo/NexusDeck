@@ -442,6 +442,31 @@ impl DownloadManager {
         self.process_queue();
     }
 
+    /// Pause active downloads before system suspend (status → paused, partial files kept).
+    pub fn pause_active_for_suspend(&self) {
+        let active_ids: Vec<String> = self.active.lock().keys().cloned().collect();
+        for id in active_ids {
+            if let Some(record) = db::get_download(&id).ok().flatten() {
+                let dest = PathBuf::from(&record.dest_path);
+                let part = part_path(&dest);
+                let bytes = if part.exists() {
+                    part.metadata().map(|m| m.len()).unwrap_or(record.bytes_done as u64)
+                } else {
+                    record.bytes_done as u64
+                };
+                let _ = db::update_download_status(&id, "paused", bytes as i64, record.bytes_total);
+            }
+            if let Some(active) = self.active.lock().remove(&id) {
+                let _ = active.cancel_tx.send(true);
+            }
+        }
+        self.queue.lock().clear();
+    }
+
+    pub fn resume_after_suspend(&self, app: AppHandle, nexus: Arc<NexusClient>) {
+        self.resume_incomplete_downloads(app, nexus);
+    }
+
     fn process_queue(&self) {
         let mut processing = self.processing.lock();
         if *processing {

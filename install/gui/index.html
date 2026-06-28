@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NexusDeck Setup</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="backdrop"></div>
+    <main class="shell">
+      <header class="hero">
+        <div class="logo">ND</div>
+        <div>
+          <p class="eyebrow">Steam Deck installer</p>
+          <h1>NexusDeck Setup</h1>
+          <p class="subtitle" id="subtitle">Install the mod manager built for handheld play.</p>
+        </div>
+      </header>
+
+      <section class="panel" id="screen-welcome">
+        <h2>Welcome</h2>
+        <p class="lead">
+          This wizard downloads the latest Flatpak, registers mod links, and optionally adds
+          NexusDeck to your Steam library for Gaming Mode.
+        </p>
+        <ul class="feature-list" id="feature-list">
+          <li>Flatpak install — no AppImage hassles</li>
+          <li>nxm:// mod link handler</li>
+          <li>Steam library shortcut + controller template</li>
+          <li>Launches setup wizard when done</li>
+        </ul>
+        <div class="badge-row" id="deck-badge" hidden>
+          <span class="badge success">Steam Deck detected</span>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="btn-continue" type="button">Continue</button>
+        </div>
+      </section>
+
+      <section class="panel hidden" id="screen-options">
+        <h2>Install options</h2>
+        <p class="lead">Pick what to set up now. You can change these later in NexusDeck Settings.</p>
+        <div class="option-list">
+          <label class="option">
+            <input type="checkbox" id="opt-steam" checked />
+            <span>
+              <strong>Add to Steam library</strong>
+              <small>Show NexusDeck in Gaming Mode (quit Steam first if it&apos;s running)</small>
+            </span>
+          </label>
+          <label class="option">
+            <input type="checkbox" id="opt-controller" checked />
+            <span>
+              <strong>Install controller template</strong>
+              <small>Pass-through gamepad layout for D-pad, A/B, L1/R1 navigation</small>
+            </span>
+          </label>
+          <label class="option">
+            <input type="checkbox" id="opt-launch" checked />
+            <span>
+              <strong>Launch NexusDeck when finished</strong>
+              <small>Opens the in-app onboarding wizard</small>
+            </span>
+          </label>
+        </div>
+        <div class="actions">
+          <button class="btn ghost" id="btn-back" type="button">Back</button>
+          <button class="btn primary" id="btn-install" type="button">Install NexusDeck</button>
+        </div>
+      </section>
+
+      <section class="panel hidden" id="screen-progress">
+        <h2>Installing…</h2>
+        <p class="lead" id="progress-lead">Downloading and configuring NexusDeck. This may take a few minutes.</p>
+        <div class="progress-bar" aria-hidden="true">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <ol class="steps" id="step-list"></ol>
+        <pre class="log" id="log" hidden></pre>
+      </section>
+
+      <section class="panel hidden" id="screen-done">
+        <div class="done-icon">✓</div>
+        <h2>All set!</h2>
+        <p class="lead" id="done-message">NexusDeck is installed. Restart Steam if you added a shortcut.</p>
+        <ul class="next-steps">
+          <li>Enter your Nexus Mods API key in the app</li>
+          <li>Run the game setup wizard for Fallout 4 or Skyrim</li>
+          <li>In Gaming Mode, pick the <strong>NexusDeck</strong> controller layout</li>
+        </ul>
+        <div class="actions">
+          <button class="btn primary" id="btn-close" type="button">Close installer</button>
+        </div>
+      </section>
+
+      <section class="panel hidden" id="screen-error">
+        <div class="done-icon error">!</div>
+        <h2>Installation failed</h2>
+        <p class="lead" id="error-message">Something went wrong.</p>
+        <div class="actions">
+          <button class="btn ghost" id="btn-retry" type="button">Try again</button>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span id="repo-label">NexusDeck</span>
+        <button class="link-btn" id="btn-toggle-log" type="button">Show log</button>
+      </footer>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

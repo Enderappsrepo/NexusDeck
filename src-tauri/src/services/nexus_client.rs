@@ -502,13 +502,24 @@ impl NexusClient {
         count: u32,
         filters: &ModSearchFilters,
     ) -> Result<ModSearchResult> {
+        let mut filters = filters.clone();
         let sort_field = match sort {
             "endorsements" => "endorsements",
             "downloads" => "downloads",
+            "created" | "createdAt" => "createdAt",
+            // recentRating exists on CollectionsSort, not ModsSort — use downloads as proxy.
+            "trending" | "recentRating" => {
+                if filters.updated_since_days.is_none() {
+                    filters.updated_since_days = Some(30);
+                }
+                "downloads"
+            }
+            "name" => "name",
+            "updated" | "updatedAt" => "updatedAt",
             _ => "updatedAt",
         };
 
-        let filter = Self::build_mods_filter(game_domain, query, filters);
+        let filter = Self::build_mods_filter(game_domain, query, &filters);
 
         let gql = r#"
             query SearchMods($filter: ModsFilter, $sort: [ModsSort!], $offset: Int, $count: Int) {
@@ -617,7 +628,7 @@ impl NexusClient {
             .search_mods_with_filters(
                 game_domain,
                 "",
-                "downloads",
+                "trending",
                 0,
                 count,
                 &ModSearchFilters::default(),
@@ -1172,7 +1183,7 @@ impl NexusClient {
         game_domain: &str,
         slug: &str,
     ) -> Result<CollectionDetail> {
-        let cache_key = format!("collection:{game_domain}:{slug}");
+        let cache_key = format!("collection:v2:{game_domain}:{slug}");
         if let Some(cached) = self.get_cache(&cache_key) {
             return Ok(serde_json::from_str(&cached)?);
         }
@@ -1212,10 +1223,6 @@ impl NexusClient {
             .ok_or_else(|| NexusDeckError::NotFound(format!("Collection {slug} not found")))?;
 
         let revision = node.get("latestPublishedRevision");
-        let mod_count = revision
-            .and_then(|r| r.get("modCount"))
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
 
         let mods: Vec<CollectionModEntry> = revision
             .and_then(|r| r.get("modFiles"))
@@ -1258,6 +1265,9 @@ impl NexusClient {
                     .collect()
             })
             .unwrap_or_default();
+
+        let mods = crate::services::collection_mods::dedupe_collection_mods(mods);
+        let mod_count = mods.len() as u64;
 
         let detail = CollectionDetail {
             name: node

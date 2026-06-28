@@ -1,0 +1,4 @@
+/* Preview-only: force Tailwind v4 to scan the app source for utility classes.
+   The Vite root here is e2e/preview, so automatic detection misses ../../src. */
+@import "tailwindcss";
+@source "../../src/**/*.{ts,tsx,html}";

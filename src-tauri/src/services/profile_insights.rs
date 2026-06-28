@@ -43,6 +43,10 @@ pub struct CollectionModInput {
 }
 
 pub fn diff_collection(profile_id: &str, collection_mods: &[CollectionModInput]) -> Result<CollectionDiffResult> {
+    let collection_mods = crate::services::collection_mods::dedupe_collection_mod_inputs(
+        collection_mods.to_vec(),
+    );
+    let total_count = collection_mods.len();
     let installed = db::list_installed_mods(profile_id)?;
     let by_nexus: HashMap<u64, &InstalledMod> = installed
         .iter()
@@ -91,7 +95,7 @@ pub fn diff_collection(profile_id: &str, collection_mods: &[CollectionModInput])
 
     Ok(CollectionDiffResult {
         installed_count,
-        total_count: collection_mods.len(),
+        total_count,
         missing_count,
         outdated_count,
         wrong_file_count,

@@ -14,6 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScriptExtenderInstallDialog } from "@/components/wizard/ScriptExtenderInstallDialog";
 import { DeckAdvisorPanel } from "@/components/advisor/DeckAdvisorPanel";
+import { GameHubDeck } from "@/components/game/GameHubDeck";
 import { CommunityHubPanel } from "@/components/community/CommunityHubPanel";
 import { GameModDiscovery } from "@/components/game/GameModDiscovery";
 import { GameSettingsPanel } from "@/components/game/GameSettingsPanel";
@@ -37,7 +38,10 @@ import {
   hasScriptExtender,
   loadSupportedGames,
 } from "@/lib/games";
+import { resolveCompactNav } from "@/lib/platform";
 import { resolveGameDomain, usePathname, isValidGameDomain } from "@/lib/routeParams";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useIsNarrow } from "@/hooks/useMediaQuery";
 import { useGamepadTabs } from "@/hooks/useGamepadTabs";
 import { gamepadRouter, useGamepadContextAction } from "@/hooks/useGamepadRouter";
 import { GP } from "@/lib/gamepad/buttons";
@@ -75,6 +79,10 @@ function GameDashboard() {
   const [extenderStatus, setExtenderStatus] = useState<ScriptExtenderStatus | null>(null);
   const [extenderDialogOpen, setExtenderDialogOpen] = useState(false);
   const [supportedGames, setSupportedGames] = useState<SupportedGameInfo[]>([]);
+  const navMode = useSettingsStore((s) => s.navMode);
+  const deckDetected = useSettingsStore((s) => s.deckDetected);
+  const narrow = useIsNarrow();
+  const compactHub = resolveCompactNav(navMode, narrow, deckDetected);
 
   const gameMeta = getGameMeta(domain, supportedGames);
   const extenderLabel = gameMeta?.script_extender_label;
@@ -167,6 +175,19 @@ function GameDashboard() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-5">
       {!user && <SignInPrompt />}
+      {compactHub ? (
+        <GameHubDeck
+          domain={domain}
+          profile={profile}
+          gameMeta={gameMeta}
+          playtime={playtime}
+          userSignedIn={!!user}
+          modSearchQuery={modSearchQuery}
+          onModSearchQueryChange={setModSearchQuery}
+          onModSearch={handleModSearch}
+        />
+      ) : (
+        <>
       <section className="game-banner min-h-[220px] sm:min-h-[260px]">
         <GameArt domain={domain} variant="hero" />
         <div className="game-banner-content">
@@ -283,6 +304,8 @@ function GameDashboard() {
           <CommunityHubPanel gameDomain={domain} embedded />
         </TabsContent>
       </Tabs>
+        </>
+      )}
 
       <Outlet />
 

@@ -38,6 +38,7 @@ function FilterChip({
 const QUICK_PRESETS: { label: string; patch: Partial<ModSearchFilters> }[] = [
   { label: "Popular (1k+)", patch: { min_endorsements: 1000 } },
   { label: "Recent (30d)", patch: { updated_since_days: 30 } },
+  { label: "Hot this week", patch: { updated_since_days: 7 } },
   { label: "Hide adult", patch: { hide_adult: true } },
 ];
 
