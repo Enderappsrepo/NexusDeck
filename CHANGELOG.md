@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.33] - 2026-06-29
+
+### Added
+- **On-network companion** — open `http://<device-ip>:8731/app/` on your phone (same Wi‑Fi) to avoid GitHub Pages HTTPS connection issues.
+- **Deck-proxied Nexus search** — after pairing, the companion searches and sends mods using the Nexus API key already saved on your Deck/PC; no key required on the phone.
+
+### Changed
+- **Companion UI overhaul** — 3-step connect/pair/send flow, clearer IP help, 15s connection timeout, and optional phone-side API key fallback.
+
 ## [1.1.32] - 2026-06-29
 
 ### Added

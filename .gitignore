@@ -12,6 +12,8 @@ dist
 dist-ssr
 dist-companion-release
 docs/companion
+src-tauri/resources/companion-web/*
+!src-tauri/resources/companion-web/.gitkeep
 .tanstack
 *.local
 

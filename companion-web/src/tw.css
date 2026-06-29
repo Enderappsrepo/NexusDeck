@@ -2,19 +2,106 @@
 
 :root {
   color-scheme: dark;
-  --color-bg: #0a0b10;
-  --color-card: #12141c;
-  --color-border: #2a2d3a;
-  --color-muted: #9aa0b4;
+  --color-bg: #07080d;
+  --color-card: #11131b;
+  --color-card-elevated: #171a24;
+  --color-border: #2a3040;
+  --color-muted: #9aa3b8;
   --color-primary: #ff7a1a;
+  --color-primary-soft: color-mix(in srgb, var(--color-primary) 18%, transparent);
   --color-success: #45e08a;
-  --color-danger: #ff5c5c;
+  --color-danger: #ff6b6b;
 }
 
 body {
   margin: 0;
   min-height: 100dvh;
-  background: var(--color-bg);
+  background:
+    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(255, 122, 26, 0.12), transparent 55%),
+    var(--color-bg);
   color: #f3f4f6;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+  .shell {
+    @apply mx-auto flex min-h-dvh max-w-lg flex-col gap-4 px-4 pb-12 pt-[max(1rem,env(safe-area-inset-top))];
+  }
+
+  .hero {
+    @apply rounded-3xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-lg shadow-black/20;
+  }
+
+  .card {
+    @apply rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4;
+  }
+
+  .card-soft {
+    @apply rounded-2xl border border-[var(--color-border)]/70 bg-[var(--color-card-elevated)]/80 p-4;
+  }
+
+  .label {
+    @apply text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)];
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-[var(--color-border)] bg-[#0c0e15] px-4 py-3 text-base text-white outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/25;
+  }
+
+  .input-code {
+    @apply text-center font-mono text-2xl tracking-[0.35em];
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-3 text-sm font-semibold text-[#0a0b10] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-card-elevated)] px-4 py-3 text-sm font-semibold text-white transition active:scale-[0.98] disabled:opacity-50;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center rounded-lg border border-[var(--color-border)] bg-transparent px-3 py-2 text-sm text-white;
+  }
+
+  .btn-sm {
+    @apply inline-flex items-center justify-center rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-semibold text-[#0a0b10] disabled:opacity-50;
+  }
+
+  .chip {
+    @apply rounded-full border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-muted)] transition;
+  }
+
+  .chip-active {
+    @apply border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-white;
+  }
+
+  .step-dot {
+    @apply flex h-8 w-8 items-center justify-center rounded-full border text-sm font-semibold;
+  }
+
+  .step-dot-active {
+    @apply border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)];
+  }
+
+  .step-dot-done {
+    @apply border-[var(--color-success)]/40 bg-[var(--color-success)]/10 text-[var(--color-success)];
+  }
+
+  .banner-success {
+    @apply rounded-2xl border border-[var(--color-success)]/30 bg-[var(--color-success)]/10 p-4;
+  }
+
+  .banner-warn {
+    @apply rounded-2xl border border-[var(--color-primary)]/30 bg-[var(--color-primary-soft)] p-4 text-sm;
+  }
+
+  .banner-error {
+    @apply rounded-2xl border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 p-3 text-sm text-[var(--color-danger)];
+  }
+
+  .mod-row {
+    @apply flex items-center gap-3 rounded-xl border border-[var(--color-border)]/60 bg-black/15 p-3;
+  }
 }

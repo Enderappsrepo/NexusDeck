@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build && npm run build:companion",
     "frontendDist": "../dist"
   },
   "app": {
@@ -36,7 +36,8 @@
       "resources/7zip/*": "7zip/",
       "resources/decky/nexusdeck-host/*": "decky/nexusdeck-host/",
       "resources/decky/nexusdeck-host/dist/*": "decky/nexusdeck-host/dist/",
-      "resources/steam-input/*": "steam-input/"
+      "resources/steam-input/*": "steam-input/",
+      "resources/companion-web/*": "companion-web/"
     },
     "icon": [
       "icons/32x32.png",

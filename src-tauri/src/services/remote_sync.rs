@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::{async_runtime, AppHandle};
+use tauri::{async_runtime, AppHandle, Manager};
 use walkdir::WalkDir;
 
 use crate::commands::deploy::{self, InstallOptions};
@@ -22,6 +22,7 @@ use crate::services::install_manager::InstallManager;
 use crate::services::mod_state::apply_mod_enabled_state;
 use crate::services::paths;
 use crate::services::plugins_txt;
+use crate::services::credentials;
 use crate::services::tools;
 
 /// UDP port the receiver answers discovery probes on.
@@ -224,6 +225,207 @@ fn unauthorized(req: tiny_http::Request) {
         401,
         serde_json::json!({ "error": "Unauthorized — pair with this device first." }).to_string(),
     ));
+}
+
+fn query_params(url: &str) -> HashMap<String, String> {
+    let Some(query) = url.split('?').nth(1) else {
+        return HashMap::new();
+    };
+    query
+        .split('&')
+        .filter_map(|pair| {
+            let (key, value) = pair.split_once('=')?;
+            let key = urlencoding::decode(key).ok()?.into_owned();
+            let value = urlencoding::decode(value).ok()?.into_owned();
+            Some((key, value))
+        })
+        .collect()
+}
+
+fn nexus_configured() -> bool {
+    credentials::retrieve_api_key()
+        .ok()
+        .flatten()
+        .is_some()
+}
+
+fn receiver_games() -> Vec<serde_json::Value> {
+    db::list_profiles()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| {
+            serde_json::json!({
+                "domain": p.game_domain,
+                "name": p.name,
+            })
+        })
+        .collect()
+}
+
+fn mime_for(path: &str) -> &'static str {
+    if path.ends_with(".js") {
+        "application/javascript; charset=utf-8"
+    } else if path.ends_with(".css") {
+        "text/css; charset=utf-8"
+    } else if path.ends_with(".svg") {
+        "image/svg+xml"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".ico") {
+        "image/x-icon"
+    } else {
+        "text/html; charset=utf-8"
+    }
+}
+
+fn bytes_response(status: u16, content_type: &str, body: Vec<u8>) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
+    let header =
+        tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
+    let cors = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap();
+    tiny_http::Response::from_data(body)
+        .with_status_code(status)
+        .with_header(header)
+        .with_header(cors)
+}
+
+fn serve_companion_app(mut req: tiny_http::Request) {
+    let Some(ctx) = receiver_context() else {
+        let _ = req.respond(json_response(
+            503,
+            serde_json::json!({ "error": "Remote receiver isn't fully initialized." }).to_string(),
+        ));
+        return;
+    };
+    let Ok(resource_dir) = ctx.app.path().resource_dir() else {
+        let _ = req.respond(json_response(
+            404,
+            serde_json::json!({ "error": "Companion web bundle not bundled with this build." }).to_string(),
+        ));
+        return;
+    };
+    let root = resource_dir.join("companion-web");
+    if !root.is_dir() {
+        let _ = req.respond(json_response(
+            404,
+            serde_json::json!({ "error": "Companion web bundle not found on this device." }).to_string(),
+        ));
+        return;
+    }
+
+    let url_path = req.url().split('?').next().unwrap_or("/app/");
+    let rel = url_path
+        .strip_prefix("/app")
+        .unwrap_or("/")
+        .trim_start_matches('/');
+    let rel = if rel.is_empty() { "index.html" } else { rel };
+
+    let mut file_path = root.join(rel);
+    if file_path.is_dir() {
+        file_path = file_path.join("index.html");
+    }
+    if !file_path.exists() {
+        file_path = root.join("index.html");
+    }
+    if !file_path.starts_with(&root) {
+        let _ = req.respond(json_response(
+            403,
+            serde_json::json!({ "error": "Forbidden" }).to_string(),
+        ));
+        return;
+    }
+
+    match std::fs::read(&file_path) {
+        Ok(bytes) => {
+            let _ = req.respond(bytes_response(200, mime_for(file_path.to_string_lossy().as_ref()), bytes));
+        }
+        Err(e) => {
+            let _ = req.respond(json_response(
+                404,
+                serde_json::json!({ "error": format!("Couldn't read companion file: {e}") }).to_string(),
+            ));
+        }
+    }
+}
+
+fn handle_search_mods(domain: &str, query: &str) -> Result<String> {
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    if !nexus_configured() {
+        return Err(NexusDeckError::Other(
+            "Sign in with your Nexus API key in NexusDeck Settings on this device first.".into(),
+        ));
+    }
+    let _profile = profile_for_domain(domain)?;
+    let mods = async_runtime::block_on(ctx.nexus.search_mods(domain, query, "downloads", 0, 20))?;
+    Ok(serde_json::to_string(&mods).unwrap_or_else(|_| "[]".to_string()))
+}
+
+fn handle_mod_files(domain: &str, mod_id: u64) -> Result<String> {
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    if !nexus_configured() {
+        return Err(NexusDeckError::Other(
+            "Sign in with your Nexus API key in NexusDeck Settings on this device first.".into(),
+        ));
+    }
+    let _profile = profile_for_domain(domain)?;
+    let files = async_runtime::block_on(ctx.nexus.get_mod_files(domain, mod_id))?;
+    Ok(serde_json::to_string(&files).unwrap_or_else(|_| "[]".to_string()))
+}
+
+fn enqueue_nexus_install(meta: RemoteNexusInstallMeta) -> Result<RemoteTransferResult> {
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let profile = profile_for_domain(&meta.game_domain)?;
+    let mod_name = meta.mod_name.clone();
+
+    let app = ctx.app.clone();
+    let downloads = ctx.downloads.clone();
+    let nexus = ctx.nexus.clone();
+    let staging = std::path::PathBuf::from(&profile.staging_path);
+    let profile_id = profile.id.clone();
+    let game_domain = meta.game_domain.clone();
+    let file_name = meta.file_name.clone();
+    let mod_name_task = mod_name.clone();
+
+    async_runtime::spawn(async move {
+        match downloads
+            .enqueue_download(
+                app,
+                nexus,
+                &game_domain,
+                meta.nexus_mod_id as u64,
+                meta.nexus_file_id as u64,
+                &file_name,
+                staging.as_path(),
+                meta.expected_size_kb,
+                &mod_name_task,
+                &profile_id,
+                None,
+                0,
+            )
+            .await
+        {
+            Ok(progress) => {
+                downloads.mark_auto_install(&progress.id);
+            }
+            Err(e) => {
+                log::warn!("[remote_sync] nexus install enqueue failed: {e}");
+            }
+        }
+    });
+
+    Ok(RemoteTransferResult {
+        ok: true,
+        message: format!(
+            "Downloading \"{mod_name}\" on this device — it will install automatically when the download finishes."
+        ),
+        mod_id: None,
+        files_sent: 1,
+    })
 }
 
 fn profile_for_domain(domain: &str) -> Result<Profile> {
@@ -562,9 +764,64 @@ fn handle_request(
             "name": name,
             "version": env!("CARGO_PKG_VERSION"),
             "paired": paired,
+            "nexus_configured": nexus_configured(),
+            "games": receiver_games(),
+            "companion_url": "/app/",
         })
         .to_string();
         let _ = req.respond(json_response(200, body));
+        return;
+    }
+
+    if is_get && (url.starts_with("/app") || url == "/app") {
+        serve_companion_app(req);
+        return;
+    }
+
+    if is_get && url.starts_with("/search/mods") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        let query = params.get("q").cloned().unwrap_or_default();
+        match handle_search_mods(&domain, &query) {
+            Ok(body) => {
+                let _ = req.respond(json_response(200, body));
+            }
+            Err(e) => {
+                let _ = req.respond(json_response(
+                    400,
+                    serde_json::json!({ "error": e.to_string() }).to_string(),
+                ));
+            }
+        }
+        return;
+    }
+
+    if is_get && url.starts_with("/mods/files") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        let mod_id = params
+            .get("mod_id")
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0);
+        match handle_mod_files(&domain, mod_id) {
+            Ok(body) => {
+                let _ = req.respond(json_response(200, body));
+            }
+            Err(e) => {
+                let _ = req.respond(json_response(
+                    400,
+                    serde_json::json!({ "error": e.to_string() }).to_string(),
+                ));
+            }
+        }
         return;
     }
 
@@ -599,6 +856,15 @@ fn handle_request(
             return;
         }
         respond_transfer(req, handle_install_mod);
+        return;
+    }
+
+    if is_post && url.starts_with("/install/nexus/mod") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_transfer(req, handle_install_nexus_mod);
         return;
     }
 
@@ -749,55 +1015,50 @@ fn handle_install_nexus(body: Vec<u8>, content_type: &str) -> Result<RemoteTrans
             .map_err(|e| NexusDeckError::Other(format!("Invalid nexus install JSON: {e}")))?
     };
 
+    enqueue_nexus_install(meta)
+}
+
+#[derive(Debug, Deserialize)]
+struct NexusModOnlyInstall {
+    game_domain: String,
+    nexus_mod_id: i64,
+    mod_name: String,
+}
+
+fn handle_install_nexus_mod(body: Vec<u8>, _content_type: &str) -> Result<RemoteTransferResult> {
+    let req: NexusModOnlyInstall = serde_json::from_slice(&body)
+        .map_err(|e| NexusDeckError::Other(format!("Invalid install JSON: {e}")))?;
     let ctx = receiver_context().ok_or_else(|| {
         NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
     })?;
-    let profile = profile_for_domain(&meta.game_domain)?;
-    let mod_name = meta.mod_name.clone();
+    if !nexus_configured() {
+        return Err(NexusDeckError::Other(
+            "Sign in with your Nexus API key in NexusDeck Settings on this device first.".into(),
+        ));
+    }
+    let _profile = profile_for_domain(&req.game_domain)?;
+    let files = async_runtime::block_on(
+        ctx.nexus
+            .get_mod_files(&req.game_domain, req.nexus_mod_id as u64),
+    )?;
+    let file = files
+        .iter()
+        .find(|f| f.is_primary)
+        .or_else(|| files.first())
+        .ok_or_else(|| NexusDeckError::NotFound("No downloadable file for this mod.".into()))?;
 
-    let app = ctx.app.clone();
-    let downloads = ctx.downloads.clone();
-    let nexus = ctx.nexus.clone();
-    let staging = std::path::PathBuf::from(&profile.staging_path);
-    let profile_id = profile.id.clone();
-    let game_domain = meta.game_domain.clone();
-    let file_name = meta.file_name.clone();
-    let mod_name_task = mod_name.clone();
-
-    async_runtime::spawn(async move {
-        match downloads
-            .enqueue_download(
-                app,
-                nexus,
-                &game_domain,
-                meta.nexus_mod_id as u64,
-                meta.nexus_file_id as u64,
-                &file_name,
-                staging.as_path(),
-                meta.expected_size_kb,
-                &mod_name_task,
-                &profile_id,
-                None,
-                0,
-            )
-            .await
-        {
-            Ok(progress) => {
-                downloads.mark_auto_install(&progress.id);
-            }
-            Err(e) => {
-                log::warn!("[remote_sync] nexus install enqueue failed: {e}");
-            }
-        }
-    });
-
-    Ok(RemoteTransferResult {
-        ok: true,
-        message: format!(
-            "Downloading \"{mod_name}\" on this device — it will install automatically when the download finishes."
-        ),
-        mod_id: None,
-        files_sent: 1,
+    enqueue_nexus_install(RemoteNexusInstallMeta {
+        game_domain: req.game_domain,
+        nexus_mod_id: req.nexus_mod_id,
+        nexus_file_id: file.file_id as i64,
+        mod_name: req.mod_name,
+        file_name: if file.file_name.is_empty() {
+            file.name.clone()
+        } else {
+            file.file_name.clone()
+        },
+        expected_size_kb: file.size_kb,
+        file_version: Some(file.version.clone()),
     })
 }
 

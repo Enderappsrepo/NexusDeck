@@ -321,9 +321,10 @@ export function RemoteSyncPanel() {
 
       <p className="text-xs text-[var(--color-muted)]">
         After pairing, use <Link to="/companion" className="text-[var(--color-primary)] underline">Mobile companion</Link>{" "}
-        or <strong>Send to Deck</strong> on mod pages. The Deck downloads from Nexus — no need to
-        upload archives from your phone or PC. Turn on <strong>Auto-install after download</strong>{" "}
-        in Settings on the Deck for hands-free installs.
+        or <strong>Send to Deck</strong> on mod pages. On your phone, open{" "}
+        <strong>http://&lt;this-device-ip&gt;:8731/app/</strong> (same Wi‑Fi) for the easiest
+        connection. The device downloads from Nexus — no need to upload archives from your phone or
+        PC. Turn on <strong>Auto-install after download</strong> in Settings for hands-free installs.
       </p>
     </Card>
   );
