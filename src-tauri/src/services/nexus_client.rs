@@ -445,7 +445,7 @@ impl NexusClient {
         if let Some(category) = &filters.category {
             if !category.is_empty() {
                 filter_parts.push(serde_json::json!({
-                    "modCategoryName": [{ "value": category, "op": "EQUALS" }]
+                    "categoryName": [{ "value": category, "op": "EQUALS" }]
                 }));
             }
         }
@@ -453,7 +453,7 @@ impl NexusClient {
         for tag in &filters.tags {
             if !tag.is_empty() {
                 filter_parts.push(serde_json::json!({
-                    "tagName": [{ "value": tag, "op": "EQUALS" }]
+                    "tag": [{ "value": tag, "op": "EQUALS" }]
                 }));
             }
         }
@@ -1710,4 +1710,45 @@ fn is_mod_image_url(url: &str) -> bool {
         || lower.ends_with(".png")
         || lower.ends_with(".webp")
         || lower.ends_with(".gif")
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use super::*;
+
+    #[test]
+    fn build_mods_filter_uses_graphql_category_and_tag_fields() {
+        let filters = ModSearchFilters {
+            category: Some("Ammo".into()),
+            tags: vec!["Gameplay".into()],
+            min_endorsements: Some(100),
+            hide_adult: true,
+            updated_since_days: Some(7),
+            author: Some("SomeAuthor".into()),
+        };
+
+        let filter = NexusClient::build_mods_filter("fallout4", "armor", &filters);
+        let json = filter.to_string();
+
+        assert!(json.contains("categoryName"), "expected categoryName, got {json}");
+        assert!(!json.contains("modCategoryName"), "unexpected modCategoryName in {json}");
+        assert!(json.contains("\"tag\""), "expected tag field in {json}");
+        assert!(!json.contains("tagName"), "unexpected tagName in {json}");
+        assert!(json.contains("updatedAt"));
+        assert!(json.contains("adultContent"));
+        assert!(json.contains("author"));
+    }
+
+    #[test]
+    fn build_mods_filter_game_only_when_no_extra_filters() {
+        let filters = ModSearchFilters::default();
+        let filter = NexusClient::build_mods_filter("skyrim", "", &filters);
+
+        assert_eq!(
+            filter,
+            serde_json::json!({
+                "gameDomainName": [{ "value": "skyrim", "op": "EQUALS" }]
+            })
+        );
+    }
 }

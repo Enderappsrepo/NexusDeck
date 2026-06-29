@@ -639,6 +639,23 @@ pub async fn prepare_mod_install(
     mod_name: String,
     installs: State<'_, Arc<crate::services::install_manager::InstallManager>>,
 ) -> Result<InstallPrepareResult> {
+    prepare_mod_install_managed(
+        app,
+        profile_id,
+        archive_path,
+        mod_name,
+        installs.inner().clone(),
+    )
+    .await
+}
+
+pub async fn prepare_mod_install_managed(
+    app: AppHandle,
+    profile_id: String,
+    archive_path: String,
+    mod_name: String,
+    manager: Arc<crate::services::install_manager::InstallManager>,
+) -> Result<InstallPrepareResult> {
     use uuid::Uuid;
 
     use crate::services::archive::{extract_archive_fast_with_progress, list_archive_entries};
@@ -646,9 +663,8 @@ pub async fn prepare_mod_install(
     use crate::services::install_session::InstallSession;
     use crate::services::paths::game_work_dir;
 
-    let manager = installs.inner().clone();
     let cancel_rx = manager.begin(profile_id.clone());
-    let _guard = InstallGuard::new(manager, profile_id.clone());
+    let _guard = InstallGuard::new(manager.clone(), profile_id.clone());
     let cancel_check = install_cancel_check(cancel_rx.clone());
 
     let profile = db::get_profile(&profile_id)?

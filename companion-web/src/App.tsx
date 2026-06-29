@@ -1,584 +1,758 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { InstallOptions, defaultSelectionsFromPrepare } from "./components/InstallOptions";
 import {
   clearPaired,
   companionAppUrl,
+  confirmInstallSession,
+  fetchLatest,
+  fetchModDetail,
+  fetchModFiles,
+  fetchTrending,
+  getInstallSession,
+  listGames,
   loadPaired,
   pairWithDeck,
   pingDeck,
   savePaired,
   searchModsViaDeck,
-  sendModViaDeck,
-  sendNexusInstall,
-  type DeckGame,
-  type ModHit,
+  startInstallSession,
   type PairedDeck,
   type PingInfo,
 } from "./deckApi";
-import { getModFiles, loadApiKey, saveApiKey, searchMods } from "./nexusApi";
+import { usePullToRefresh } from "./hooks/usePullToRefresh";
+import { formatBytes, formatEta } from "./lib/format";
+import { hapticSuccess } from "./lib/haptic";
+import { groupModFiles, pickDefaultFile } from "./lib/modFiles";
+import { loadLastGame, saveLastGame } from "./lib/preferences";
+import type {
+  CompanionGame,
+  InstallSessionStatus,
+  ModDetail,
+  ModFileInfo,
+  ModSummary,
+  SelectedInstallOption,
+} from "./types";
 
-type Step = "connect" | "pair" | "browse";
+type Screen = "connect" | "browse" | "mod" | "install";
+type ConnectStep = "ip" | "pair";
 
-function StepIndicator({ step }: { step: Step }) {
-  const steps: { id: Step; label: string }[] = [
-    { id: "connect", label: "Connect" },
-    { id: "pair", label: "Pair" },
-    { id: "browse", label: "Send" },
-  ];
-  const order: Step[] = ["connect", "pair", "browse"];
-  const current = order.indexOf(step);
+function coverUrl(mod: { picture_url?: string | null; hero_image_url?: string | null }) {
+  return mod.hero_image_url || mod.picture_url || null;
+}
 
+function CcTile({
+  mod,
+  className = "",
+  onOpen,
+}: {
+  mod: ModSummary;
+  className?: string;
+  onOpen: (mod: ModSummary) => void;
+}) {
+  const img = coverUrl(mod);
   return (
-    <div className="flex items-center justify-between gap-2">
-      {steps.map((s, i) => {
-        const done = i < current;
-        const active = s.id === step;
-        return (
-          <div key={s.id} className="flex flex-1 flex-col items-center gap-1">
-            <div
-              className={`step-dot ${active ? "step-dot-active" : done ? "step-dot-done" : "border-[var(--color-border)] text-[var(--color-muted)]"}`}
-            >
-              {done ? "✓" : i + 1}
-            </div>
-            <span className={`text-[10px] font-medium ${active ? "text-white" : "text-[var(--color-muted)]"}`}>
-              {s.label}
-            </span>
-          </div>
-        );
-      })}
-    </div>
+    <button type="button" className={`cc-tile ${className}`.trim()} onClick={() => onOpen(mod)}>
+      <div className="cc-tile-media">
+        {img ? (
+          <img src={img} alt="" className="cc-tile-img" loading="lazy" />
+        ) : (
+          <div className="cc-tile-fallback" />
+        )}
+        <div className="cc-tile-scrim" />
+        <div className="cc-tile-caption">
+          <p className="cc-tile-title">{mod.name}</p>
+          <p className="cc-tile-meta">{mod.author}</p>
+        </div>
+      </div>
+    </button>
   );
+}
+
+function stripHtml(html: string): string {
+  const el = document.createElement("div");
+  el.innerHTML = html;
+  return el.textContent?.trim() ?? "";
 }
 
 export default function App() {
   const [paired, setPaired] = useState<PairedDeck | null>(() => loadPaired());
-  const [step, setStep] = useState<Step>(paired ? "browse" : "connect");
+  const [screen, setScreen] = useState<Screen>(paired ? "browse" : "connect");
+  const [connectStep, setConnectStep] = useState<ConnectStep>("ip");
+  const installLock = useRef(false);
 
   const [host, setHost] = useState(paired?.host ?? "");
   const [port, setPort] = useState(String(paired?.port ?? 8731));
   const [code, setCode] = useState("");
   const [deviceInfo, setDeviceInfo] = useState<PingInfo | null>(null);
-
   const [connectBusy, setConnectBusy] = useState(false);
-  const [pairBusy, setPairBusy] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
 
-  const [games, setGames] = useState<DeckGame[]>([]);
-  const [usesDeckNexus, setUsesDeckNexus] = useState(true);
-  const [showLocalKey, setShowLocalKey] = useState(false);
-  const [apiKey, setApiKey] = useState(() => loadApiKey());
-
-  const [gameDomain, setGameDomain] = useState("fallout4");
+  const [games, setGames] = useState<CompanionGame[]>([]);
+  const [gameDomain, setGameDomain] = useState(() => loadLastGame());
   const [query, setQuery] = useState("");
-  const [mods, setMods] = useState<ModHit[]>([]);
-  const [searchBusy, setSearchBusy] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [sendBusy, setSendBusy] = useState<number | null>(null);
+  const [trending, setTrending] = useState<ModSummary[]>([]);
+  const [latest, setLatest] = useState<ModSummary[]>([]);
+  const [searchResults, setSearchResults] = useState<ModSummary[]>([]);
+  const [browseBusy, setBrowseBusy] = useState(false);
+  const [browseError, setBrowseError] = useState<string | null>(null);
+
+  const [selectedMod, setSelectedMod] = useState<ModSummary | null>(null);
+  const [modDetail, setModDetail] = useState<ModDetail | null>(null);
+  const [modFiles, setModFiles] = useState<ModFileInfo[]>([]);
+  const [showOtherFiles, setShowOtherFiles] = useState(false);
+  const [selectedFileId, setSelectedFileId] = useState<number | null>(null);
+  const [modBusy, setModBusy] = useState(false);
+
+  const [session, setSession] = useState<InstallSessionStatus | null>(null);
+  const [selections, setSelections] = useState<SelectedInstallOption[]>([]);
+  const [installBusy, setInstallBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-
-  const [manualModId, setManualModId] = useState("");
-  const [manualFileId, setManualFileId] = useState("");
-  const [manualName, setManualName] = useState("");
-  const [showManual, setShowManual] = useState(false);
-
-  useEffect(() => {
-    saveApiKey(apiKey);
-  }, [apiKey]);
 
   const companionLink = useMemo(() => {
     const h = host.trim();
-    if (!h) return null;
-    return companionAppUrl(h, Number(port) || 8731);
+    return h ? companionAppUrl(h, Number(port) || 8731) : null;
   }, [host, port]);
 
-  const refreshDeviceInfo = useCallback(async (h: string, p: number) => {
-    const info = await pingDeck(h, p);
-    setDeviceInfo(info);
-    if (info.games?.length) {
-      setGames(info.games);
-      if (!info.games.some((g) => g.domain === gameDomain)) {
-        setGameDomain(info.games[0]!.domain);
-      }
+  const activeGame = games.find((g) => g.domain === gameDomain);
+  const { mainFiles, otherFiles } = useMemo(() => groupModFiles(modFiles), [modFiles]);
+
+  const loadBrowse = useCallback(async (deck: PairedDeck, domain: string) => {
+    setBrowseBusy(true);
+    setBrowseError(null);
+    try {
+      const [t, l] = await Promise.all([
+        fetchTrending(deck, domain),
+        fetchLatest(deck, domain),
+      ]);
+      setTrending(t);
+      setLatest(l);
+      setSearchResults([]);
+      setQuery("");
+    } catch (e) {
+      setBrowseError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBrowseBusy(false);
     }
-    setUsesDeckNexus(Boolean(info.nexus_configured));
-    return info;
+  }, []);
+
+  const refreshBrowse = useCallback(async () => {
+    if (!paired || !gameDomain) return;
+    await loadBrowse(paired, gameDomain);
+  }, [paired, gameDomain, loadBrowse]);
+
+  const { pullDistance, refreshing, pullProps } = usePullToRefresh(refreshBrowse, !!paired);
+
+  const refreshGames = useCallback(
+    async (deck: PairedDeck) => {
+      try {
+        const list = await listGames(deck);
+        setGames(list);
+        if (!list.length) return;
+        const saved = loadLastGame();
+        const pick =
+          (saved && list.some((g) => g.domain === saved) && saved) ||
+          list.find((g) => g.can_install)?.domain ||
+          list[0]!.domain;
+        setGameDomain((current) =>
+          current && list.some((g) => g.domain === current) ? current : pick
+        );
+      } catch {
+        if (deviceInfo?.games?.length) setGames(deviceInfo.games);
+      }
+    },
+    [deviceInfo?.games]
+  );
+
+  useEffect(() => {
+    if (gameDomain) saveLastGame(gameDomain);
   }, [gameDomain]);
 
   useEffect(() => {
     if (!paired) return;
-    void refreshDeviceInfo(paired.host, paired.port).catch(() => {
-      setConnectError("Lost connection to your device — pair again.");
-      clearPaired();
-      setPaired(null);
-      setStep("connect");
-    });
-  }, [paired, refreshDeviceInfo]);
+    void refreshGames(paired);
+  }, [paired, refreshGames]);
 
-  const testConnection = useCallback(async () => {
-    const h = host.trim();
-    const p = Number(port) || 8731;
-    if (!h) {
-      setConnectError("Enter the IP address shown on your Deck or PC.");
-      return;
-    }
-    setConnectBusy(true);
-    setConnectError(null);
-    setNote(null);
-    try {
-      const info = await refreshDeviceInfo(h, p);
-      setStep("pair");
-      if (!info.nexus_configured) {
-        setNote("Connected — sign in with your Nexus API key on the Deck/PC in Settings, or paste a key below after pairing.");
-      }
-    } catch (e) {
-      setConnectError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setConnectBusy(false);
-    }
-  }, [host, port, refreshDeviceInfo]);
+  useEffect(() => {
+    if (!paired || !gameDomain) return;
+    void loadBrowse(paired, gameDomain);
+  }, [paired, gameDomain, loadBrowse]);
 
-  const completePairing = useCallback(async () => {
-    const h = host.trim();
-    const p = Number(port) || 8731;
-    if (code.length !== 6) {
-      setConnectError("Enter the 6-digit code from Settings → Remote install.");
-      return;
-    }
-    setPairBusy(true);
-    setConnectError(null);
-    try {
-      const token = await pairWithDeck(h, p, code.trim());
-      const info = deviceInfo ?? (await pingDeck(h, p));
-      const next: PairedDeck = { name: info.name, host: h, port: p, token };
-      savePaired(next);
-      setPaired(next);
-      setCode("");
-      setStep("browse");
-      setNote(`Paired with ${info.name}. Search uses the Nexus account on that device.`);
-      if (info.games?.length) setGames(info.games);
-      setUsesDeckNexus(Boolean(info.nexus_configured));
-    } catch (e) {
-      setConnectError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setPairBusy(false);
-    }
-  }, [host, port, code, deviceInfo]);
+  useEffect(() => {
+    if (!paired || !session?.session_id) return;
+    if (["ready", "done", "error"].includes(session.status)) return;
 
-  const search = useCallback(async () => {
-    if (!query.trim()) {
-      setSearchError("Enter a mod name to search.");
-      return;
-    }
-    if (!paired) return;
-
-    setSearchBusy(true);
-    setSearchError(null);
-    setNote(null);
-    try {
-      if (usesDeckNexus) {
-        setMods(await searchModsViaDeck(paired, gameDomain, query.trim()));
-      } else {
-        if (!apiKey.trim()) {
-          setSearchError("Paste your Nexus API key or use the account on your Deck/PC.");
-          return;
+    const timer = window.setInterval(() => {
+      void getInstallSession(paired, session.session_id).then((next) => {
+        setSession(next);
+        if (next.prepare && selections.length === 0) {
+          setSelections(defaultSelectionsFromPrepare(next.prepare));
         }
-        setMods(await searchMods(apiKey.trim(), gameDomain, query.trim()));
-      }
-    } catch (e) {
-      setSearchError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSearchBusy(false);
-    }
-  }, [apiKey, gameDomain, paired, query, usesDeckNexus]);
+      });
+    }, 1200);
+    return () => window.clearInterval(timer);
+  }, [paired, session?.session_id, session?.status, selections.length]);
 
-  const sendMod = async (mod: ModHit) => {
+  const openMod = async (mod: ModSummary) => {
     if (!paired) return;
-    setSendBusy(mod.mod_id);
-    setSearchError(null);
-    setNote(null);
+    setSelectedMod(mod);
+    setScreen("mod");
+    setModBusy(true);
+    setModDetail(null);
+    setModFiles([]);
+    setShowOtherFiles(false);
     try {
-      if (usesDeckNexus) {
-        setNote(await sendModViaDeck(paired, gameDomain, mod.mod_id, mod.name));
-      } else if (apiKey.trim()) {
-        const files = await getModFiles(apiKey.trim(), gameDomain, mod.mod_id);
-        const file = files.find((f) => f.is_primary) ?? files[0];
-        if (!file) throw new Error("No downloadable file found.");
-        setNote(
-          await sendNexusInstall(paired, {
-            game_domain: gameDomain,
-            nexus_mod_id: mod.mod_id,
-            nexus_file_id: file.file_id,
-            mod_name: mod.name,
-            file_name: file.file_name || file.name,
-            expected_size_kb: file.size_kb,
-            file_version: file.version || null,
-          })
-        );
-      } else {
-        throw new Error("No Nexus API key available.");
-      }
+      const [detail, files] = await Promise.all([
+        fetchModDetail(paired, gameDomain, mod.mod_id),
+        fetchModFiles(paired, gameDomain, mod.mod_id),
+      ]);
+      setModDetail(detail);
+      setModFiles(files);
+      setSelectedFileId(pickDefaultFile(files)?.file_id ?? null);
     } catch (e) {
-      setSearchError(e instanceof Error ? e.message : String(e));
+      setBrowseError(e instanceof Error ? e.message : String(e));
     } finally {
-      setSendBusy(null);
+      setModBusy(false);
     }
   };
 
-  const sendManual = async () => {
-    if (!paired) return;
-    setSearchError(null);
-    setNote(null);
+  const beginInstall = async () => {
+    if (
+      installLock.current ||
+      !paired ||
+      !selectedMod ||
+      !selectedFileId ||
+      !activeGame?.can_install
+    ) {
+      return;
+    }
+    const file = modFiles.find((f) => f.file_id === selectedFileId);
+    if (!file) return;
+
+    installLock.current = true;
+    setInstallBusy(true);
+    setBrowseError(null);
+    setSession(null);
+    setSelections([]);
     try {
-      setNote(
-        await sendNexusInstall(paired, {
-          game_domain: gameDomain,
-          nexus_mod_id: Number(manualModId),
-          nexus_file_id: Number(manualFileId),
-          mod_name: manualName || `Mod ${manualModId}`,
-          file_name: `${manualName || "mod"}.zip`,
-          expected_size_kb: 1,
-        })
-      );
+      const started = await startInstallSession(paired, {
+        game_domain: gameDomain,
+        nexus_mod_id: selectedMod.mod_id,
+        nexus_file_id: file.file_id,
+        mod_name: selectedMod.name,
+        file_name: file.file_name || file.name,
+        expected_size_kb: file.size_kb,
+        file_version: file.version || null,
+      });
+      setSession(started);
+      setScreen("install");
+      hapticSuccess();
     } catch (e) {
-      setSearchError(e instanceof Error ? e.message : String(e));
+      setBrowseError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstallBusy(false);
+      installLock.current = false;
     }
   };
 
-  const gameOptions = games.length
-    ? games
-    : [
-        { domain: "fallout4", name: "Fallout 4" },
-        { domain: "skyrimspecialedition", name: "Skyrim SE" },
-      ];
+  const confirmInstall = async () => {
+    if (installLock.current || !paired || !session?.session_id) return;
+    installLock.current = true;
+    setInstallBusy(true);
+    try {
+      const result = await confirmInstallSession(paired, session.session_id, {
+        selected_options: selections,
+        enable_mod: true,
+        strategy: "auto",
+      });
+      setSession(result);
+      setNote(result.message);
+      if (result.status === "done") hapticSuccess();
+    } catch (e) {
+      setBrowseError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstallBusy(false);
+      installLock.current = false;
+    }
+  };
+
+  const installProgressPct = useMemo(() => {
+    if (!session) return 12;
+    if (session.status === "ready" || session.status === "done") return 100;
+    if (session.status === "downloading" && session.progress) {
+      return Math.max(session.progress.progress_pct, 4);
+    }
+    if (session.status === "extracting") return 92;
+    if (session.status === "installing") return 96;
+    return 12;
+  }, [session]);
+
+  const showSearch = query.trim().length > 0;
+  const heroImg = modDetail ? coverUrl(modDetail) : selectedMod ? coverUrl(selectedMod) : null;
 
   return (
     <div className="shell">
-      <header className="hero">
-        <p className="label">NexusDeck</p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight text-white">Mobile Companion</h1>
-        <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">
-          Browse on your phone. Your Deck or PC downloads from Nexus — nothing large is sent from
-          this device.
+      <header className="cc-header">
+        <p className="cc-brand">NexusDeck · Companion</p>
+        <h1 className="cc-title">
+          {paired ? paired.name : "Mod Catalog"}
+        </h1>
+        <p className="cc-sub">
+          {paired
+            ? "Browse and send installs to your device — Creation Club style."
+            : "Pair with your Deck or PC to browse Nexus mods."}
         </p>
       </header>
 
-      {!paired && <StepIndicator step={step} />}
+      {paired && (
+        <nav className="cc-tab-bar">
+          <button
+            type="button"
+            className={
+              screen === "browse" || screen === "mod" ? "cc-tab cc-tab-active" : "cc-tab"
+            }
+            onClick={() => setScreen("browse")}
+          >
+            Browse
+          </button>
+          <button
+            type="button"
+            className={screen === "install" ? "cc-tab cc-tab-active" : "cc-tab"}
+            onClick={() => session && setScreen("install")}
+            disabled={!session}
+          >
+            Install
+          </button>
+          <button
+            type="button"
+            className={screen === "connect" ? "cc-tab cc-tab-active" : "cc-tab"}
+            onClick={() => setScreen("connect")}
+          >
+            Device
+          </button>
+        </nav>
+      )}
 
-      {companionLink && step !== "browse" && (
-        <div className="banner-warn">
-          <p className="font-medium text-white">Tip: use the on-network companion</p>
-          <p className="mt-1 text-[var(--color-muted)]">
-            If GitHub Pages gets stuck connecting, open this link on your phone (same Wi‑Fi):
-          </p>
-          <a className="mt-2 block break-all font-mono text-sm text-[var(--color-primary)]" href={companionLink}>
-            {companionLink}
-          </a>
+      {note && screen === "browse" && <p className="cc-banner-ok">{note}</p>}
+      {(connectError || browseError) && (
+        <p className="cc-banner-err">{connectError ?? browseError}</p>
+      )}
+
+      {screen === "connect" && (
+        <div className="cc-body">
+          {!paired ? (
+            <>
+              {companionLink && (
+                <p className="cc-banner-warn text-xs">
+                  Open on your network:{" "}
+                  <a href={companionLink} className="text-[var(--cc-gold)] underline">
+                    {companionLink}
+                  </a>
+                </p>
+              )}
+              {connectStep === "ip" ? (
+                <div className="cc-panel space-y-3">
+                  <p className="text-xs uppercase tracking-wider text-[var(--cc-muted)]">
+                    Step 1 — Device IP
+                  </p>
+                  <input
+                    className="cc-input"
+                    placeholder="192.168.1.42"
+                    value={host}
+                    onChange={(e) => setHost(e.target.value)}
+                  />
+                  <input
+                    className="cc-input"
+                    placeholder="8731"
+                    value={port}
+                    onChange={(e) => setPort(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                  />
+                  <button
+                    type="button"
+                    className="cc-btn w-full"
+                    disabled={connectBusy}
+                    onClick={() => {
+                      void (async () => {
+                        setConnectBusy(true);
+                        setConnectError(null);
+                        try {
+                          const info = await pingDeck(host.trim(), Number(port) || 8731);
+                          setDeviceInfo(info);
+                          if (info.games?.length) setGames(info.games);
+                          setConnectStep("pair");
+                        } catch (e) {
+                          setConnectError(e instanceof Error ? e.message : String(e));
+                        } finally {
+                          setConnectBusy(false);
+                        }
+                      })();
+                    }}
+                  >
+                    {connectBusy ? "Connecting…" : "Connect"}
+                  </button>
+                </div>
+              ) : (
+                <div className="cc-panel space-y-3">
+                  <p className="text-xs text-[var(--cc-success)]">
+                    Found {deviceInfo?.name}
+                  </p>
+                  <input
+                    className="cc-input cc-input-code"
+                    placeholder="000000"
+                    maxLength={6}
+                    inputMode="numeric"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="cc-btn-secondary flex-1"
+                      onClick={() => setConnectStep("ip")}
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      className="cc-btn flex-1"
+                      disabled={connectBusy || code.length !== 6}
+                      onClick={() => {
+                        void (async () => {
+                          setConnectBusy(true);
+                          try {
+                            const token = await pairWithDeck(
+                              host.trim(),
+                              Number(port) || 8731,
+                              code
+                            );
+                            const info = deviceInfo ?? (await pingDeck(host.trim(), Number(port) || 8731));
+                            savePaired({
+                              name: info.name,
+                              host: host.trim(),
+                              port: Number(port) || 8731,
+                              token,
+                            });
+                            setPaired(loadPaired());
+                            setScreen("browse");
+                          } catch (e) {
+                            setConnectError(e instanceof Error ? e.message : String(e));
+                          } finally {
+                            setConnectBusy(false);
+                          }
+                        })();
+                      }}
+                    >
+                      Pair
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="cc-panel space-y-3">
+              <p className="text-sm">
+                Paired with <strong>{paired.name}</strong>
+              </p>
+              <button
+                type="button"
+                className="cc-btn-secondary w-full"
+                onClick={() => {
+                  clearPaired();
+                  setPaired(null);
+                  setScreen("connect");
+                  setSession(null);
+                }}
+              >
+                Unpair
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {!paired && step === "connect" && (
-        <section className="card space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold">1. Find your device</h2>
-            <p className="mt-1 text-sm text-[var(--color-muted)]">
-              On the <strong>Steam Deck</strong> (or PC): Settings → Remote install → turn{" "}
-              <strong>Receive</strong> on.
-            </p>
-          </div>
-
-          <div className="card-soft space-y-2 text-sm text-[var(--color-muted)]">
-            <p>
-              <strong className="text-white">Deck IP:</strong> Settings → Internet → Wi‑Fi → your
-              network
-            </p>
-            <p>
-              <strong className="text-white">PC IP:</strong> run <code className="text-[var(--color-primary)]">ipconfig</code>{" "}
-              in Command Prompt
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <label className="label" htmlFor="host">
-              Device IP address
-            </label>
-            <input
-              id="host"
-              className="input"
-              placeholder="192.168.1.42"
-              inputMode="decimal"
-              autoComplete="off"
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-            />
-            <label className="label" htmlFor="port">
-              Port
-            </label>
-            <input
-              id="port"
-              className="input"
-              placeholder="8731"
-              inputMode="numeric"
-              value={port}
-              onChange={(e) => setPort(e.target.value.replace(/\D/g, "").slice(0, 5))}
-            />
-          </div>
-
-          <button type="button" className="btn w-full" disabled={connectBusy} onClick={() => void testConnection()}>
-            {connectBusy ? "Testing connection…" : "Test connection"}
-          </button>
-        </section>
-      )}
-
-      {!paired && step === "pair" && (
-        <section className="card space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold">2. Pair securely</h2>
-            {deviceInfo && (
-              <p className="mt-1 text-sm text-[var(--color-success)]">
-                Found <strong>{deviceInfo.name}</strong>
-                {deviceInfo.version ? ` · v${deviceInfo.version}` : ""}
-              </p>
-            )}
-            <p className="mt-2 text-sm text-[var(--color-muted)]">
-              Enter the 6-digit code shown next to <strong>Pairing code</strong> on the device.
-            </p>
-          </div>
-
-          <input
-            className="input input-code"
-            placeholder="000000"
-            inputMode="numeric"
-            maxLength={6}
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-          />
-
-          <div className="flex gap-2">
-            <button type="button" className="btn-secondary flex-1" onClick={() => setStep("connect")}>
-              Back
-            </button>
-            <button
-              type="button"
-              className="btn flex-1"
-              disabled={pairBusy || code.length !== 6}
-              onClick={() => void completePairing()}
+      {paired && screen === "browse" && (
+        <div className="cc-browse-wrap" {...pullProps}>
+          {(pullDistance > 8 || refreshing) && (
+            <div
+              className="cc-pull-indicator"
+              style={{ height: refreshing ? 36 : Math.min(pullDistance * 0.45, 48) }}
             >
-              {pairBusy ? "Pairing…" : "Pair"}
-            </button>
-          </div>
-        </section>
-      )}
-
-      {paired && (
-        <>
-          <section className="banner-success flex items-start justify-between gap-3">
-            <div>
-              <p className="font-semibold text-white">Paired with {paired.name}</p>
-              <p className="text-xs text-[var(--color-muted)]">{paired.host}:{paired.port}</p>
+              <span className="text-[10px] uppercase tracking-wider text-[var(--cc-gold)]">
+                {refreshing ? "Refreshing…" : pullDistance >= 72 ? "Release to refresh" : "Pull to refresh"}
+              </span>
             </div>
+          )}
+
+          <div className="cc-game-bar">
+            {games.map((g) => (
+              <button
+                key={g.domain}
+                type="button"
+                className={gameDomain === g.domain ? "cc-chip cc-chip-active" : "cc-chip"}
+                onClick={() => setGameDomain(g.domain)}
+              >
+                {g.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="cc-search">
+            <input
+              className="cc-input flex-1"
+              placeholder="Search catalog…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && paired && gameDomain && query.trim()) {
+                  void (async () => {
+                    setBrowseBusy(true);
+                    try {
+                      setSearchResults(
+                        await searchModsViaDeck(paired, gameDomain, query.trim())
+                      );
+                    } catch (err) {
+                      setBrowseError(err instanceof Error ? err.message : String(err));
+                    } finally {
+                      setBrowseBusy(false);
+                    }
+                  })();
+                }
+              }}
+            />
             <button
               type="button"
-              className="btn-ghost shrink-0"
+              className="cc-btn shrink-0 px-4"
+              disabled={browseBusy}
               onClick={() => {
-                clearPaired();
-                setPaired(null);
-                setStep("connect");
-                setDeviceInfo(null);
-                setMods([]);
+                if (!query.trim()) return;
+                void (async () => {
+                  setBrowseBusy(true);
+                  try {
+                    setSearchResults(
+                      await searchModsViaDeck(paired, gameDomain, query.trim())
+                    );
+                  } catch (err) {
+                    setBrowseError(err instanceof Error ? err.message : String(err));
+                  } finally {
+                    setBrowseBusy(false);
+                  }
+                })();
               }}
             >
-              Unpair
+              Go
             </button>
-          </section>
+          </div>
 
-          <section className="card space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold">Search & send</h2>
-              {usesDeckNexus ? (
-                <p className="mt-1 text-sm text-[var(--color-success)]">
-                  Using the Nexus account saved on {paired.name} — no API key needed on your phone.
-                </p>
+          {browseBusy && (
+            <p className="px-4 text-xs uppercase tracking-wider text-[var(--cc-muted)]">
+              Loading…
+            </p>
+          )}
+
+          {showSearch ? (
+            <section>
+              <p className="cc-section-label px-4">Results</p>
+              <div className="cc-stack">
+                {searchResults.map((mod) => (
+                  <CcTile key={mod.mod_id} mod={mod} onOpen={(m) => void openMod(m)} />
+                ))}
+              </div>
+            </section>
+          ) : (
+            <>
+              {trending.length > 0 && (
+                <section>
+                  <p className="cc-section-label px-4">Featured</p>
+                  <div className="cc-shelf-track">
+                    {trending.map((mod) => (
+                      <CcTile
+                        key={mod.mod_id}
+                        mod={mod}
+                        className="cc-shelf-tile"
+                        onOpen={(m) => void openMod(m)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {latest.length > 0 && (
+                <section>
+                  <p className="cc-section-label px-4">Latest</p>
+                  <div className="cc-stack">
+                    {latest.map((mod) => (
+                      <CcTile key={mod.mod_id} mod={mod} onOpen={(m) => void openMod(m)} />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {paired && screen === "mod" && selectedMod && (
+        <>
+          <div className="cc-hero">
+            {heroImg ? (
+              <img src={heroImg} alt="" className="cc-hero-img" />
+            ) : (
+              <div className="cc-tile-fallback cc-hero-img" />
+            )}
+            <div className="cc-hero-scrim" />
+            <div className="cc-hero-body">
+              <button type="button" className="cc-btn-ghost mb-3" onClick={() => setScreen("browse")}>
+                ← Catalog
+              </button>
+              {modBusy ? (
+                <p className="text-sm text-[var(--cc-muted)]">Loading…</p>
               ) : (
-                <p className="mt-1 text-sm text-[var(--color-danger)]">
-                  No Nexus key on {paired.name}. Sign in under Settings on that device, or paste a key
-                  below.
-                </p>
+                modDetail && (
+                  <>
+                    <h2 className="cc-hero-title">{modDetail.name}</h2>
+                    <p className="cc-hero-author">{modDetail.author}</p>
+                  </>
+                )
               )}
             </div>
+          </div>
 
-            {!usesDeckNexus && (
-              <div className="banner-warn">
-                <p className="text-sm">
-                  Open NexusDeck on your Deck/PC → Settings → paste your Nexus API key → then tap
-                  refresh below.
+          {modDetail && !modBusy && (
+            <div className="cc-body space-y-4">
+              {modDetail.summary && (
+                <p className="text-sm leading-relaxed text-[var(--cc-muted)]">{modDetail.summary}</p>
+              )}
+              {modDetail.description_html && (
+                <p className="text-sm leading-relaxed text-[var(--cc-muted)] line-clamp-5">
+                  {stripHtml(modDetail.description_html).slice(0, 500)}
                 </p>
-                <button
-                  type="button"
-                  className="btn-secondary mt-3 w-full"
-                  onClick={() =>
-                    void refreshDeviceInfo(paired.host, paired.port)
-                      .then((info) => {
-                        setUsesDeckNexus(Boolean(info.nexus_configured));
-                        if (info.nexus_configured) setNote("Nexus account detected on your device.");
-                      })
-                      .catch((e) => setSearchError(e instanceof Error ? e.message : String(e)))
-                  }
-                >
-                  Refresh device status
-                </button>
+              )}
+
+              <div className="cc-panel space-y-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--cc-gold)]">
+                  Download
+                </p>
+                {(mainFiles.length ? mainFiles : groupModFiles(modFiles).all).map((file) => (
+                  <label
+                    key={file.file_id}
+                    className={`cc-file ${selectedFileId === file.file_id ? "cc-file-active" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="file"
+                      checked={selectedFileId === file.file_id}
+                      onChange={() => setSelectedFileId(file.file_id)}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{file.name}</span>
+                      <span className="text-[11px] uppercase tracking-wide text-[var(--cc-muted)]">
+                        v{file.version} · {Math.max(1, Math.round(file.size_kb / 1024))} MB
+                        {file.is_primary ? " · recommended" : ""}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+
+                {otherFiles.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      className="cc-btn-ghost"
+                      onClick={() => setShowOtherFiles((v) => !v)}
+                    >
+                      {showOtherFiles ? "Hide" : "Show"} optional files ({otherFiles.length})
+                    </button>
+                    {showOtherFiles &&
+                      otherFiles.map((file) => (
+                        <label
+                          key={file.file_id}
+                          className={`cc-file ${selectedFileId === file.file_id ? "cc-file-active" : ""}`}
+                        >
+                          <input
+                            type="radio"
+                            name="file"
+                            checked={selectedFileId === file.file_id}
+                            onChange={() => setSelectedFileId(file.file_id)}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium">{file.name}</span>
+                            <span className="text-[11px] text-[var(--cc-muted)]">
+                              v{file.version} · optional
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                  </>
+                )}
               </div>
-            )}
 
-            <div className="flex flex-wrap gap-2">
-              {gameOptions.map((g) => (
-                <button
-                  key={g.domain}
-                  type="button"
-                  className={gameDomain === g.domain ? "chip chip-active" : "chip"}
-                  onClick={() => setGameDomain(g.domain)}
-                >
-                  {g.name}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                className="input flex-1"
-                placeholder="Search mods…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && void search()}
-              />
-              <button type="button" className="btn shrink-0" disabled={searchBusy} onClick={() => void search()}>
-                {searchBusy ? "…" : "Search"}
+              <button
+                type="button"
+                className="cc-btn w-full"
+                disabled={!activeGame?.can_install || !selectedFileId || installBusy}
+                onClick={() => void beginInstall()}
+              >
+                {installBusy ? "Sending…" : "Send to device"}
               </button>
             </div>
-
-            <button
-              type="button"
-              className="text-sm text-[var(--color-muted)] underline"
-              onClick={() => setShowLocalKey((v) => !v)}
-            >
-              {showLocalKey ? "Hide phone API key" : "Advanced: use API key on this phone instead"}
-            </button>
-
-            {showLocalKey && (
-              <div className="space-y-2">
-                <input
-                  className="input"
-                  type="password"
-                  placeholder="Nexus API key (optional fallback)"
-                  value={apiKey}
-                  onChange={(e) => {
-                    setApiKey(e.target.value);
-                    if (e.target.value.trim()) setUsesDeckNexus(false);
-                  }}
-                />
-                <p className="text-xs text-[var(--color-muted)]">
-                  Stored only in this browser.{" "}
-                  <a
-                    className="text-[var(--color-primary)]"
-                    href="https://www.nexusmods.com/users/myaccount?tab=api"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Get an API key
-                  </a>
-                </p>
-                {apiKey.trim() && (
-                  <button type="button" className="btn-secondary w-full" onClick={() => setUsesDeckNexus(false)}>
-                    Search with phone key
-                  </button>
-                )}
-                {usesDeckNexus && apiKey.trim() && (
-                  <button type="button" className="btn-secondary w-full" onClick={() => setUsesDeckNexus(true)}>
-                    Use device Nexus account again
-                  </button>
-                )}
-              </div>
-            )}
-
-            {searchError && <p className="banner-error">{searchError}</p>}
-            {note && <p className="rounded-xl bg-[var(--color-success)]/10 p-3 text-sm text-[var(--color-success)]">{note}</p>}
-
-            <ul className="space-y-2">
-              {mods.map((mod) => (
-                <li key={mod.mod_id} className="mod-row">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{mod.name}</p>
-                    <p className="truncate text-xs text-[var(--color-muted)]">{mod.author}</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn-sm shrink-0"
-                    disabled={sendBusy !== null}
-                    onClick={() => void sendMod(mod)}
-                  >
-                    {sendBusy === mod.mod_id ? "…" : "Send"}
-                  </button>
-                </li>
-              ))}
-              {!searchBusy && mods.length === 0 && query.trim() && (
-                <p className="text-center text-sm text-[var(--color-muted)]">Search to find mods.</p>
-              )}
-            </ul>
-          </section>
-
-          <section className="card-soft">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between text-left"
-              onClick={() => setShowManual((v) => !v)}
-            >
-              <span className="font-semibold">Manual send by mod/file ID</span>
-              <span className="text-[var(--color-muted)]">{showManual ? "−" : "+"}</span>
-            </button>
-            {showManual && (
-              <div className="mt-3 space-y-2">
-                <p className="text-xs text-[var(--color-muted)]">
-                  Copy IDs from the Nexus website if search is unavailable.
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    className="input"
-                    placeholder="Mod ID"
-                    inputMode="numeric"
-                    value={manualModId}
-                    onChange={(e) => setManualModId(e.target.value.replace(/\D/g, ""))}
-                  />
-                  <input
-                    className="input"
-                    placeholder="File ID"
-                    inputMode="numeric"
-                    value={manualFileId}
-                    onChange={(e) => setManualFileId(e.target.value.replace(/\D/g, ""))}
-                  />
-                </div>
-                <input
-                  className="input"
-                  placeholder="Mod name (optional)"
-                  value={manualName}
-                  onChange={(e) => setManualName(e.target.value)}
-                />
-                <button type="button" className="btn w-full" onClick={() => void sendManual()}>
-                  Send by ID
-                </button>
-              </div>
-            )}
-          </section>
+          )}
         </>
       )}
 
-      {(connectError || (!paired && note)) && (
-        <div className={connectError ? "banner-error" : "rounded-xl bg-[var(--color-success)]/10 p-3 text-sm text-[var(--color-success)]"}>
-          {connectError ?? note}
+      {paired && screen === "install" && session && (
+        <div className="cc-body space-y-4">
+          <div className="cc-panel space-y-3">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--cc-gold)]">
+              Install
+            </p>
+            <p className="text-sm">{session.message}</p>
+            {session.status === "downloading" && session.progress && session.progress.bytes_total > 0 && (
+              <p className="text-xs text-[var(--cc-muted)]">
+                {formatBytes(session.progress.bytes_done)} / {formatBytes(session.progress.bytes_total)}
+                {session.progress.eta_seconds
+                  ? ` · ~${formatEta(session.progress.eta_seconds)} left`
+                  : ""}
+              </p>
+            )}
+            <div className="cc-progress">
+              <div
+                className="cc-progress-fill"
+                style={{ width: `${installProgressPct}%` }}
+              />
+            </div>
+          </div>
+
+          {session.status === "ready" && session.prepare && (
+            <>
+              <InstallOptions
+                wizard={session.prepare.install_wizard}
+                optionGroups={
+                  session.prepare.install_wizard ? [] : session.prepare.option_groups
+                }
+                selections={selections}
+                onChange={setSelections}
+              />
+              <button
+                type="button"
+                className="cc-btn w-full"
+                disabled={installBusy}
+                onClick={() => void confirmInstall()}
+              >
+                {installBusy ? "Installing…" : "Confirm install"}
+              </button>
+            </>
+          )}
+
+          {session.status === "done" && (
+            <button type="button" className="cc-btn w-full" onClick={() => setScreen("browse")}>
+              Back to catalog
+            </button>
+          )}
+
+          {session.status === "error" && (
+            <p className="cc-banner-err">{session.error ?? "Install failed."}</p>
+          )}
         </div>
       )}
-
-      <footer className="text-center text-xs leading-relaxed text-[var(--color-muted)]">
-        Enable <strong className="text-white">Auto-install after download</strong> on the Deck for
-        hands-free installs. FOMOD options and load-order sync require the full NexusDeck app.
-      </footer>
     </div>
   );
 }

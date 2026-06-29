@@ -93,6 +93,9 @@ jobs:
       - name: Build Decky plugin bundle
         run: npm run build:decky
 
+      - name: Build companion web (receiver bundle)
+        run: npm run build:companion
+
       - name: Build Linux binary
         run: npm run tauri build -- --no-bundle
 
@@ -101,6 +104,7 @@ jobs:
           mkdir -p linux-artifact
           cp src-tauri/target/release/nexusdeck linux-artifact/nexusdeck
           cp -a src-tauri/resources/decky linux-artifact/decky
+          cp -a src-tauri/resources/companion-web linux-artifact/companion-web
 
       - uses: actions/upload-artifact@v4
         with:
@@ -135,6 +139,8 @@ jobs:
           echo "8ea0fc8a135e7b848e80a4116fe22dff56c8c4518dde1f43cce67f4e340b437a  /tmp/7z2601-linux-x64.tar.xz" | sha256sum -c -
           tar -xJf /tmp/7z2601-linux-x64.tar.xz -C flatpak 7zz
           chmod +x flatpak/7zz
+          test -d flatpak/companion-web
+          test -f flatpak/companion-web/index.html
 
       - name: Install GNOME 48 runtime
         run: |

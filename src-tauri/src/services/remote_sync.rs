@@ -118,11 +118,11 @@ struct Receiver {
     udp_thread: std::thread::JoinHandle<()>,
 }
 
-struct ReceiverContext {
-    app: AppHandle,
-    installs: Arc<InstallManager>,
-    downloads: Arc<crate::services::download_manager::DownloadManager>,
-    nexus: Arc<crate::services::nexus_client::NexusClient>,
+pub struct ReceiverContext {
+    pub app: AppHandle,
+    pub installs: Arc<InstallManager>,
+    pub downloads: Arc<crate::services::download_manager::DownloadManager>,
+    pub nexus: Arc<crate::services::nexus_client::NexusClient>,
 }
 
 struct MultipartField {
@@ -155,7 +155,7 @@ pub fn set_receiver_context(
     });
 }
 
-fn receiver_context() -> Option<ReceiverContext> {
+pub fn receiver_context() -> Option<ReceiverContext> {
     context_slot()
         .lock()
         .unwrap()
@@ -288,6 +288,88 @@ fn bytes_response(status: u16, content_type: &str, body: Vec<u8>) -> tiny_http::
         .with_header(cors)
 }
 
+fn respond_json_result(mut req: tiny_http::Request, result: Result<String>) {
+    match result {
+        Ok(body) => {
+            let _ = req.respond(json_response(200, body));
+        }
+        Err(e) => {
+            let _ = req.respond(json_response(
+                400,
+                serde_json::json!({ "error": e.to_string() }).to_string(),
+            ));
+        }
+    }
+}
+
+fn respond_install_session_start(mut req: tiny_http::Request) {
+    let mut body = String::new();
+    if req.as_reader().read_to_string(&mut body).is_err() {
+        let _ = req.respond(json_response(
+            400,
+            serde_json::json!({ "error": "Couldn't read request body." }).to_string(),
+        ));
+        return;
+    }
+    match serde_json::from_str::<crate::services::remote_companion::StartInstallSessionBody>(&body) {
+        Ok(payload) => match crate::services::remote_companion::start_install_session(payload) {
+            Ok(status) => {
+                let _ = req.respond(json_response(
+                    200,
+                    serde_json::to_string(&status).unwrap_or_else(|_| "{}".to_string()),
+                ));
+            }
+            Err(e) => {
+                let _ = req.respond(json_response(
+                    400,
+                    serde_json::json!({ "error": e.to_string() }).to_string(),
+                ));
+            }
+        },
+        Err(e) => {
+            let _ = req.respond(json_response(
+                400,
+                serde_json::json!({ "error": format!("Invalid JSON: {e}") }).to_string(),
+            ));
+        }
+    }
+}
+
+fn respond_install_session_confirm(mut req: tiny_http::Request, url: &str) {
+    let session_id = url
+        .strip_prefix("/install/session/")
+        .and_then(|rest| rest.strip_suffix("/confirm"))
+        .unwrap_or("")
+        .split('?')
+        .next()
+        .unwrap_or("")
+        .to_string();
+    let mut body = String::new();
+    if req.as_reader().read_to_string(&mut body).is_err() {
+        let _ = req.respond(json_response(
+            400,
+            serde_json::json!({ "error": "Couldn't read request body." }).to_string(),
+        ));
+        return;
+    }
+    let confirm: crate::services::remote_companion::ConfirmInstallSessionBody =
+        serde_json::from_str(&body).unwrap_or_default();
+    match crate::services::remote_companion::confirm_install_session(&session_id, confirm) {
+        Ok(status) => {
+            let _ = req.respond(json_response(
+                200,
+                serde_json::to_string(&status).unwrap_or_else(|_| "{}".to_string()),
+            ));
+        }
+        Err(e) => {
+            let _ = req.respond(json_response(
+                400,
+                serde_json::json!({ "error": e.to_string() }).to_string(),
+            ));
+        }
+    }
+}
+
 fn serve_companion_app(mut req: tiny_http::Request) {
     let Some(ctx) = receiver_context() else {
         let _ = req.respond(json_response(
@@ -296,52 +378,15 @@ fn serve_companion_app(mut req: tiny_http::Request) {
         ));
         return;
     };
-    let Ok(resource_dir) = ctx.app.path().resource_dir() else {
-        let _ = req.respond(json_response(
-            404,
-            serde_json::json!({ "error": "Companion web bundle not bundled with this build." }).to_string(),
-        ));
-        return;
-    };
-    let root = resource_dir.join("companion-web");
-    if !root.is_dir() {
-        let _ = req.respond(json_response(
-            404,
-            serde_json::json!({ "error": "Companion web bundle not found on this device." }).to_string(),
-        ));
-        return;
-    }
-
     let url_path = req.url().split('?').next().unwrap_or("/app/");
-    let rel = url_path
-        .strip_prefix("/app")
-        .unwrap_or("/")
-        .trim_start_matches('/');
-    let rel = if rel.is_empty() { "index.html" } else { rel };
-
-    let mut file_path = root.join(rel);
-    if file_path.is_dir() {
-        file_path = file_path.join("index.html");
-    }
-    if !file_path.exists() {
-        file_path = root.join("index.html");
-    }
-    if !file_path.starts_with(&root) {
-        let _ = req.respond(json_response(
-            403,
-            serde_json::json!({ "error": "Forbidden" }).to_string(),
-        ));
-        return;
-    }
-
-    match std::fs::read(&file_path) {
-        Ok(bytes) => {
-            let _ = req.respond(bytes_response(200, mime_for(file_path.to_string_lossy().as_ref()), bytes));
+    match crate::services::remote_companion::serve_companion_file(&ctx.app, url_path) {
+        Ok((bytes, mime)) => {
+            let _ = req.respond(bytes_response(200, mime, bytes));
         }
         Err(e) => {
             let _ = req.respond(json_response(
                 404,
-                serde_json::json!({ "error": format!("Couldn't read companion file: {e}") }).to_string(),
+                serde_json::json!({ "error": e.to_string() }).to_string(),
             ));
         }
     }
@@ -765,7 +810,8 @@ fn handle_request(
             "version": env!("CARGO_PKG_VERSION"),
             "paired": paired,
             "nexus_configured": nexus_configured(),
-            "games": receiver_games(),
+            "games": crate::services::remote_companion::list_companion_games()
+                .unwrap_or_default(),
             "companion_url": "/app/",
         })
         .to_string();
@@ -773,8 +819,33 @@ fn handle_request(
         return;
     }
 
-    if is_get && (url.starts_with("/app") || url == "/app") {
+    if is_get && (url == "/app" || url.starts_with("/app?")) {
+        let location =
+            tiny_http::Header::from_bytes(&b"Location"[..], &b"/app/"[..]).unwrap();
+        let _ = req.respond(tiny_http::Response::empty(302).with_header(location));
+        return;
+    }
+
+    if is_get && url.starts_with("/app/") {
         serve_companion_app(req);
+        return;
+    }
+
+    if is_get && url.starts_with("/games/list") {
+        match crate::services::remote_companion::list_companion_games() {
+            Ok(games) => {
+                let _ = req.respond(json_response(
+                    200,
+                    serde_json::to_string(&games).unwrap_or_else(|_| "[]".to_string()),
+                ));
+            }
+            Err(e) => {
+                let _ = req.respond(json_response(
+                    400,
+                    serde_json::json!({ "error": e.to_string() }).to_string(),
+                ));
+            }
+        }
         return;
     }
 
@@ -797,6 +868,93 @@ fn handle_request(
                 ));
             }
         }
+        return;
+    }
+
+    if is_get && url.starts_with("/browse/trending") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        respond_json_result(req, crate::services::remote_companion::browse_trending(&domain));
+        return;
+    }
+
+    if is_get && url.starts_with("/browse/latest") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        let offset = params
+            .get("offset")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        respond_json_result(req, crate::services::remote_companion::browse_latest(&domain, offset));
+        return;
+    }
+
+    if is_get && url.starts_with("/mods/detail") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        let mod_id = params
+            .get("mod_id")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        respond_json_result(req, crate::services::remote_companion::mod_detail(&domain, mod_id));
+        return;
+    }
+
+    if is_get && url.starts_with("/install/session/") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let session_id = url
+            .trim_start_matches("/install/session/")
+            .split('?')
+            .next()
+            .unwrap_or("")
+            .to_string();
+        match crate::services::remote_companion::get_install_session(&session_id) {
+            Ok(status) => {
+                let _ = req.respond(json_response(
+                    200,
+                    serde_json::to_string(&status).unwrap_or_else(|_| "{}".to_string()),
+                ));
+            }
+            Err(e) => {
+                let _ = req.respond(json_response(
+                    404,
+                    serde_json::json!({ "error": e.to_string() }).to_string(),
+                ));
+            }
+        }
+        return;
+    }
+
+    if is_post && url.starts_with("/install/session/start") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_install_session_start(req);
+        return;
+    }
+
+    if is_post && url.contains("/install/session/") && url.ends_with("/confirm") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_install_session_confirm(req, &url);
         return;
     }
 

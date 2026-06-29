@@ -6,6 +6,7 @@ pub mod mod_ledger;
 pub mod paths;
 pub mod platform;
 pub mod proc;
+pub mod remote_companion;
 pub mod remote_sync;
 pub mod startup_log;
 pub mod steam;

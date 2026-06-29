@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.34] - 2026-06-29
+
+### Added
+- **Companion mod browser** — Featured + Latest shelves, mod detail with file picker, and full install flow at `http://<device-ip>:8731/app/` (bundled in Flatpak/Linux builds).
+- **Remote install sessions** — Deck downloads on-device, runs FOMOD/options wizard, then installs after phone confirmation via `/install/session/`.
+- **Download progress on phone** — install session exposes bytes done/total, percent, and ETA while the Deck download runs.
+- **Pull to refresh** — pull down on browse shelves to reload Featured and Latest.
+- **Remember last game** — companion restores your last selected game from local storage.
+- **Haptic feedback** — short vibration on successful send and install complete (Android).
+
+### Changed
+- **Creation Club companion UI** — dark + gold theme, hero mod detail, horizontal Featured shelf, stacked Latest tiles.
+- **Browse API on receiver** — `/games/list`, `/browse/trending`, `/browse/latest`, `/mods/detail`, deck-proxied search/files.
+
+### Fixed
+- **Triple file display** — dedupe mod files by ID; group main vs optional downloads.
+- **Companion white page on Deck** — Flatpak and release builds bundle `companion-web` under `/app/share/nexusdeck/`.
+- **Mod browse stale results** — clear mods list while loading a new search/filter.
+
 ## [1.1.33] - 2026-06-29
 
 ### Added

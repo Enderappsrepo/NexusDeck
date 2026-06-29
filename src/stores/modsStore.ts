@@ -83,7 +83,7 @@ export const useModsStore = create<ModsState>((set, get) => ({
     // keep the results and the remembered position instead of refetching.
     if (key === lastKey && mods.length > 0) return;
 
-    set({ loading: true, error: null, browseIndex: 0 });
+    set({ loading: true, error: null, browseIndex: 0, mods: [], hasMore: false });
     try {
       const result = await api.searchModsFiltered(
         domain,
@@ -104,6 +104,8 @@ export const useModsStore = create<ModsState>((set, get) => ({
     } catch (e) {
       set({
         loading: false,
+        mods: [],
+        hasMore: false,
         error: e instanceof Error ? e.message : String(e),
       });
     }
