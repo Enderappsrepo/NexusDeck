@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.36] - 2026-06-29
+
+### Fixed
+- **Flatpak CI verify step** — companion-web tarball check accepts `./index.html` paths from `tar`.
+
 ## [1.1.35] - 2026-06-29
 
 ### Fixed

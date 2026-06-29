@@ -141,7 +141,7 @@ jobs:
           tar -xJf /tmp/7z2601-linux-x64.tar.xz -C flatpak 7zz
           chmod +x flatpak/7zz
           test -f flatpak/companion-web.tar.gz
-          tar -tzf flatpak/companion-web.tar.gz | grep -q '^index.html$'
+          tar -tzf flatpak/companion-web.tar.gz | grep -qE '(^(\./)?)?index\.html$'
 
       - name: Install GNOME 48 runtime
         run: |
