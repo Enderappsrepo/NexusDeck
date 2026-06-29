@@ -15,6 +15,9 @@ from urllib.parse import urlparse
 
 GUI_DIR = Path(__file__).resolve().parent
 INSTALL_DIR = GUI_DIR.parent
+LEGACY_INSTALL_DIR = Path(
+    os.environ.get("NEXUSDECK_INSTALL_DIR", str(Path.home() / ".local/share/nexusdeck"))
+)
 
 _state_lock = threading.Lock()
 _state: dict = {
@@ -43,6 +46,58 @@ def _append_event(event: dict) -> None:
             _state["running"] = False
 
 
+def _find_steam_path() -> str | None:
+    home = Path.home()
+    candidates = [
+        os.environ.get("STEAM_COMPAT_CLIENT_INSTALL_PATH", ""),
+        str(home / ".steam/steam"),
+        str(home / ".local/share/Steam"),
+        "/usr/share/steam",
+        "/home/deck/.steam/steam",
+        str(home / ".var/app/com.valvesoftware.Steam/data/Steam"),
+    ]
+    for path in candidates:
+        if path and Path(path).is_dir():
+            return path
+    return None
+
+
+def _is_steam_deck() -> bool:
+    if os.environ.get("SteamOS") or os.environ.get("STEAMOS"):
+        return True
+    if Path("/home/deck").is_dir():
+        return True
+    for release in ("/etc/os-release", "/usr/lib/os-release"):
+        try:
+            text = Path(release).read_text(encoding="utf-8", errors="replace")
+            if "steamos" in text.lower() or "valve" in text.lower():
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def _flatpak_ready() -> bool:
+    try:
+        subprocess.run(["flatpak", "--version"], capture_output=True, check=True)
+        return True
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
+
+def _flatpak_installed() -> bool:
+    app_id = os.environ.get("NEXUSDECK_APP_ID", "com.nexusdeck.app")
+    try:
+        subprocess.run(
+            ["flatpak", "info", "--user", app_id],
+            capture_output=True,
+            check=True,
+        )
+        return True
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
+
 def _run_install(options: dict) -> None:
     env = os.environ.copy()
     env["NEXUSDECK_JSON_PROGRESS"] = "1"
@@ -50,6 +105,12 @@ def _run_install(options: dict) -> None:
     env["NEXUSDECK_ADD_STEAM"] = "1" if options.get("addToSteam", True) else "0"
     env["NEXUSDECK_ADD_CONTROLLER"] = "1" if options.get("addController", True) else "0"
     env["NEXUSDECK_LAUNCH_AFTER"] = "1" if options.get("launchAfter", True) else "0"
+    env["NEXUSDECK_REGISTER_NXM"] = "1" if options.get("registerNxm", True) else "0"
+    env["NEXUSDECK_REMOVE_LEGACY"] = "1" if options.get("removeLegacy", True) else "0"
+
+    flatpak_path = (options.get("flatpakPath") or "").strip()
+    if flatpak_path:
+        env["NEXUSDECK_FLATPAK_PATH"] = flatpak_path
 
     with _state_lock:
         _state["running"] = True
@@ -93,7 +154,7 @@ def _run_install(options: dict) -> None:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "NexusDeckInstaller/1.0"
+    server_version = "NexusDeckInstaller/1.1"
 
     def log_message(self, fmt: str, *args) -> None:
         return
@@ -139,12 +200,20 @@ class Handler(BaseHTTPRequestHandler):
             with _state_lock:
                 return self._send_json(dict(_state))
         if path == "/api/info":
-            deck = os.path.isdir("/home/deck") or "SteamOS" in os.environ.get("SteamOS", "")
+            steam_path = _find_steam_path()
             return self._send_json(
                 {
                     "appName": "NexusDeck",
-                    "isSteamDeck": deck,
+                    "appId": "com.nexusdeck.app",
+                    "isSteamDeck": _is_steam_deck(),
+                    "steamFound": steam_path is not None,
+                    "steamPath": steam_path,
+                    "flatpakReady": _flatpak_ready(),
+                    "flatpakInstalled": _flatpak_installed(),
+                    "hasLegacyInstall": LEGACY_INSTALL_DIR.is_dir(),
+                    "legacyPath": str(LEGACY_INSTALL_DIR),
                     "repo": os.environ.get("NEXUSDECK_GITHUB_REPO", "Enderappsrepo/NexusDeck"),
+                    "launchCommand": "flatpak run com.nexusdeck.app",
                 }
             )
         self.send_error(404)
@@ -161,6 +230,10 @@ class Handler(BaseHTTPRequestHandler):
             options = json.loads(raw.decode("utf-8"))
         except json.JSONDecodeError:
             return self._send_json({"error": "Invalid JSON"}, 400)
+
+        flatpak_path = (options.get("flatpakPath") or "").strip()
+        if flatpak_path and not Path(flatpak_path).is_file():
+            return self._send_json({"error": f"Local Flatpak not found: {flatpak_path}"}, 400)
 
         with _state_lock:
             if _state["running"]:

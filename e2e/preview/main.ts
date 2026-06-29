@@ -55,10 +55,26 @@ import("@/main").then(async () => {
   };
 
   // Expose a trigger so the harness can render the mod install dialog on demand.
-  const [{ useInstallQueueStore }, { useGamesStore }] = await Promise.all([
+  const [{ useInstallQueueStore }, { useGamesStore }, { useDownloadsStore }] = await Promise.all([
     import("@/stores/installQueueStore"),
     import("@/stores/gamesStore"),
+    import("@/stores/downloadsStore"),
   ]);
+  (window as unknown as Record<string, unknown>).__triggerDownload = (status = "downloading") => {
+    useDownloadsStore.getState().setProgress({
+      id: "dl-active",
+      game_domain: "fallout4",
+      mod_id: 99,
+      file_id: 1,
+      file_name: "BigTextures.7z",
+      bytes_done: status === "complete" ? 1_000_000_000 : 480_000_000,
+      bytes_total: 1_000_000_000,
+      status,
+      dest_path: "/home/deck/staging/BigTextures.7z",
+      mod_name: "Vivid Fallout - All in One",
+      profile_id: "profile-1",
+    });
+  };
   (window as unknown as Record<string, unknown>).__triggerInstall = () => {
     const profile = useGamesStore.getState().profiles[0];
     useInstallQueueStore.setState({

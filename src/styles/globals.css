@@ -172,6 +172,14 @@ body:has([data-bottom-nav]) [data-download-queue-panel] {
   padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
 }
 
+/* The mod-detail install bar also docks at the bottom. When it's on screen, lift
+   the floating download / install queue panels clear above it so their progress
+   and Install button aren't hidden behind the bar (they were overlapping). */
+body:has([data-mod-detail-actions]) [data-download-queue-panel],
+body:has([data-mod-detail-actions]) [data-install-queue-panel] {
+  padding-bottom: calc(14rem + env(safe-area-inset-bottom, 0px));
+}
+
 /* Stack the controller hint bar above the nav rather than behind it. */
 body:has([data-bottom-nav]) [data-controller-hint-bar] {
   bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
@@ -805,4 +813,11 @@ body:has([data-controller-hint-bar]) .mod-detail-action-bar {
 [data-perf="true"][data-controller="true"] .focusable:focus {
   box-shadow: 0 0 0 5px rgba(53, 227, 255, 0.55) !important;
   transform: none !important;
+}
+
+/* The coverflow slide is GPU-only (transform + opacity), so keep it animating
+   even in perf mode where transitions are otherwise stripped — it composites
+   cheaply and the motion is the whole point of flipping through covers. */
+[data-perf="true"] [data-mod-coverflow] [data-cover] {
+  transition: transform 240ms ease, opacity 240ms ease !important;
 }

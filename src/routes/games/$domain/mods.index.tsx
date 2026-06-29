@@ -3,11 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import {
   FlaskConical,
   FolderInput,
+  GalleryHorizontalEnd,
   Heart,
+  LayoutGrid,
   Search,
   SlidersHorizontal,
 } from "lucide-react";
-import { ModListRow } from "@/components/mod/ModListRow";
 import { ModSearchBar } from "@/components/mod/ModSearchBar";
 import { ModFilterPanel } from "@/components/mod/ModFilterPanel";
 import { ModActiveFilterPills } from "@/components/mod/ModActiveFilterPills";
@@ -46,7 +47,8 @@ import {
   type ModSort,
 } from "@/lib/nexus/modSorts";
 import { ModCategoryChips } from "@/components/mod/ModCategoryChips";
-import { VirtualModList } from "@/components/mod/VirtualModList";
+import { ModCoverflow } from "@/components/mod/ModCoverflow";
+import { ModGrid } from "@/components/mod/ModGrid";
 import { ModBrowseShelves } from "@/components/mod/ModBrowseShelves";
 import { useInstallQueueStore } from "@/stores/installQueueStore";
 import { quickDownloadMod, findModName } from "@/lib/nexus/quickDownload";
@@ -156,6 +158,15 @@ function ModBrowserPage() {
   const narrow = useIsNarrow();
   const deckDetected = useSettingsStore((s) => s.deckDetected);
   const compactBrowse = narrow || deckDetected;
+  const [browseView, setBrowseView] = useState<"coverflow" | "grid">(
+    () => (localStorage.getItem("nexusdeck_browse_view") === "grid" ? "grid" : "coverflow")
+  );
+  const toggleBrowseView = () =>
+    setBrowseView((v) => {
+      const next = v === "coverflow" ? "grid" : "coverflow";
+      localStorage.setItem("nexusdeck_browse_view", next);
+      return next;
+    });
   const { controllerActive } = useGamepadRouterState();
   const autoFocusedRef = useRef(false);
 
@@ -398,7 +409,14 @@ function ModBrowserPage() {
   ].filter(Boolean).length;
 
   return (
-    <div className={cn("mx-auto max-w-6xl", compactBrowse && "mods-page-compact")} data-scroll-pane>
+    <div
+      className={cn(
+        "mx-auto max-w-6xl",
+        compactBrowse && "mods-page-compact",
+        compactBrowse && browseView === "coverflow" && "flex min-h-full flex-col"
+      )}
+      data-scroll-pane
+    >
       {showWelcomeBanner && (
         <div className="mb-6">
           <PostSetupBanner
@@ -507,7 +525,8 @@ function ModBrowserPage() {
 
       {!user && <SignInPrompt className="mb-4" />}
 
-      {/* Results header — above controls so mod list starts sooner when scrolling */}
+      {/* Results header — desktop only; the coverflow shows its own position counter. */}
+      {!compactBrowse && (
       <div className="page-header mb-3 sm:mb-4">
         <div className="min-w-0">
           <h2 className="page-header-title truncate">{resultLabel}</h2>
@@ -536,6 +555,7 @@ function ModBrowserPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Slim browse controls — scrolls away with content (never sticky) */}
       <div className="mod-browse-actions">
@@ -591,9 +611,32 @@ function ModBrowserPage() {
             className={cn(compactBrowse ? "min-w-[9rem] flex-1" : "w-auto")}
           />
         </div>
+
+        {compactBrowse && (
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={toggleBrowseView}
+            className="shrink-0"
+            aria-label={browseView === "coverflow" ? "Switch to grid view" : "Switch to coverflow view"}
+          >
+            {browseView === "coverflow" ? (
+              <>
+                <LayoutGrid className="h-5 w-5" />
+                Grid
+              </>
+            ) : (
+              <>
+                <GalleryHorizontalEnd className="h-5 w-5" />
+                Covers
+              </>
+            )}
+          </Button>
+        )}
       </div>
 
-      {/* One-tap quick filters */}
+      {/* One-tap quick filters — desktop only (sort + Filters cover these on Deck) */}
+      {!compactBrowse && (
       <div className="mb-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           type="button"
@@ -628,6 +671,7 @@ function ModBrowserPage() {
           Hide adult
         </button>
       </div>
+      )}
 
       <ModActiveFilterPills
         filters={filters}
@@ -646,7 +690,7 @@ function ModBrowserPage() {
         className="mb-5"
       />
 
-      {!query.trim() && activeFilterCount === 0 && !loading && (
+      {!query.trim() && activeFilterCount === 0 && !loading && !compactBrowse && (
         <ModBrowseShelves domain={domain} compact={compactBrowse} />
       )}
 
@@ -681,8 +725,19 @@ function ModBrowserPage() {
 
       {compactBrowse ? (
         mods.length > 0 ? (
-          <>
-            <VirtualModList
+          browseView === "coverflow" ? (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <ModCoverflow
+                mods={mods}
+                domain={domain}
+                installedIds={installedIds}
+                onNearEnd={() => {
+                  if (hasMore && !loadingMore) void loadMore(domain);
+                }}
+              />
+            </div>
+          ) : (
+            <ModGrid
               mods={mods}
               domain={domain}
               installedIds={installedIds}
@@ -690,14 +745,7 @@ function ModBrowserPage() {
                 if (hasMore && !loadingMore) void loadMore(domain);
               }}
             />
-            {loadingMore &&
-              Array.from({ length: 3 }).map((_, i) => (
-                <div
-                  key={`more-list-skeleton-${i}`}
-                  className="mt-2 h-[5.5rem] animate-pulse rounded-xl bg-[var(--color-secondary)]"
-                />
-              ))}
-          </>
+          )
         ) : null
       ) : (
         <div className="mod-grid">
@@ -716,7 +764,7 @@ function ModBrowserPage() {
         </div>
       )}
 
-      {hasMore && mods.length > 0 && (
+      {hasMore && mods.length > 0 && !compactBrowse && (
         <>
           {/* Sentinel: auto-loads the next page as it nears the viewport. */}
           <div ref={sentinelRef} aria-hidden className="h-px w-full" />

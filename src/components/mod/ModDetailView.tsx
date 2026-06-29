@@ -161,30 +161,7 @@ function ModDetailDeckLayout(props: ModDetailViewProps) {
         deckMode
       />
 
-      {detail.tags.length > 0 && (
-        <section className="mt-4" aria-label="Tags">
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-            Tags
-          </h2>
-          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {detail.tags.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => onFilterTag(tag)}
-                className="focusable shrink-0"
-                data-focusable="true"
-              >
-                <Badge variant="muted" className="min-h-[44px] px-4 text-base">
-                  {tag}
-                </Badge>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as ModDetailTab)} className="mt-5">
+      <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as ModDetailTab)} className="mt-4">
         <SegmentedControl
           options={tabOptions}
           value={activeTab}
@@ -224,6 +201,27 @@ function ModDetailDeckLayout(props: ModDetailViewProps) {
               <DetailChip label="Category" value={detail.category} />
             </div>
           </Card>
+
+          {detail.tags.length > 0 && (
+            <Card className="p-5">
+              <h2 className="mb-3 text-xl font-semibold">Tags</h2>
+              <div className="flex flex-wrap gap-2">
+                {detail.tags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => onFilterTag(tag)}
+                    className="focusable"
+                    data-focusable="true"
+                  >
+                    <Badge variant="muted" className="min-h-[40px] px-3.5 text-sm">
+                      {tag}
+                    </Badge>
+                  </button>
+                ))}
+              </div>
+            </Card>
+          )}
 
           {installedMod && (
             <Link
@@ -503,6 +501,112 @@ function ModDetailHero({
   installedMod: InstalledMod | null;
   deckMode: boolean;
 }) {
+  // Deck: a compact banner with the title overlaid on the image, so the
+  // description / files / install action aren't pushed far below the fold.
+  if (deckMode) {
+    return (
+      <section className="relative overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-secondary)] shadow-[var(--shadow-md)]">
+        <div
+          className="relative w-full overflow-hidden"
+          style={{ height: "clamp(140px, 22vh, 200px)" }}
+          data-focus-group="gallery"
+        >
+          {gallery.length > 0 ? (
+            <img
+              src={gallery[selectedScreenshot]}
+              alt={detail.name}
+              className="h-full w-full object-cover"
+              loading="lazy"
+              decoding="async"
+            />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-1 text-[var(--color-muted)]">
+              <ImageIcon className="h-9 w-9 opacity-50" />
+              <span className="text-sm">No preview image</span>
+            </div>
+          )}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[var(--color-background)] via-[var(--color-background)]/55 to-transparent" />
+
+          {gallery.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={onPrevScreenshot}
+                className="focusable absolute left-2 top-[40%] z-10 -translate-y-1/2 rounded-full border border-white/10 bg-black/50 p-2.5 backdrop-blur-sm"
+                data-focusable="true"
+                aria-label="Previous image"
+              >
+                <ChevronLeft className="h-5 w-5 text-white" />
+              </button>
+              <button
+                type="button"
+                onClick={onNextScreenshot}
+                className="focusable absolute right-2 top-[40%] z-10 -translate-y-1/2 rounded-full border border-white/10 bg-black/50 p-2.5 backdrop-blur-sm"
+                data-focusable="true"
+                aria-label="Next image"
+              >
+                <ChevronRight className="h-5 w-5 text-white" />
+              </button>
+            </>
+          )}
+
+          <div className="absolute inset-x-0 bottom-0 p-3">
+            <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+              <Badge variant="muted" className="text-xs">{detail.category}</Badge>
+              <Badge variant="muted" className="text-xs">v{detail.version}</Badge>
+              {detail.adult_content && <Badge variant="nsfw" className="text-xs">Adult</Badge>}
+              {installedMod && (
+                <Badge variant="success" className="gap-1 text-xs">
+                  <Package className="h-3 w-3" />
+                  Installed
+                </Badge>
+              )}
+            </div>
+            <h1 className="text-2xl font-bold leading-tight tracking-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.75)]">
+              {detail.name}
+            </h1>
+          </div>
+        </div>
+
+        <div className="space-y-2.5 px-4 pb-4 pt-3">
+          {detail.summary && (
+            <p className="line-clamp-2 text-sm leading-relaxed text-[var(--color-muted)]">
+              {detail.summary}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <MetricPill icon={Heart} label={formatNumber(detail.endorsements)} large />
+            <MetricPill icon={Download} label={formatNumber(detail.mod_downloads)} large />
+            <MetricPill icon={User} label={detail.author} large />
+            <MetricPill label={formatRelativeDate(detail.updated_timestamp)} large />
+          </div>
+          {gallery.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {gallery.map((url, index) => (
+                <button
+                  key={`${url}-${index}`}
+                  type="button"
+                  onClick={() => onSelectScreenshot(index)}
+                  className={cn(
+                    "focusable shrink-0 overflow-hidden rounded-lg border-2 transition",
+                    selectedScreenshot === index
+                      ? "border-[var(--color-primary)]"
+                      : "border-transparent opacity-70"
+                  )}
+                  data-focusable="true"
+                  aria-label={`Screenshot ${index + 1}`}
+                  aria-current={selectedScreenshot === index}
+                >
+                  <img src={url} alt="" className="h-12 w-20 object-cover" loading="lazy" decoding="async" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="relative overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-secondary)] shadow-[var(--shadow-lg)]">
       <div
@@ -655,27 +759,25 @@ function ModDetailQuickActions({
   if (!deckMode) return null;
 
   return (
-    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <div className="mt-3 grid grid-cols-4 gap-2">
       <Button
         variant={detail.viewer_endorsed ? "default" : "outline"}
-        size="lg"
-        className="min-h-[52px]"
+        className="min-h-[46px]"
         disabled={endorsing}
         onClick={onEndorse}
         data-focusable="true"
       >
-        <Heart className="h-5 w-5" />
+        <Heart className="h-4 w-4" />
         {detail.viewer_endorsed ? "Endorsed" : "Endorse"}
       </Button>
       <Button
         variant={detail.viewer_tracked ? "default" : "outline"}
-        size="lg"
-        className="min-h-[52px]"
+        className="min-h-[46px]"
         disabled={tracking || detail.viewer_tracked}
         onClick={onTrack}
         data-focusable="true"
       >
-        <Star className="h-5 w-5" />
+        <Star className="h-4 w-4" />
         {detail.viewer_tracked ? "Tracked" : "Track"}
       </Button>
       <Link
@@ -684,13 +786,13 @@ function ModDetailQuickActions({
         className="focusable"
         data-focusable="true"
       >
-        <Button variant="outline" size="lg" className="min-h-[52px] w-full">
-          <Eye className="h-5 w-5" />
+        <Button variant="outline" className="min-h-[46px] w-full">
+          <Eye className="h-4 w-4" />
           Preview
         </Button>
       </Link>
-      <Button variant="outline" size="lg" className="min-h-[52px]" onClick={onOpenNexus} data-focusable="true">
-        <ExternalLink className="h-5 w-5" />
+      <Button variant="outline" className="min-h-[46px]" onClick={onOpenNexus} data-focusable="true">
+        <ExternalLink className="h-4 w-4" />
         Nexus
       </Button>
     </div>

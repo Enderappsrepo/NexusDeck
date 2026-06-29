@@ -2,112 +2,295 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0b10" />
     <title>NexusDeck Setup</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="backdrop"></div>
+    <div class="backdrop" aria-hidden="true"></div>
+
     <main class="shell">
       <header class="hero">
-        <div class="logo">ND</div>
-        <div>
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="48" height="48" rx="12" fill="url(#logo-grad)" />
+            <path
+              d="M14 32V16h6.2l5.4 9.8L31 16h5.8v16h-4.6V23.4L27.8 32h-4.8l-4.6-8.6V32H14z"
+              fill="white"
+            />
+            <defs>
+              <linearGradient id="logo-grad" x1="8" y1="4" x2="40" y2="44">
+                <stop stop-color="#ff7c3f" />
+                <stop offset="1" stop-color="#ff5a1f" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="hero-copy">
           <p class="eyebrow">Steam Deck installer</p>
           <h1>NexusDeck Setup</h1>
           <p class="subtitle" id="subtitle">Install the mod manager built for handheld play.</p>
         </div>
       </header>
 
-      <section class="panel" id="screen-welcome">
-        <h2>Welcome</h2>
+      <div class="status-bar" id="status-bar" aria-label="System status">
+        <span class="status-chip" id="chip-deck" hidden>Steam Deck</span>
+        <span class="status-chip" id="chip-steam" hidden>Steam found</span>
+        <span class="status-chip warn" id="chip-no-steam" hidden>No Steam</span>
+        <span class="status-chip" id="chip-flatpak" hidden>Flatpak ready</span>
+        <span class="status-chip accent" id="chip-installed" hidden>Already installed</span>
+        <span class="status-chip warn" id="chip-legacy" hidden>Legacy AppImage</span>
+      </div>
+
+      <nav class="stepper" id="stepper" aria-label="Setup progress">
+        <div class="stepper-track" aria-hidden="true"><div class="stepper-fill" id="stepper-fill"></div></div>
+        <ol class="stepper-list">
+          <li class="stepper-item active" data-step="welcome"><span>1</span> Welcome</li>
+          <li class="stepper-item" data-step="options"><span>2</span> Options</li>
+          <li class="stepper-item" data-step="progress"><span>3</span> Install</li>
+          <li class="stepper-item" data-step="done"><span>4</span> Done</li>
+        </ol>
+      </nav>
+
+      <section class="panel" id="screen-welcome" data-screen="welcome">
+        <h2 class="panel-title">Welcome aboard</h2>
         <p class="lead">
-          This wizard downloads the latest Flatpak, registers mod links, and optionally adds
-          NexusDeck to your Steam library for Gaming Mode.
+          This wizard installs NexusDeck from the latest Flatpak release and configures Steam Deck
+          integration in a few minutes.
         </p>
-        <ul class="feature-list" id="feature-list">
-          <li>Flatpak install — no AppImage hassles</li>
-          <li>nxm:// mod link handler</li>
-          <li>Steam library shortcut + controller template</li>
-          <li>Launches setup wizard when done</li>
-        </ul>
-        <div class="badge-row" id="deck-badge" hidden>
-          <span class="badge success">Steam Deck detected</span>
+
+        <div class="feature-grid">
+          <article class="feature-card">
+            <div class="feature-icon-wrap" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16v10H4z" stroke="currentColor" stroke-width="1.8"/><path d="M8 11h8M8 14h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </div>
+            <h3>Flatpak install</h3>
+            <p>Clean user install with easy updates from GitHub releases.</p>
+          </article>
+          <article class="feature-card">
+            <div class="feature-icon-wrap" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 0 1 0-7l1-1a5 5 0 0 1 7 7l-1 1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14 11a5 5 0 0 1 0 7l-1 1a5 5 0 0 1-7-7l1-1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </div>
+            <h3>Mod links</h3>
+            <p>Registers <code>nxm://</code> so Nexus pages open in the app.</p>
+          </article>
+          <article class="feature-card">
+            <div class="feature-icon-wrap" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="8" width="16" height="10" rx="3" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="13" r="1.5" fill="currentColor"/><circle cx="15" cy="13" r="1.5" fill="currentColor"/></svg>
+            </div>
+            <h3>Steam + controller</h3>
+            <p>Gaming Mode shortcut plus pass-through gamepad layout.</p>
+          </article>
+          <article class="feature-card">
+            <div class="feature-icon-wrap" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M12 4v8m0 0l3-3m-3 3L9 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </div>
+            <h3>Quick start</h3>
+            <p>Optionally launch onboarding when installation finishes.</p>
+          </article>
         </div>
-        <div class="actions">
-          <button class="btn primary" id="btn-continue" type="button">Continue</button>
+
+        <div class="actions actions-end">
+          <button class="btn primary btn-lg" id="btn-continue" type="button">Choose options</button>
         </div>
       </section>
 
-      <section class="panel hidden" id="screen-options">
-        <h2>Install options</h2>
-        <p class="lead">Pick what to set up now. You can change these later in NexusDeck Settings.</p>
-        <div class="option-list">
-          <label class="option">
-            <input type="checkbox" id="opt-steam" checked />
-            <span>
-              <strong>Add to Steam library</strong>
-              <small>Show NexusDeck in Gaming Mode (quit Steam first if it&apos;s running)</small>
-            </span>
-          </label>
-          <label class="option">
-            <input type="checkbox" id="opt-controller" checked />
-            <span>
-              <strong>Install controller template</strong>
-              <small>Pass-through gamepad layout for D-pad, A/B, L1/R1 navigation</small>
-            </span>
-          </label>
-          <label class="option">
-            <input type="checkbox" id="opt-launch" checked />
-            <span>
-              <strong>Launch NexusDeck when finished</strong>
-              <small>Opens the in-app onboarding wizard</small>
-            </span>
-          </label>
+      <section class="panel hidden" id="screen-options" data-screen="options">
+        <div class="options-header">
+          <div>
+            <h2 class="panel-title">Install options</h2>
+            <p class="lead tight">Pick a preset or customize each step. You can change everything later in Settings.</p>
+          </div>
         </div>
+
+        <div class="preset-row" role="group" aria-label="Install presets">
+          <button class="preset-btn active" type="button" data-preset="deck" id="preset-deck">
+            <strong>Full Deck setup</strong>
+            <small>Steam, controller, links, launch</small>
+          </button>
+          <button class="preset-btn" type="button" data-preset="desktop" id="preset-desktop">
+            <strong>Desktop only</strong>
+            <small>Flatpak + mod links</small>
+          </button>
+          <button class="preset-btn" type="button" data-preset="update" id="preset-update">
+            <strong>Update / reinstall</strong>
+            <small>Flatpak only, no extras</small>
+          </button>
+        </div>
+
+        <div class="option-section">
+          <h3 class="section-label">Download source</h3>
+          <div class="source-toggle" role="radiogroup" aria-label="Download source">
+            <label class="source-pill selected">
+              <input type="radio" name="source" value="latest" checked />
+              <span>Latest release</span>
+            </label>
+            <label class="source-pill">
+              <input type="radio" name="source" value="local" />
+              <span>Local Flatpak file</span>
+            </label>
+          </div>
+          <div class="advanced-field hidden" id="local-flatpak-field">
+            <label class="field-label" for="flatpak-path">Path to .flatpak bundle</label>
+            <input
+              class="text-input"
+              id="flatpak-path"
+              type="text"
+              placeholder="/home/deck/Downloads/nexusdeck.flatpak"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <p class="field-hint">Use this when offline or installing a specific build you downloaded manually.</p>
+          </div>
+        </div>
+
+        <div class="option-section">
+          <h3 class="section-label">App integration</h3>
+          <div class="option-list" role="group" aria-label="App integration">
+            <label class="option-card selected" data-option="nxm">
+              <input type="checkbox" id="opt-nxm" checked hidden />
+              <span class="option-check" aria-hidden="true"></span>
+              <span class="option-body">
+                <strong>Register nxm:// mod links</strong>
+                <small>Open Nexus download links directly in NexusDeck.</small>
+              </span>
+            </label>
+            <label class="option-card selected" data-option="legacy">
+              <input type="checkbox" id="opt-legacy" checked hidden />
+              <span class="option-check" aria-hidden="true"></span>
+              <span class="option-body">
+                <strong>Remove legacy AppImage</strong>
+                <small>Cleans up old <code>~/.local/share/nexusdeck</code> installs if present.</small>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="option-section" id="steam-section">
+          <h3 class="section-label">Steam Deck integration</h3>
+          <div class="callout" id="steam-callout">
+            <strong>Before adding to Steam:</strong> exit Steam completely (Steam menu → Exit, or Power → Exit on Deck).
+          </div>
+          <div class="option-list" role="group" aria-label="Steam integration">
+            <label class="option-card selected" data-option="steam">
+              <input type="checkbox" id="opt-steam" checked hidden />
+              <span class="option-check" aria-hidden="true"></span>
+              <span class="option-body">
+                <strong>Add to Steam library</strong>
+                <small>Show NexusDeck in Gaming Mode alongside your games.</small>
+              </span>
+            </label>
+            <label class="option-card selected" data-option="controller">
+              <input type="checkbox" id="opt-controller" checked hidden />
+              <span class="option-check" aria-hidden="true"></span>
+              <span class="option-body">
+                <strong>Install controller template</strong>
+                <small>D-pad, A/B, L1/R1 pass-through for in-app navigation.</small>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="option-section">
+          <h3 class="section-label">When finished</h3>
+          <div class="option-list" role="group" aria-label="After install">
+            <label class="option-card selected" data-option="launch">
+              <input type="checkbox" id="opt-launch" checked hidden />
+              <span class="option-check" aria-hidden="true"></span>
+              <span class="option-body">
+                <strong>Launch NexusDeck</strong>
+                <small>Opens the app and first-time setup wizard.</small>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="summary-box" id="install-summary" aria-live="polite">
+          <p class="summary-title">Ready to install</p>
+          <ul class="summary-list" id="summary-list"></ul>
+        </div>
+
         <div class="actions">
-          <button class="btn ghost" id="btn-back" type="button">Back</button>
-          <button class="btn primary" id="btn-install" type="button">Install NexusDeck</button>
+          <button class="btn ghost btn-lg" id="btn-back" type="button">Back</button>
+          <button class="btn primary btn-lg" id="btn-install" type="button">Install NexusDeck</button>
         </div>
       </section>
 
-      <section class="panel hidden" id="screen-progress">
-        <h2>Installing…</h2>
-        <p class="lead" id="progress-lead">Downloading and configuring NexusDeck. This may take a few minutes.</p>
-        <div class="progress-bar" aria-hidden="true">
+      <section class="panel hidden" id="screen-progress" data-screen="progress">
+        <div class="progress-header">
+          <div>
+            <h2 class="panel-title">Installing…</h2>
+            <p class="lead tight" id="progress-lead">Downloading and configuring NexusDeck.</p>
+          </div>
+          <p class="progress-percent" id="progress-percent" aria-live="polite">0%</p>
+        </div>
+
+        <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-bar">
           <div class="progress-fill" id="progress-fill"></div>
         </div>
-        <ol class="steps" id="step-list"></ol>
+
+        <ol class="steps" id="step-list" aria-live="polite"></ol>
         <pre class="log" id="log" hidden></pre>
       </section>
 
-      <section class="panel hidden" id="screen-done">
-        <div class="done-icon">✓</div>
-        <h2>All set!</h2>
-        <p class="lead" id="done-message">NexusDeck is installed. Restart Steam if you added a shortcut.</p>
-        <ul class="next-steps">
-          <li>Enter your Nexus Mods API key in the app</li>
-          <li>Run the game setup wizard for Fallout 4 or Skyrim</li>
-          <li>In Gaming Mode, pick the <strong>NexusDeck</strong> controller layout</li>
-        </ul>
-        <div class="actions">
-          <button class="btn primary" id="btn-close" type="button">Close installer</button>
+      <section class="panel hidden" id="screen-done" data-screen="done">
+        <div class="done-hero">
+          <div class="done-icon" aria-hidden="true">✓</div>
+          <h2 class="panel-title">All set!</h2>
+          <p class="lead tight" id="done-message">
+            NexusDeck is installed. Restart Steam if you added a shortcut.
+          </p>
+        </div>
+
+        <div class="checklist" id="done-checklist"></div>
+
+        <div class="command-box">
+          <p class="command-label">Launch from Desktop Mode</p>
+          <code id="launch-cmd">flatpak run com.nexusdeck.app</code>
+          <button class="btn ghost btn-sm" id="btn-copy-cmd" type="button">Copy command</button>
+        </div>
+
+        <div class="actions actions-end">
+          <button class="btn primary btn-lg" id="btn-close" type="button">Close installer</button>
         </div>
       </section>
 
-      <section class="panel hidden" id="screen-error">
-        <div class="done-icon error">!</div>
-        <h2>Installation failed</h2>
-        <p class="lead" id="error-message">Something went wrong.</p>
+      <section class="panel hidden" id="screen-error" data-screen="error">
+        <div class="done-hero">
+          <div class="done-icon error" aria-hidden="true">!</div>
+          <h2 class="panel-title">Installation failed</h2>
+          <p class="lead tight" id="error-message">Something went wrong.</p>
+        </div>
+
+        <div class="callout warn" id="error-hints">
+          <strong>Common fixes:</strong>
+          <ul>
+            <li>Ensure Flatpak is installed and Flathub is enabled.</li>
+            <li>Check your internet connection for the Flatpak download.</li>
+            <li>Quit Steam before adding a library shortcut.</li>
+            <li>For local installs, verify the .flatpak path is correct.</li>
+          </ul>
+        </div>
+
+        <pre class="log hidden" id="error-log"></pre>
+
         <div class="actions">
-          <button class="btn ghost" id="btn-retry" type="button">Try again</button>
+          <button class="btn ghost btn-lg" id="btn-retry" type="button">Try again</button>
+          <button class="btn primary btn-lg" id="btn-show-log" type="button">Show log</button>
         </div>
       </section>
 
       <footer class="footer">
         <span id="repo-label">NexusDeck</span>
-        <button class="link-btn" id="btn-toggle-log" type="button">Show log</button>
+        <div class="footer-actions">
+          <span class="hint-pill" id="deck-hint" hidden>1280×800 · touch friendly</span>
+          <button class="link-btn" id="btn-toggle-log" type="button">Show log</button>
+        </div>
       </footer>
     </main>
+
+    <div class="toast hidden" id="toast" role="status"></div>
     <script src="/app.js"></script>
   </body>
 </html>

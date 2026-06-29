@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.30] - 2026-06-28
+
+### Added
+- **Mod browse views** — coverflow carousel and paged grid on the mods index for faster Deck scanning.
+
+### Changed
+- **Graphical installer UI** — install presets (Full Deck / Desktop / Update), grouped options, local Flatpak path, nxm:// and legacy cleanup toggles, live install summary, system status chips, and dynamic done checklist.
+- **Mod Details** — layout and focus navigation refinements for Deck.
+
 ## [1.1.29] - 2026-06-28
 
 ### Fixed

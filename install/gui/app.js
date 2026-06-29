@@ -23,6 +23,35 @@ const STEP_ORDER = [
   "complete",
 ];
 
+const WIZARD_STEPS = ["welcome", "options", "progress", "done"];
+
+const PRESETS = {
+  deck: {
+    source: "latest",
+    registerNxm: true,
+    removeLegacy: true,
+    addToSteam: true,
+    addController: true,
+    launchAfter: true,
+  },
+  desktop: {
+    source: "latest",
+    registerNxm: true,
+    removeLegacy: true,
+    addToSteam: false,
+    addController: false,
+    launchAfter: false,
+  },
+  update: {
+    source: "latest",
+    registerNxm: false,
+    removeLegacy: false,
+    addToSteam: false,
+    addController: false,
+    launchAfter: false,
+  },
+};
+
 const screens = {
   welcome: document.getElementById("screen-welcome"),
   options: document.getElementById("screen-options"),
@@ -33,26 +62,208 @@ const screens = {
 
 const stepList = document.getElementById("step-list");
 const progressFill = document.getElementById("progress-fill");
+const progressBar = document.getElementById("progress-bar");
+const progressPercent = document.getElementById("progress-percent");
+const stepperFill = document.getElementById("stepper-fill");
 const logEl = document.getElementById("log");
+const errorLog = document.getElementById("error-log");
 const errorMessage = document.getElementById("error-message");
 const doneMessage = document.getElementById("done-message");
+const toast = document.getElementById("toast");
+const summaryList = document.getElementById("summary-list");
+const doneChecklist = document.getElementById("done-checklist");
 
 let pollTimer = null;
 let logVisible = false;
+let currentWizardStep = "welcome";
+let activePreset = "deck";
+let systemInfo = {};
 const stepState = new Map();
+
+function $(id) {
+  return document.getElementById(id);
+}
+
+function showToast(message) {
+  toast.textContent = message;
+  toast.classList.remove("hidden");
+  window.clearTimeout(showToast.timer);
+  showToast.timer = window.setTimeout(() => toast.classList.add("hidden"), 2200);
+}
+
+function setWizardStep(name) {
+  currentWizardStep = name;
+  const idx = WIZARD_STEPS.indexOf(name);
+  const progress = idx <= 0 ? 0 : (idx / (WIZARD_STEPS.length - 1)) * 100;
+  stepperFill.style.width = `${progress}%`;
+
+  document.querySelectorAll(".stepper-item").forEach((el) => {
+    const step = el.dataset.step;
+    const stepIdx = WIZARD_STEPS.indexOf(step);
+    el.classList.toggle("active", step === name);
+    el.classList.toggle("done", stepIdx >= 0 && stepIdx < idx && name !== "error");
+  });
+}
 
 function showScreen(name) {
   Object.entries(screens).forEach(([key, el]) => {
     el.classList.toggle("hidden", key !== name);
   });
+  if (name !== "error") {
+    setWizardStep(name);
+  }
 }
 
 function stepIcon(status) {
   if (status === "done") return "✓";
   if (status === "error") return "✕";
   if (status === "warn") return "!";
-  if (status === "running") return "…";
+  if (status === "running") return "◌";
   return "•";
+}
+
+function getOptions() {
+  const source = document.querySelector('input[name="source"]:checked')?.value || "latest";
+  return {
+    source,
+    flatpakPath: source === "local" ? $("flatpak-path").value.trim() : "",
+    registerNxm: $("opt-nxm").checked,
+    removeLegacy: $("opt-legacy").checked,
+    addToSteam: $("opt-steam").checked,
+    addController: $("opt-controller").checked,
+    launchAfter: $("opt-launch").checked,
+  };
+}
+
+function applyOptions(opts) {
+  document.querySelectorAll('input[name="source"]').forEach((radio) => {
+    radio.checked = radio.value === opts.source;
+    radio.closest(".source-pill")?.classList.toggle("selected", radio.checked);
+  });
+  syncSourceField();
+
+  $("opt-nxm").checked = opts.registerNxm;
+  $("opt-legacy").checked = opts.removeLegacy;
+  $("opt-steam").checked = opts.addToSteam;
+  $("opt-controller").checked = opts.addController;
+  $("opt-launch").checked = opts.launchAfter;
+
+  document.querySelectorAll(".option-card input").forEach((input) => {
+    input.dispatchEvent(new Event("change"));
+  });
+
+  syncSteamOptions();
+  updateSummary();
+}
+
+function setPreset(name) {
+  activePreset = name;
+  document.querySelectorAll(".preset-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.preset === name);
+  });
+  applyOptions(PRESETS[name]);
+}
+
+function detectPresetMismatch() {
+  const current = getOptions();
+  for (const [name, preset] of Object.entries(PRESETS)) {
+    const match =
+      current.source === preset.source &&
+      current.registerNxm === preset.registerNxm &&
+      current.removeLegacy === preset.removeLegacy &&
+      current.addToSteam === preset.addToSteam &&
+      current.addController === preset.addController &&
+      current.launchAfter === preset.launchAfter &&
+      (preset.source !== "local" || !current.flatpakPath);
+    if (match) {
+      activePreset = name;
+      document.querySelectorAll(".preset-btn").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.preset === name);
+      });
+      return;
+    }
+  }
+  activePreset = "";
+  document.querySelectorAll(".preset-btn").forEach((btn) => btn.classList.remove("active"));
+}
+
+function updateSummary() {
+  const opts = getOptions();
+  const items = [];
+
+  if (opts.source === "local") {
+    const path = opts.flatpakPath || "(path required)";
+    items.push(`Install from local file: ${path}`);
+  } else if (systemInfo.flatpakInstalled) {
+    items.push("Reinstall latest Flatpak release");
+  } else {
+    items.push("Download and install latest Flatpak release");
+  }
+
+  if (opts.registerNxm) items.push("Register nxm:// mod links");
+  if (opts.removeLegacy) items.push("Remove legacy AppImage if found");
+  if (opts.addToSteam) items.push("Add shortcut to Steam library");
+  if (opts.addController) items.push("Install Steam Input controller template");
+  if (opts.launchAfter) items.push("Launch NexusDeck when finished");
+
+  if (items.length === 1 && items[0].includes("Flatpak")) {
+    items.push("No optional integration steps selected");
+  }
+
+  summaryList.innerHTML = items.map((text) => `<li>${text}</li>`).join("");
+}
+
+function buildDoneChecklist(opts) {
+  const items = [];
+  let n = 1;
+
+  if (opts.addToSteam) {
+    items.push({
+      title: "Restart Steam",
+      body: "Quit and reopen Steam to see NexusDeck in your library.",
+    });
+  }
+  if (opts.addController) {
+    items.push({
+      title: "Pick controller layout",
+      body: "Gaming Mode → NexusDeck → Controller → NexusDeck template.",
+    });
+  }
+  items.push({
+    title: "Complete setup",
+    body: "Add your Nexus API key and run the game wizard in the app.",
+  });
+
+  doneChecklist.innerHTML = items
+    .map(
+      (item, i) => `
+      <article class="check-item">
+        <span class="check-mark">${i + 1}</span>
+        <div>
+          <strong>${item.title}</strong>
+          <p>${item.body}</p>
+        </div>
+      </article>`
+    )
+    .join("");
+}
+
+function updateProgressUI() {
+  const completed = STEP_ORDER.filter((k) => stepState.get(k)?.status === "done").length;
+  const running = STEP_ORDER.find((k) => stepState.get(k)?.status === "running");
+  const total = STEP_ORDER.length;
+  let pct = Math.round((completed / total) * 100);
+  if (running && pct < 95) pct += 4;
+
+  progressFill.style.width = `${pct}%`;
+  progressPercent.textContent = `${pct}%`;
+  progressBar.setAttribute("aria-valuenow", String(pct));
+
+  if (running) {
+    $("progress-lead").textContent = STEP_LABELS[running]
+      ? `Working on: ${STEP_LABELS[running]}…`
+      : "Installing…";
+  }
 }
 
 function renderSteps() {
@@ -71,34 +282,126 @@ function renderSteps() {
     `;
     stepList.appendChild(li);
   }
-
-  const completed = STEP_ORDER.filter((k) => stepState.get(k)?.status === "done").length;
-  const total = STEP_ORDER.length;
-  progressFill.style.width = `${Math.min(100, (completed / total) * 100)}%`;
+  updateProgressUI();
 }
 
 function applyEvent(event) {
   const step = event.step || "log";
+  const line = event.message || "";
   if (step === "log") {
-    logEl.textContent += `${event.message}\n`;
+    logEl.textContent += `${line}\n`;
+    errorLog.textContent += `${line}\n`;
     return;
   }
-  stepState.set(step, { status: event.status || "info", message: event.message || "" });
+  stepState.set(step, { status: event.status || "info", message: line });
   renderSteps();
+}
+
+function bindOptionCards() {
+  document.querySelectorAll(".option-card").forEach((card) => {
+    const input = card.querySelector('input[type="checkbox"]');
+    if (!input) return;
+
+    const sync = () => {
+      card.classList.toggle("selected", input.checked);
+      card.classList.toggle("disabled", input.disabled);
+    };
+
+    card.addEventListener("click", (e) => {
+      if (input.disabled) return;
+      if (e.target === input) return;
+      input.checked = !input.checked;
+      input.dispatchEvent(new Event("change"));
+      sync();
+    });
+
+    input.addEventListener("change", () => {
+      sync();
+      detectPresetMismatch();
+      updateSummary();
+    });
+    sync();
+  });
+}
+
+function syncSourceField() {
+  const local = document.querySelector('input[name="source"][value="local"]')?.checked;
+  $("local-flatpak-field").classList.toggle("hidden", !local);
+  document.querySelectorAll(".source-pill").forEach((pill) => {
+    const radio = pill.querySelector('input[type="radio"]');
+    pill.classList.toggle("selected", radio?.checked);
+  });
+  detectPresetMismatch();
+  updateSummary();
+}
+
+function syncSteamOptions() {
+  const steam = $("opt-steam");
+  const controller = $("opt-controller");
+  const callout = $("steam-callout");
+  const controllerCard = document.querySelector('[data-option="controller"]');
+  const steamSection = $("steam-section");
+
+  const steamAvailable = systemInfo.steamFound !== false;
+  steamSection.classList.toggle("hidden", !steamAvailable);
+
+  if (!steamAvailable) {
+    steam.checked = false;
+    controller.checked = false;
+    callout.hidden = true;
+    return;
+  }
+
+  controller.disabled = !steam.checked;
+  if (!steam.checked) controller.checked = false;
+
+  callout.hidden = !steam.checked;
+  controllerCard?.classList.toggle("disabled", !steam.checked);
+  controllerCard?.querySelector("input")?.dispatchEvent(new Event("change"));
 }
 
 async function fetchInfo() {
   try {
     const res = await fetch("/api/info");
-    const info = await res.json();
-    document.getElementById("repo-label").textContent = info.repo || "NexusDeck";
-    if (info.isSteamDeck) {
-      document.getElementById("deck-badge").hidden = false;
-      document.getElementById("subtitle").textContent =
-        "Steam Deck detected — optimized for Gaming Mode and controller navigation.";
+    systemInfo = await res.json();
+
+    $("repo-label").textContent = systemInfo.repo || "NexusDeck";
+    $("launch-cmd").textContent = systemInfo.launchCommand || "flatpak run com.nexusdeck.app";
+
+    if (systemInfo.isSteamDeck) {
+      $("chip-deck").hidden = false;
+      $("deck-hint").hidden = false;
+      $("subtitle").textContent =
+        "Steam Deck detected — built for 1280×800, controller navigation, and Gaming Mode.";
     }
+
+    if (systemInfo.steamFound) {
+      $("chip-steam").hidden = false;
+    } else {
+      $("chip-no-steam").hidden = false;
+    }
+
+    if (systemInfo.flatpakReady) $("chip-flatpak").hidden = false;
+    if (systemInfo.flatpakInstalled) $("chip-installed").hidden = false;
+    if (systemInfo.hasLegacyInstall) $("chip-legacy").hidden = false;
+
+    if (!systemInfo.steamFound) {
+      applyOptions(PRESETS.desktop);
+      activePreset = "desktop";
+      document.querySelectorAll(".preset-btn").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.preset === "desktop");
+      });
+    } else if (systemInfo.flatpakInstalled) {
+      setPreset("update");
+    } else {
+      setPreset("deck");
+    }
+
+    syncSteamOptions();
+    updateSummary();
   } catch {
-    /* ignore */
+    setPreset("deck");
+    updateSummary();
   }
 }
 
@@ -117,12 +420,19 @@ async function pollStatus() {
       stopPolling();
       errorMessage.textContent = status.error;
       showScreen("error");
+      setWizardStep("progress");
+      document.querySelector('[data-step="progress"]')?.classList.add("active");
       return;
     }
     if (status.done) {
       stopPolling();
-      doneMessage.textContent =
-        "NexusDeck is installed. Restart Steam if you added a shortcut, then complete setup in the app.";
+      progressFill.style.width = "100%";
+      progressPercent.textContent = "100%";
+      const opts = status.options || getOptions();
+      buildDoneChecklist(opts);
+      doneMessage.textContent = opts.addToSteam
+        ? "NexusDeck is installed. Restart Steam to see the shortcut, then complete setup in the app."
+        : "NexusDeck is installed. Launch it from Desktop Mode or your app menu.";
       showScreen("done");
     }
   } catch (e) {
@@ -137,9 +447,10 @@ function startPolling() {
   pollStatus.seen = new Set();
   stepState.clear();
   logEl.textContent = "";
+  errorLog.textContent = "";
   renderSteps();
   stopPolling();
-  pollTimer = window.setInterval(pollStatus, 500);
+  pollTimer = window.setInterval(pollStatus, 450);
   pollStatus();
 }
 
@@ -151,11 +462,22 @@ function stopPolling() {
 }
 
 async function startInstall() {
+  const opts = getOptions();
+  if (opts.source === "local" && !opts.flatpakPath) {
+    showToast("Enter the path to your .flatpak file");
+    $("flatpak-path").focus();
+    return;
+  }
+
   showScreen("progress");
+
   const payload = {
-    addToSteam: document.getElementById("opt-steam").checked,
-    addController: document.getElementById("opt-controller").checked,
-    launchAfter: document.getElementById("opt-launch").checked,
+    addToSteam: opts.addToSteam,
+    addController: opts.addController,
+    launchAfter: opts.launchAfter,
+    registerNxm: opts.registerNxm,
+    removeLegacy: opts.removeLegacy,
+    flatpakPath: opts.flatpakPath || undefined,
   };
 
   const res = await fetch("/api/install", {
@@ -174,24 +496,53 @@ async function startInstall() {
   startPolling();
 }
 
-document.getElementById("btn-continue").addEventListener("click", () => showScreen("options"));
-document.getElementById("btn-back").addEventListener("click", () => showScreen("welcome"));
-document.getElementById("btn-install").addEventListener("click", () => {
-  void startInstall();
+document.querySelectorAll(".preset-btn").forEach((btn) => {
+  btn.addEventListener("click", () => setPreset(btn.dataset.preset));
 });
-document.getElementById("btn-retry").addEventListener("click", () => showScreen("options"));
-document.getElementById("btn-close").addEventListener("click", () => window.close());
-document.getElementById("btn-toggle-log").addEventListener("click", () => {
+
+document.querySelectorAll('input[name="source"]').forEach((radio) => {
+  radio.addEventListener("change", syncSourceField);
+});
+
+$("flatpak-path").addEventListener("input", () => {
+  detectPresetMismatch();
+  updateSummary();
+});
+
+$("btn-continue").addEventListener("click", () => showScreen("options"));
+$("btn-back").addEventListener("click", () => showScreen("welcome"));
+$("btn-install").addEventListener("click", () => void startInstall());
+$("btn-retry").addEventListener("click", () => showScreen("options"));
+$("btn-close").addEventListener("click", () => window.close());
+
+$("btn-copy-cmd").addEventListener("click", async () => {
+  const cmd = $("launch-cmd").textContent;
+  try {
+    await navigator.clipboard.writeText(cmd);
+    showToast("Command copied");
+  } catch {
+    showToast(cmd);
+  }
+});
+
+$("btn-toggle-log").addEventListener("click", () => {
   logVisible = !logVisible;
   logEl.hidden = !logVisible;
-  document.getElementById("btn-toggle-log").textContent = logVisible ? "Hide log" : "Show log";
+  $("btn-toggle-log").textContent = logVisible ? "Hide log" : "Show log";
 });
 
-document.getElementById("opt-steam").addEventListener("change", (e) => {
-  const controller = document.getElementById("opt-controller");
-  controller.disabled = !e.target.checked;
-  if (!e.target.checked) controller.checked = false;
+$("btn-show-log").addEventListener("click", () => {
+  errorLog.hidden = !errorLog.hidden;
+  $("btn-show-log").textContent = errorLog.hidden ? "Show log" : "Hide log";
 });
 
+$("opt-steam").addEventListener("change", () => {
+  syncSteamOptions();
+  detectPresetMismatch();
+  updateSummary();
+});
+
+bindOptionCards();
+syncSourceField();
 fetchInfo();
 showScreen("welcome");

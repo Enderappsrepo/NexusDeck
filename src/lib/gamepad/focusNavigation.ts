@@ -122,6 +122,23 @@ export function moveFocus(
   container?: HTMLElement | null
 ): void {
   const current = document.activeElement as HTMLElement;
+
+  // Index-driven widgets (e.g. the mod coverflow) opt out of spatial nav: when
+  // focus is inside a [data-nav-intercept] container, hand it the direction. If
+  // it consumes the move (preventDefault) we stop; otherwise (e.g. up/down to
+  // leave the widget) we fall through to normal spatial navigation. All input
+  // sources — d-pad, stick, keyboard — funnel through here, so one hook covers
+  // them all.
+  const intercept = current?.closest?.<HTMLElement>("[data-nav-intercept]");
+  if (intercept) {
+    const ev = new CustomEvent("nd-nav", {
+      detail: { direction },
+      cancelable: true,
+      bubbles: false,
+    });
+    intercept.dispatchEvent(ev);
+    if (ev.defaultPrevented) return;
+  }
   // Scope, in priority order: explicit container, a focus group, an open modal
   // dialog (so D-pad can't escape to the background behind an installer), else
   // the whole page.

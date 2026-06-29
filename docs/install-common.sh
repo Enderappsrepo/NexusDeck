@@ -156,6 +156,10 @@ install_flatpak() {
 }
 
 register_nxm_handler() {
+  if [[ "${NEXUSDECK_REGISTER_NXM:-1}" != "1" ]]; then
+    emit_progress "nxm" "done" "Skipped nxm:// registration"
+    return 0
+  fi
   progress_info "nxm" "Registering nxm:// mod links…"
   if command -v xdg-mime >/dev/null 2>&1; then
     xdg-mime default com.nexusdeck.app.desktop x-scheme-handler/nxm || true
@@ -166,6 +170,10 @@ register_nxm_handler() {
 }
 
 remove_legacy_appimage() {
+  if [[ "${NEXUSDECK_REMOVE_LEGACY:-1}" != "1" ]]; then
+    emit_progress "legacy" "done" "Skipped legacy cleanup"
+    return 0
+  fi
   if [[ -d "$LEGACY_INSTALL_DIR" ]]; then
     progress_info "legacy" "Removing legacy AppImage install…"
     rm -rf "$LEGACY_INSTALL_DIR"

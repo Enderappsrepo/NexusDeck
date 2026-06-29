@@ -51,6 +51,19 @@ done
 
 open_url() {
   local target="$1"
+  # Prefer a clean window on Steam Deck Desktop Mode
+  if command -v firefox >/dev/null 2>&1; then
+    firefox --new-window "${target}" >/dev/null 2>&1 &
+    return 0
+  fi
+  if command -v chromium >/dev/null 2>&1; then
+    chromium --app="${target}" >/dev/null 2>&1 &
+    return 0
+  fi
+  if command -v google-chrome >/dev/null 2>&1; then
+    google-chrome --app="${target}" >/dev/null 2>&1 &
+    return 0
+  fi
   if command -v xdg-open >/dev/null 2>&1; then
     xdg-open "${target}" >/dev/null 2>&1 &
     return 0
@@ -59,16 +72,19 @@ open_url() {
     gio open "${target}" >/dev/null 2>&1 &
     return 0
   fi
-  if command -v firefox >/dev/null 2>&1; then
-    firefox "${target}" >/dev/null 2>&1 &
-    return 0
-  fi
   return 1
 }
 
+echo ""
+echo "  NexusDeck Setup"
+echo "  ─────────────────────────────────"
+echo "  Opening installer in your browser."
+echo "  Keep this window open until setup finishes."
+echo ""
+echo "  URL: ${URL}"
+echo ""
+
 if open_url "${URL}"; then
-  echo "Opened NexusDeck installer at ${URL}"
-  echo "Close this window when installation finishes."
   wait "${SERVER_PID}"
 else
   echo "Could not open a browser automatically."

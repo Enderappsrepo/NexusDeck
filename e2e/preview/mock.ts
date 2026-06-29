@@ -227,6 +227,32 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   list_nexus_games: () => ({ games: gameSummaries, total_count: gameSummaries.length }),
   detect_steam_install: () => ({ steam_path: "/home/deck/.steam/steam", library_folders: [] }),
 
+  // Mod detail
+  get_mod_detail: () => ({
+    mod_id: 2,
+    name: "Sim Settlements 2",
+    summary: "Build settlements that build themselves — a full questline.",
+    description_html: "<p>Sim Settlements 2 is a city-building overhaul with a full quest line.</p>",
+    author: "kinggath",
+    uploader: "kinggath",
+    category: "Gameplay",
+    endorsements: 52000,
+    mod_downloads: 2_100_000,
+    updated_timestamp: Math.floor(now / 1000),
+    picture_url: null,
+    hero_image_url: null,
+    tags: ["Gameplay", "Settlements"],
+    screenshots: [],
+    adult_content: false,
+    game_id: 1151,
+    game_domain: "fallout4",
+    viewer_endorsed: false,
+    viewer_tracked: false,
+  }),
+  get_mod_files: () => [
+    { file_id: 1, name: "Sim Settlements 2 Main", file_name: "SS2.7z", version: "2.0", category_name: "Main", is_primary: true, size_kb: 520000 },
+  ],
+
   // Mods / browse
   search_mods: () => mods,
   search_mods_filtered: (_args?: { sort?: string }) => ({ mods, total_count: mods.length }),
