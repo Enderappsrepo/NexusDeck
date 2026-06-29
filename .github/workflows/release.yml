@@ -132,6 +132,7 @@ jobs:
           test -f flatpak/decky/nexusdeck-host/plugin.json
           test -f flatpak/decky/nexusdeck-host/dist/index.js
           tar -czf flatpak/decky-host.tar.gz -C flatpak/decky nexusdeck-host
+          tar -czf flatpak/companion-web.tar.gz -C flatpak/companion-web .
           cp src-tauri/icons/32x32.png flatpak/
           cp src-tauri/icons/128x128.png flatpak/
           cp src-tauri/icons/icon.png flatpak/
@@ -139,8 +140,8 @@ jobs:
           echo "8ea0fc8a135e7b848e80a4116fe22dff56c8c4518dde1f43cce67f4e340b437a  /tmp/7z2601-linux-x64.tar.xz" | sha256sum -c -
           tar -xJf /tmp/7z2601-linux-x64.tar.xz -C flatpak 7zz
           chmod +x flatpak/7zz
-          test -d flatpak/companion-web
-          test -f flatpak/companion-web/index.html
+          test -f flatpak/companion-web.tar.gz
+          tar -tzf flatpak/companion-web.tar.gz | grep -q '^index.html$'
 
       - name: Install GNOME 48 runtime
         run: |

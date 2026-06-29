@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.35] - 2026-06-29
+
+### Fixed
+- **Flatpak release build** — bundle companion web as `companion-web.tar.gz` so `/app/` static files install correctly on Steam Deck.
+
 ## [1.1.34] - 2026-06-29
 
 ### Added

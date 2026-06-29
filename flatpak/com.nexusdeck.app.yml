@@ -55,7 +55,7 @@ modules:
       - mkdir -p /app/share/nexusdeck/decky
       - tar -xzf decky-host.tar.gz -C /app/share/nexusdeck/decky
       - mkdir -p /app/share/nexusdeck/companion-web
-      - cp -r companion-web/. /app/share/nexusdeck/companion-web/
+      - tar -xzf companion-web.tar.gz -C /app/share/nexusdeck/companion-web
     sources:
       - type: file
         path: nexusdeck
@@ -71,5 +71,5 @@ modules:
         path: icon.png
       - type: file
         path: decky-host.tar.gz
-      - type: dir
-        path: companion-web
+      - type: file
+        path: companion-web.tar.gz
