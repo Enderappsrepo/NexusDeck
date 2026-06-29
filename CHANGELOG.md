@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-29
+
+### Added
+- **MCM in one-click essentials** — Mod Configuration Menu included for Skyrim SE and Fallout 4 essentials batches.
+- **Rich companion mod detail** — endorsements, downloads, version, category, tags, expandable description, Nexus link, and installed-on-device badge.
+
+### Changed
+- **F4SE/SKSE mod detection** — improved archive analysis for script-extender plugin packs, MCM folders, and SKSE/F4SE root loaders.
+- **Essentials install flow** — auto-confirms FOMOD wizards (USSEP, SkyUI, MCM, etc.) so the install queue no longer stalls on wizard screens.
+
+### Fixed
+- **Install Essentials freeze** — essentials queue jobs with FOMOD installers now auto-install with default selections instead of blocking on the wizard dialog.
+- **Setup progress desync** — essentials setup step marks complete reliably after Proton/F4SE fixes finish.
+
 ## [1.1.37] - 2026-06-29
 
 ### Added

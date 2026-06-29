@@ -290,6 +290,46 @@ body {
     @apply mt-2 text-xs font-semibold uppercase tracking-[0.15em] text-[var(--cc-gold)];
   }
 
+  .cc-mod-stats {
+    @apply grid grid-cols-2 gap-2 sm:grid-cols-4;
+  }
+
+  .cc-mod-stat {
+    @apply flex flex-col rounded-xl border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] px-3 py-2;
+  }
+
+  .cc-mod-stat-value {
+    @apply text-sm font-bold text-[var(--cc-text)];
+  }
+
+  .cc-mod-stat-label {
+    @apply mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--cc-muted)];
+  }
+
+  .cc-mod-meta {
+    @apply flex flex-wrap gap-1.5;
+  }
+
+  .cc-mod-chip {
+    @apply rounded-full border border-[var(--cc-border-subtle)] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--cc-muted)];
+  }
+
+  .cc-mod-chip-category {
+    @apply border-[var(--cc-gold)]/40 text-[var(--cc-gold)];
+  }
+
+  .cc-mod-installed-badge {
+    @apply rounded-lg border border-[var(--cc-success)]/30 bg-[var(--cc-success)]/10 px-3 py-2 text-xs font-semibold text-[var(--cc-success)];
+  }
+
+  .cc-mod-description {
+    @apply rounded-xl border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)]/50 p-3;
+  }
+
+  .cc-nexus-link {
+    @apply inline-flex text-xs font-semibold uppercase tracking-wide text-[var(--cc-gold)] underline-offset-2 hover:underline;
+  }
+
   .cc-panel {
     @apply rounded-2xl border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] p-4;
   }

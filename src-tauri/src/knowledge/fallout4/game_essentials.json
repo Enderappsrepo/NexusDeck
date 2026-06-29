@@ -34,6 +34,17 @@
       "install_preset": { "strategy": "auto", "auto_confirm": true }
     },
     {
+      "id": "mcm",
+      "name": "Mod Configuration Menu (MCM)",
+      "nexus_mod_id": 32163,
+      "priority": 32,
+      "required": true,
+      "optional": false,
+      "depends_on": ["address_library", "ufo4p"],
+      "description": "In-game menu for configuring F4SE mods — required by many essentials.",
+      "install_preset": { "strategy": "auto", "auto_confirm": true }
+    },
+    {
       "id": "bodyslide",
       "name": "BodySlide & Outfit Studio",
       "kind": "bodyslide",

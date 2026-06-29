@@ -308,18 +308,58 @@ export function ModInstallDialog({
         if (!result) return;
         const nextPhase = resolveInitialPhase(result);
 
-        if (
-          installPreset?.autoConfirm &&
-          !result.install_wizard_required &&
-          nextPhase === "review" &&
-          result.option_groups.length === 0
-        ) {
+        if (installPreset?.autoConfirm) {
           setPhase("installing");
           setInstalling(true);
           setPreview(result);
           setStrategy(presetStrategy);
-          setSelections(result.default_selections);
           try {
+            let selectionsToUse = result.default_selections;
+            let extractDir: string | null = null;
+            const needsFomod =
+              result.install_wizard_required ||
+              (result.install_wizard && result.install_wizard.steps.length > 0) ||
+              result.option_groups.length > 0;
+
+            if (needsFomod) {
+              const prepared = await api.prepareModInstall({
+                profileId: profile.id,
+                archivePath: resolved,
+                modName,
+              });
+              extractDir = prepared.prepared_extract_dir;
+              selectionsToUse = prepared.default_selections;
+              setPreparedExtractDir(extractDir);
+              if (prepared.install_wizard) {
+                setInstallWizard(prepared.install_wizard);
+              }
+              if (
+                installPreset.fomodPreset === "cbbe_deck" &&
+                prepared.install_wizard &&
+                prepared.install_wizard.steps.length > 0
+              ) {
+                selectionsToUse = applyCbbeDeckPreset(prepared.install_wizard);
+              }
+              setSelections(selectionsToUse);
+            } else {
+              setSelections(selectionsToUse);
+            }
+
+            const finalPreview = needsFomod
+              ? await loadPreview(
+                  presetStrategy,
+                  resolved,
+                  selectionsToUse,
+                  extractDir,
+                  true
+                )
+              : result;
+            if (!finalPreview) {
+              setPhase("error");
+              return;
+            }
+            setPreview(finalPreview);
+
             const installResult = await api.installModFromArchive({
               profileId: profile.id,
               modName,
@@ -330,8 +370,8 @@ export function ModInstallDialog({
                 strategy: presetStrategy,
                 enable_mod: true,
                 overwrite_files: false,
-                selected_options: result.default_selections,
-                prepared_extract_dir: null,
+                selected_options: selectionsToUse,
+                prepared_extract_dir: extractDir,
                 dry_run: false,
               },
               fileVersion: file.version ?? null,
@@ -381,6 +421,7 @@ export function ModInstallDialog({
     profile.staging_path,
     installPreset?.strategy,
     installPreset?.autoConfirm,
+    installPreset?.fomodPreset,
   ]);
 
   useEffect(() => {

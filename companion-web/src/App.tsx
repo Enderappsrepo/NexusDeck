@@ -113,6 +113,23 @@ function stripHtml(html: string): string {
   return el.textContent?.trim() ?? "";
 }
 
+function formatCount(n?: number): string {
+  if (n == null || n <= 0) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+function formatUpdated(ts?: number): string | null {
+  if (!ts) return null;
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function nexusModUrl(domain: string, modId: number): string {
+  return `https://www.nexusmods.com/${domain}/mods/${modId}`;
+}
+
 export default function App() {
   const [paired, setPaired] = useState<PairedDeck | null>(() => loadPaired());
   const [screen, setScreen] = useState<Screen>(paired ? "browse" : "connect");
@@ -147,6 +164,7 @@ export default function App() {
   const [modDetail, setModDetail] = useState<ModDetail | null>(null);
   const [modFiles, setModFiles] = useState<ModFileInfo[]>([]);
   const [showOtherFiles, setShowOtherFiles] = useState(false);
+  const [showFullDescription, setShowFullDescription] = useState(false);
   const [selectedFileId, setSelectedFileId] = useState<number | null>(null);
   const [modBusy, setModBusy] = useState(false);
 
@@ -345,6 +363,7 @@ export default function App() {
     setModDetail(null);
     setModFiles([]);
     setShowOtherFiles(false);
+    setShowFullDescription(false);
     try {
       const [detail, files] = await Promise.all([
         fetchModDetail(paired, gameDomain, mod.mod_id),
@@ -1027,14 +1046,79 @@ export default function App() {
 
           {modDetail && !modBusy && (
             <div className="cc-body space-y-4">
+              <div className="cc-mod-stats">
+                <div className="cc-mod-stat">
+                  <span className="cc-mod-stat-value">{formatCount(modDetail.endorsements)}</span>
+                  <span className="cc-mod-stat-label">Endorsements</span>
+                </div>
+                <div className="cc-mod-stat">
+                  <span className="cc-mod-stat-value">{formatCount(modDetail.mod_downloads)}</span>
+                  <span className="cc-mod-stat-label">Downloads</span>
+                </div>
+                {modDetail.version && (
+                  <div className="cc-mod-stat">
+                    <span className="cc-mod-stat-value">{modDetail.version}</span>
+                    <span className="cc-mod-stat-label">Version</span>
+                  </div>
+                )}
+                {formatUpdated(modDetail.updated_timestamp) && (
+                  <div className="cc-mod-stat">
+                    <span className="cc-mod-stat-value">{formatUpdated(modDetail.updated_timestamp)}</span>
+                    <span className="cc-mod-stat-label">Updated</span>
+                  </div>
+                )}
+              </div>
+
+              {(modDetail.category || (modDetail.tags && modDetail.tags.length > 0)) && (
+                <div className="cc-mod-meta">
+                  {modDetail.category && (
+                    <span className="cc-mod-chip cc-mod-chip-category">{modDetail.category}</span>
+                  )}
+                  {modDetail.tags?.slice(0, 8).map((tag) => (
+                    <span key={tag} className="cc-mod-chip">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {libraryMods.some((m) => m.nexus_mod_id === modDetail.mod_id) && (
+                <p className="cc-mod-installed-badge">Installed on your device</p>
+              )}
+
               {modDetail.summary && (
-                <p className="text-sm leading-relaxed text-[var(--cc-muted)]">{modDetail.summary}</p>
+                <p className="text-sm leading-relaxed text-[var(--cc-text)]">{modDetail.summary}</p>
               )}
-              {modDetail.description_html && (
-                <p className="text-sm leading-relaxed text-[var(--cc-muted)] line-clamp-5">
-                  {stripHtml(modDetail.description_html).slice(0, 500)}
-                </p>
-              )}
+              {modDetail.description_html && (() => {
+                const plain = stripHtml(modDetail.description_html);
+                const truncated = plain.length > 600;
+                const shown = showFullDescription || !truncated ? plain : `${plain.slice(0, 600)}…`;
+                return (
+                  <div className="cc-mod-description">
+                    <p className="text-sm leading-relaxed text-[var(--cc-muted)] whitespace-pre-wrap">
+                      {shown}
+                    </p>
+                    {truncated && (
+                      <button
+                        type="button"
+                        className="cc-btn-ghost mt-2 text-xs"
+                        onClick={() => setShowFullDescription((v) => !v)}
+                      >
+                        {showFullDescription ? "Show less" : "Read full description"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <a
+                href={nexusModUrl(gameDomain, modDetail.mod_id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="cc-nexus-link"
+              >
+                Open on Nexus Mods ↗
+              </a>
 
               <div className="cc-panel space-y-3">
                 <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--cc-gold)]">

@@ -399,7 +399,12 @@ fn path_needs_script_extender(path: &str) -> bool {
         || lower.contains("/fose/plugins/")
         || lower.contains("/nvse/plugins/")
         || lower.contains("/obse/plugins/")
+        || lower.contains("/data/f4se/plugins/")
+        || lower.contains("/data/skse/plugins/")
+        || lower.contains("/data/skse64/plugins/")
         || lower.contains("/interface/mcm/")
+        || lower.contains("/mcm/config/")
+        || lower.ends_with("/mcm.swf")
         || lower.contains("/mcm/")
 }
 

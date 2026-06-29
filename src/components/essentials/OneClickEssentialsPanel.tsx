@@ -100,11 +100,19 @@ export function OneClickEssentialsPanel({ profileId, domain, profile }: OneClick
       .map((m) => m.id);
   }, [manifest, includeOptional]);
 
+  const batchActive =
+    activeBatch &&
+    !activeBatch.postBatchDone &&
+    activeBatch.mods.some(
+      (m) => m.status !== "done" && m.status !== "failed" && m.status !== "skipped"
+    );
   const allInstalled = useMemo(() => {
     if (!manifest) return false;
     const target = manifest.mods.filter((m) => m.required || (m.optional && includeOptional));
     return target.length > 0 && target.every((m) => statusById.get(m.id)?.installed);
   }, [manifest, includeOptional, statusById]);
+
+  const isBusy = running || !!batchActive;
 
   const runEssentials = async () => {
     if (!manifest || running) return;
@@ -130,6 +138,7 @@ export function OneClickEssentialsPanel({ profileId, domain, profile }: OneClick
       if (includeSetup) {
         setProgressStep("Running setup fixes (Proton, F4SE, plugins)…");
         await api.applyEssentialFixes(profileId);
+        markSetupDone();
       } else {
         markSetupDone();
       }
@@ -186,8 +195,8 @@ export function OneClickEssentialsPanel({ profileId, domain, profile }: OneClick
           </div>
           <Button
             onClick={() => void runEssentials()}
-            loading={running}
-            disabled={running || allInstalled}
+            loading={isBusy}
+            disabled={isBusy || allInstalled}
             data-focusable="true"
             className="min-h-11 shrink-0 px-6 text-base"
           >
@@ -197,7 +206,7 @@ export function OneClickEssentialsPanel({ profileId, domain, profile }: OneClick
 
         <div className="flex flex-wrap gap-4 text-sm">
           <label className="flex items-center gap-2">
-            <Switch checked={includeSetup} onCheckedChange={setIncludeSetup} disabled={running} />
+            <Switch checked={includeSetup} onCheckedChange={setIncludeSetup} disabled={isBusy} />
             Include setup fixes
           </label>
           {optionalCount > 0 && (
@@ -205,7 +214,7 @@ export function OneClickEssentialsPanel({ profileId, domain, profile }: OneClick
               <Switch
                 checked={includeOptional}
                 onCheckedChange={setIncludeOptional}
-                disabled={running}
+                disabled={isBusy}
               />
               Include optional body mods ({optionalCount})
             </label>
@@ -245,7 +254,7 @@ export function OneClickEssentialsPanel({ profileId, domain, profile }: OneClick
                   >
                     {st?.installed ? (
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-success)]" />
-                    ) : st?.downloading || running ? (
+                    ) : st?.downloading || isBusy ? (
                       <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-[var(--color-primary)]" />
                     ) : (
                       <span className="mt-0.5 h-4 w-4 shrink-0 rounded-full border border-[var(--color-border)]" />
@@ -267,7 +276,7 @@ export function OneClickEssentialsPanel({ profileId, domain, profile }: OneClick
           </ul>
         )}
 
-        {running && progressStep && (
+        {(isBusy && progressStep) && (
           <p className="flex items-center gap-2 text-sm text-[var(--color-primary)]">
             <Loader2 className="h-4 w-4 animate-spin" />
             {progressStep}

@@ -89,14 +89,68 @@ pub fn has_nested_data_folder(entries: &[ArchiveEntry]) -> bool {
 }
 
 pub fn has_f4se_root_files(paths: &[String]) -> bool {
+    has_script_extender_root_files(paths)
+}
+
+/// Loader/DLL files that belong at the game root (F4SE, SKSE, SFSE, etc.).
+pub fn has_script_extender_root_files(paths: &[String]) -> bool {
     paths.iter().any(|p| {
         let lower = p.replace('\\', "/").to_lowercase();
         let name = lower.rsplit('/').next().unwrap_or(&lower);
         name == "f4se_loader.exe"
             || name.starts_with("f4se_")
-            || name == "d3d11.dll"
             || name == "f4se_loader.dll"
+            || name == "skse64_loader.exe"
+            || name.starts_with("skse64_")
+            || name == "skse_loader.exe"
+            || name.starts_with("skse_")
+            || name == "sfse_loader.exe"
+            || name.starts_with("sfse_")
+            || name == "d3d11.dll"
+            || name == "xinput1_3.dll"
+            || name == "winhttp.dll"
     })
+}
+
+/// F4SE/SKSE plugin packs: loose plugin folders or Data-wrapped plugin paths.
+pub fn has_script_extender_plugin_paths(paths: &[String]) -> bool {
+    paths.iter().any(|p| {
+        let lower = p.replace('\\', "/").to_lowercase();
+        lower.contains("/f4se/plugins/")
+            || lower.contains("/skse/plugins/")
+            || lower.contains("/skse64/plugins/")
+            || lower.contains("/sfse/plugins/")
+            || lower.contains("/fose/plugins/")
+            || lower.contains("/nvse/plugins/")
+            || lower.contains("/obse/plugins/")
+            || lower.starts_with("f4se/plugins/")
+            || lower.starts_with("skse/plugins/")
+            || lower.starts_with("skse64/plugins/")
+            || lower.starts_with("data/f4se/plugins/")
+            || lower.starts_with("data/skse/plugins/")
+            || lower.starts_with("data/skse64/plugins/")
+    })
+}
+
+/// Plugin-only archives: F4SE/SKSE DLL plus MCM/Interface assets, no Data wrapper.
+pub fn archive_is_script_extender_plugin_pack(paths: &[String]) -> bool {
+    if has_script_extender_plugin_paths(paths) {
+        return true;
+    }
+    let has_plugin_dll = paths.iter().any(|p| {
+        let lower = p.replace('\\', "/").to_lowercase();
+        lower.ends_with(".dll")
+            && !lower.contains("/tools/")
+            && !lower.contains("/bodyslide/")
+    });
+    let has_mcm_or_interface = paths.iter().any(|p| {
+        let lower = p.replace('\\', "/").to_lowercase();
+        lower.contains("/mcm/")
+            || lower.contains("/interface/")
+            || lower.starts_with("mcm/")
+            || lower.starts_with("interface/")
+    });
+    has_plugin_dll && has_mcm_or_interface
 }
 
 pub fn has_loose_fallout4_data_folders(paths: &[String]) -> bool {
@@ -611,6 +665,35 @@ mod tests {
         // applies (keeps the plugin, skips the readme).
         let bare = normalized_relative_paths(&[entry("MyMod.esp"), entry("readme.txt")]);
         assert!(!has_loose_fallout4_data_folders(&bare));
+    }
+
+    #[test]
+    fn script_extender_plugin_paths_detected() {
+        let plugins = normalized_relative_paths(&[
+            entry("SKSE64/Plugins/Address Library.dll"),
+            entry("F4SE/Plugins/ConfigMenu.dll"),
+            entry("Data/F4SE/Plugins/MyMod.dll"),
+        ]);
+        assert!(has_script_extender_plugin_paths(&plugins));
+    }
+
+    #[test]
+    fn script_extender_plugin_pack_with_mcm() {
+        let pack = normalized_relative_paths(&[
+            entry("F4SE/Plugins/ConfigMenu.dll"),
+            entry("MCM/Config/ConfigMenu/settings.ini"),
+            entry("Interface/MCM.swf"),
+        ]);
+        assert!(archive_is_script_extender_plugin_pack(&pack));
+    }
+
+    #[test]
+    fn skse_root_loaders_detected() {
+        let root = normalized_relative_paths(&[
+            entry("skse64_loader.exe"),
+            entry("skse64_2_02_06.dll"),
+        ]);
+        assert!(has_script_extender_root_files(&root));
     }
 
     #[test]

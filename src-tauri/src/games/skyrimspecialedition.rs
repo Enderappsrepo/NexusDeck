@@ -11,8 +11,10 @@ use crate::games::{
 use crate::games::script_extender_meta::ScriptExtenderMeta;
 use crate::services::archive::{merge_directory, ArchiveEntry};
 use crate::services::deploy::{
-    archive_has_data_folder, has_loose_fallout4_data_folders, merge_game_data_directory,
-    normalized_relative_paths, resolve_extract_root,
+    archive_has_data_folder, archive_is_script_extender_plugin_pack,
+    has_loose_fallout4_data_folders, has_script_extender_plugin_paths,
+    has_script_extender_root_files, merge_game_data_directory, normalized_relative_paths,
+    resolve_extract_root,
 };
 use crate::services::MergeOptions;
 use crate::services::paths::default_staging_path;
@@ -123,6 +125,28 @@ impl GamePlugin for SkyrimSpecialEditionPlugin {
                 requires_confirmation: false,
                 description:
                     "Plugin files detected (.esp/.esm). They will be installed into your Data folder."
+                        .to_string(),
+            }
+        } else if has_script_extender_root_files(&rel_paths) {
+            DeployPlan {
+                strategy: "merge_root".to_string(),
+                source_subpath: None,
+                target: game_root.display().to_string(),
+                requires_confirmation: true,
+                description:
+                    "SKSE or loader files detected at archive root. These will be installed to the game folder."
+                        .to_string(),
+            }
+        } else if has_script_extender_plugin_paths(&rel_paths)
+            || archive_is_script_extender_plugin_pack(&rel_paths)
+        {
+            DeployPlan {
+                strategy: "merge_loose_to_data".to_string(),
+                source_subpath: None,
+                target: data_target.clone(),
+                requires_confirmation: false,
+                description:
+                    "SKSE plugin or MCM files detected. They will be installed into your Data folder."
                         .to_string(),
             }
         } else {

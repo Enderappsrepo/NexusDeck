@@ -45,6 +45,17 @@
       "install_preset": { "strategy": "auto", "auto_confirm": true }
     },
     {
+      "id": "mcm",
+      "name": "Mod Configuration Menu (MCM)",
+      "nexus_mod_id": 62794,
+      "priority": 36,
+      "required": true,
+      "optional": false,
+      "depends_on": ["address_library", "skyui"],
+      "description": "In-game menu for configuring SKSE mods — required by many essentials.",
+      "install_preset": { "strategy": "auto", "auto_confirm": true }
+    },
+    {
       "id": "bodyslide",
       "name": "BodySlide & Outfit Studio",
       "kind": "bodyslide",
