@@ -73,6 +73,26 @@ export async function sendModFileToDeck(
   });
 }
 
+/** Deck downloads from Nexus and installs — no archive upload (best for phone/tablet). */
+export async function sendNexusModToPairedDeck(
+  paired: PairedDeck,
+  domain: string,
+  modId: number,
+  modName: string,
+  file: ModFileInfo
+): Promise<string> {
+  const result = await api.sendNexusModToDeck(paired.host, paired.port, paired.token, {
+    game_domain: domain,
+    nexus_mod_id: modId,
+    mod_name: modName,
+    nexus_file_id: file.file_id,
+    file_name: modFileDownloadName(file),
+    expected_size_kb: file.size_kb,
+    file_version: file.version || null,
+  });
+  return result.message;
+}
+
 export async function sendPresetsToPairedDeck(
   paired: PairedDeck,
   profileId: string

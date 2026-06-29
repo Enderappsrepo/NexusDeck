@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -592,6 +592,17 @@ function SettingsPage() {
       <AddToSteamPanel />
 
       <RemoteSyncPanel />
+
+      <Card className="p-5">
+        <h2 className="text-lg font-bold">Mobile companion</h2>
+        <p className="mt-1 text-sm text-[var(--color-muted)]">
+          Browse mods on your phone or a second PC and send them to your Deck — the Deck downloads
+          and installs using its own Nexus connection.
+        </p>
+        <Link to="/companion" className="mt-3 inline-block">
+          <Button variant="secondary">Open companion mode</Button>
+        </Link>
+      </Card>
 
       <DeckyHostPanel />
 

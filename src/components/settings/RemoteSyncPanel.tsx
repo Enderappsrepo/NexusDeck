@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, MonitorSmartphone, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -319,8 +320,10 @@ export function RemoteSyncPanel() {
       </div>
 
       <p className="text-xs text-[var(--color-muted)]">
-        After pairing on your PC, use <strong>Send to Deck</strong> on mod pages, the load-order
-        screen, or the BodySlide panel. The Deck must have the same game profile set up first.
+        After pairing, use <Link to="/companion" className="text-[var(--color-primary)] underline">Mobile companion</Link>{" "}
+        or <strong>Send to Deck</strong> on mod pages. The Deck downloads from Nexus — no need to
+        upload archives from your phone or PC. Turn on <strong>Auto-install after download</strong>{" "}
+        in Settings on the Deck for hands-free installs.
       </p>
     </Card>
   );

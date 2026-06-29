@@ -382,6 +382,7 @@ pub fn run() {
             pair_with_deck,
             ping_deck,
             send_mod_to_deck,
+            send_nexus_mod_to_deck,
             send_presets_to_deck,
             send_load_order_to_deck,
         ])

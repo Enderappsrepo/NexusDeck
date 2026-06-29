@@ -160,3 +160,21 @@ jobs:
 
       - name: Run gamepad router and FOMOD preset unit checks
         run: npm run test:router && npm run test:fomod
+
+  build-companion-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build companion web
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: npm run build:companion

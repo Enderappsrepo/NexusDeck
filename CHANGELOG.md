@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.32] - 2026-06-29
+
+### Added
+- **Mobile companion web app** — static sender at GitHub Pages `/companion/` and `NexusDeck_*_companion_web.zip` on releases; pair from your phone and queue Nexus installs on the Deck.
+- **Install by Nexus ID** — remote sender can tell the Deck to download + install without uploading archives.
+- **In-app companion mode** — `/companion` route in the desktop/Deck app for the same sender flow.
+
+### Fixed
+- **Remote receiver toggle** — turning Receive off/on no longer leaves ports in use.
+
 ## [1.1.31] - 2026-06-29
 
 ### Added

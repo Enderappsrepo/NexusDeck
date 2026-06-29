@@ -1034,3 +1034,13 @@ export interface RemoteModInstallMeta {
   file_version?: string | null;
   replace_mod_id?: string | null;
 }
+
+export interface RemoteNexusInstallMeta {
+  game_domain: string;
+  nexus_mod_id: number;
+  nexus_file_id: number;
+  mod_name: string;
+  file_name: string;
+  expected_size_kb: number;
+  file_version?: string | null;
+}

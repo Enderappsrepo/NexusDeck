@@ -60,3 +60,15 @@ export function resolveCompactNav(
   if (mode === "sidebar") return false;
   return narrow || deckDetected;
 }
+
+/** Phone or tablet — use the companion sender UI (remote control for a Deck). */
+export function detectMobileCompanion(): boolean {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent ?? "";
+  if (/android|iphone|ipad|ipod|mobile/i.test(ua)) return true;
+  if (typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches) {
+    const w = window.screen?.width ?? 0;
+    return w > 0 && w < 1024;
+  }
+  return false;
+}

@@ -314,6 +314,11 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     mod_id: "mod-remote-1",
     files_sent: 1,
   }),
+  send_nexus_mod_to_deck: () => ({
+    ok: true,
+    message: "Preview: Deck is downloading and will auto-install this mod.",
+    files_sent: 1,
+  }),
   send_presets_to_deck: () => ({
     ok: true,
     message: "Preview: 12 BodySlide preset files sent to Deck.",

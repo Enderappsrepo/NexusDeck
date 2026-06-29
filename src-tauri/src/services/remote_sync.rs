@@ -94,16 +94,34 @@ pub struct RemotePresetMeta {
     pub game_domain: String,
 }
 
+/// Ask the Deck to download + install a mod from Nexus (no archive upload).
+/// Ideal for phone/tablet companions on the same Wi-Fi.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteNexusInstallMeta {
+    pub game_domain: String,
+    pub nexus_mod_id: i64,
+    pub nexus_file_id: i64,
+    pub mod_name: String,
+    pub file_name: String,
+    pub expected_size_kb: u64,
+    #[serde(default)]
+    pub file_version: Option<String>,
+}
+
 struct Receiver {
     running: Arc<AtomicBool>,
     pair_code: String,
     token: Arc<Mutex<Option<String>>>,
     http_port: u16,
+    http_thread: std::thread::JoinHandle<()>,
+    udp_thread: std::thread::JoinHandle<()>,
 }
 
 struct ReceiverContext {
     app: AppHandle,
     installs: Arc<InstallManager>,
+    downloads: Arc<crate::services::download_manager::DownloadManager>,
+    nexus: Arc<crate::services::nexus_client::NexusClient>,
 }
 
 struct MultipartField {
@@ -122,8 +140,18 @@ fn context_slot() -> &'static Mutex<Option<ReceiverContext>> {
     CTX.get_or_init(|| Mutex::new(None))
 }
 
-pub fn set_receiver_context(app: AppHandle, installs: Arc<InstallManager>) {
-    *context_slot().lock().unwrap() = Some(ReceiverContext { app, installs });
+pub fn set_receiver_context(
+    app: AppHandle,
+    installs: Arc<InstallManager>,
+    downloads: Arc<crate::services::download_manager::DownloadManager>,
+    nexus: Arc<crate::services::nexus_client::NexusClient>,
+) {
+    *context_slot().lock().unwrap() = Some(ReceiverContext {
+        app,
+        installs,
+        downloads,
+        nexus,
+    });
 }
 
 fn receiver_context() -> Option<ReceiverContext> {
@@ -134,6 +162,8 @@ fn receiver_context() -> Option<ReceiverContext> {
         .map(|c| ReceiverContext {
             app: c.app.clone(),
             installs: c.installs.clone(),
+            downloads: c.downloads.clone(),
+            nexus: c.nexus.clone(),
         })
 }
 
@@ -155,9 +185,17 @@ fn gen_code() -> String {
 fn json_response(status: u16, body: String) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     let header =
         tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
+    let cors = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap();
+    let cors_headers = tiny_http::Header::from_bytes(
+        &b"Access-Control-Allow-Headers"[..],
+        &b"Authorization, Content-Type"[..],
+    )
+    .unwrap();
     tiny_http::Response::from_string(body)
         .with_status_code(status)
         .with_header(header)
+        .with_header(cors)
+        .with_header(cors_headers)
 }
 
 fn bearer_token(req: &tiny_http::Request) -> Option<String> {
@@ -392,9 +430,15 @@ pub fn start_receiver(device_name: &str) -> Result<ReceiverStatus> {
             return Ok(r.status());
         }
     }
+    // Prior instance may still hold the ports until its threads exit — wait for them.
+    if let Some(r) = guard.take() {
+        r.shutdown();
+    }
 
     let server = tiny_http::Server::http(("0.0.0.0", HTTP_PORT)).map_err(|e| {
-        NexusDeckError::Other(format!("Couldn't start the remote-install server: {e}"))
+        NexusDeckError::Other(format!(
+            "Couldn't start the remote-install server (port {HTTP_PORT} may still be in use — wait a moment and try again): {e}"
+        ))
     })?;
 
     let running = Arc::new(AtomicBool::new(true));
@@ -406,24 +450,25 @@ pub fn start_receiver(device_name: &str) -> Result<ReceiverStatus> {
         device_name.trim().to_string()
     };
 
-    {
-        let running = running.clone();
-        let token = token.clone();
-        let code = code.clone();
-        let name = name.clone();
-        std::thread::spawn(move || http_loop(server, running, token, code, name));
-    }
-    {
-        let running = running.clone();
-        let name = name.clone();
-        std::thread::spawn(move || udp_loop(running, name));
-    }
+    let http_running = running.clone();
+    let http_token = token.clone();
+    let http_code = code.clone();
+    let http_name = name.clone();
+    let http_thread = std::thread::spawn(move || {
+        http_loop(server, http_running, http_token, http_code, http_name);
+    });
+
+    let udp_running = running.clone();
+    let udp_name = name.clone();
+    let udp_thread = std::thread::spawn(move || udp_loop(udp_running, udp_name));
 
     let receiver = Receiver {
         running,
         pair_code: code,
         token,
         http_port: HTTP_PORT,
+        http_thread,
+        udp_thread,
     };
     let status = receiver.status();
     *guard = Some(receiver);
@@ -432,10 +477,9 @@ pub fn start_receiver(device_name: &str) -> Result<ReceiverStatus> {
 
 pub fn stop_receiver() -> ReceiverStatus {
     let mut guard = slot().lock().unwrap();
-    if let Some(r) = guard.as_ref() {
-        r.running.store(false, Ordering::SeqCst);
+    if let Some(r) = guard.take() {
+        r.shutdown();
     }
-    *guard = None;
     idle_status()
 }
 
@@ -456,6 +500,13 @@ impl Receiver {
             http_port: self.http_port,
             paired: self.token.lock().map(|t| t.is_some()).unwrap_or(false),
         }
+    }
+
+    /// Stop listener threads and release TCP/UDP ports before returning.
+    fn shutdown(self) {
+        self.running.store(false, Ordering::SeqCst);
+        let _ = self.http_thread.join();
+        let _ = self.udp_thread.join();
     }
 }
 
@@ -484,6 +535,26 @@ fn handle_request(
     let url = req.url().to_string();
     let is_get = req.method() == &tiny_http::Method::Get;
     let is_post = req.method() == &tiny_http::Method::Post;
+    let is_options = req.method() == &tiny_http::Method::Options;
+
+    if is_options {
+        let cors_methods =
+            tiny_http::Header::from_bytes(&b"Access-Control-Allow-Methods"[..], &b"GET, POST, OPTIONS"[..])
+                .unwrap();
+        let _ = req.respond(
+            tiny_http::Response::empty(204)
+                .with_header(tiny_http::Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap())
+                .with_header(
+                    tiny_http::Header::from_bytes(
+                        &b"Access-Control-Allow-Headers"[..],
+                        &b"Authorization, Content-Type"[..],
+                    )
+                    .unwrap(),
+                )
+                .with_header(cors_methods),
+        );
+        return;
+    }
 
     if is_get && url.starts_with("/ping") {
         let paired = token.lock().map(|t| t.is_some()).unwrap_or(false);
@@ -528,6 +599,15 @@ fn handle_request(
             return;
         }
         respond_transfer(req, handle_install_mod);
+        return;
+    }
+
+    if is_post && url.starts_with("/install/nexus") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_transfer(req, handle_install_nexus);
         return;
     }
 
@@ -650,6 +730,73 @@ fn handle_install_mod(body: Vec<u8>, content_type: &str) -> Result<RemoteTransfe
         ok: true,
         message: format!("Installed \"{mod_name}\" on the Deck."),
         mod_id,
+        files_sent: 1,
+    })
+}
+
+fn handle_install_nexus(body: Vec<u8>, content_type: &str) -> Result<RemoteTransferResult> {
+    let meta: RemoteNexusInstallMeta = if content_type.contains("multipart/form-data") {
+        let parts = parse_multipart(content_type, &body)?;
+        let meta_raw = parts
+            .iter()
+            .find(|p| p.name == "meta")
+            .map(|p| String::from_utf8_lossy(&p.data).to_string())
+            .ok_or_else(|| NexusDeckError::Other("Missing meta field.".into()))?;
+        serde_json::from_str(&meta_raw)
+            .map_err(|e| NexusDeckError::Other(format!("Invalid nexus install meta JSON: {e}")))?
+    } else {
+        serde_json::from_slice(&body)
+            .map_err(|e| NexusDeckError::Other(format!("Invalid nexus install JSON: {e}")))?
+    };
+
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let profile = profile_for_domain(&meta.game_domain)?;
+    let mod_name = meta.mod_name.clone();
+
+    let app = ctx.app.clone();
+    let downloads = ctx.downloads.clone();
+    let nexus = ctx.nexus.clone();
+    let staging = std::path::PathBuf::from(&profile.staging_path);
+    let profile_id = profile.id.clone();
+    let game_domain = meta.game_domain.clone();
+    let file_name = meta.file_name.clone();
+    let mod_name_task = mod_name.clone();
+
+    async_runtime::spawn(async move {
+        match downloads
+            .enqueue_download(
+                app,
+                nexus,
+                &game_domain,
+                meta.nexus_mod_id as u64,
+                meta.nexus_file_id as u64,
+                &file_name,
+                staging.as_path(),
+                meta.expected_size_kb,
+                &mod_name_task,
+                &profile_id,
+                None,
+                0,
+            )
+            .await
+        {
+            Ok(progress) => {
+                downloads.mark_auto_install(&progress.id);
+            }
+            Err(e) => {
+                log::warn!("[remote_sync] nexus install enqueue failed: {e}");
+            }
+        }
+    });
+
+    Ok(RemoteTransferResult {
+        ok: true,
+        message: format!(
+            "Downloading \"{mod_name}\" on this device — it will install automatically when the download finishes."
+        ),
+        mod_id: None,
         files_sent: 1,
     })
 }
@@ -865,6 +1012,22 @@ pub fn send_mod_to_deck(
         .multipart(form)
         .send()
         .map_err(|e| NexusDeckError::Other(format!("Couldn't send mod to the Deck: {e}")))?;
+
+    parse_transfer_response(resp)
+}
+
+pub fn send_nexus_mod_to_deck(
+    host: &str,
+    port: u16,
+    token: &str,
+    meta: RemoteNexusInstallMeta,
+) -> Result<RemoteTransferResult> {
+    let resp = blocking_client(30)?
+        .post(format!("http://{host}:{port}/install/nexus"))
+        .header("Authorization", auth_header(token))
+        .json(&meta)
+        .send()
+        .map_err(|e| NexusDeckError::Other(format!("Couldn't reach the Deck: {e}")))?;
 
     parse_transfer_response(resp)
 }

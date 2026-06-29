@@ -229,11 +229,34 @@ jobs:
           sed -i "s|Enderappsrepo/NexusDeck|${GITHUB_REPOSITORY}|g" release/uninstall-steamdeck.sh
           sed -i "s|Enderappsrepo/NexusDeck|${GITHUB_REPOSITORY}|g" release/u.sh
           chmod +x release/install-steamdeck.sh release/i.sh release/uninstall-steamdeck.sh release/u.sh
-          cd release && find . -type f ! -name SHA256SUMS.txt | sort | xargs sha256sum > SHA256SUMS.txt
           ls -laR
 
       - name: Sync docs for short install URL
         run: node scripts/sync-install-docs.mjs "${{ github.repository }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build companion web app
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: npm run build:companion
+
+      - name: Package companion web zip
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          cd dist-companion-release
+          zip -r "../release/NexusDeck_${RELEASE_VERSION}_companion_web.zip" companion
+          ls -la ../release/
+
+      - name: Checksum release assets
+        run: cd release && find . -type f ! -name SHA256SUMS.txt | sort | xargs sha256sum > SHA256SUMS.txt
 
       - name: Extract changelog notes
         run: node scripts/changelog-notes.mjs "${{ needs.prepare.outputs.version }}" > release-notes.md

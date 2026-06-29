@@ -17,7 +17,7 @@ import { ListRowSkeleton } from "@/components/ui/LoadingSkeleton";
 import { useGamepadTabs } from "@/hooks/useGamepadTabs";
 import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
 import { GP } from "@/lib/gamepad/buttons";
-import { getPairedDeck, resolveArchiveForSend, sendModFileToDeck } from "@/lib/remote/sendToDeck";
+import { getPairedDeck, sendNexusModToPairedDeck } from "@/lib/remote/sendToDeck";
 import { useAuthStore, useDownloadsStore, useGamesStore } from "@/stores";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { api } from "@/lib/commands";
@@ -172,22 +172,12 @@ function ModDetailPage() {
     setSendToDeckNote(null);
     setError(null);
     try {
-      const archivePath = await resolveArchiveForSend(
-        profile,
-        modId,
-        file.file_id,
-        modFileDownloadName(file)
-      );
-      if (!archivePath) {
-        throw new Error("Download this mod on your PC first, then send it to the Deck.");
-      }
-      const message = await sendModFileToDeck(
+      const message = await sendNexusModToPairedDeck(
         pairedDeck,
         domain,
         modId,
         detail.name,
-        file,
-        archivePath
+        file
       );
       setSendToDeckNote(message);
     } catch (e) {

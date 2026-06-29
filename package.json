@@ -16,6 +16,7 @@
     "install:sync-docs": "node scripts/sync-install-docs.mjs",
     "fetch-7zip": "node scripts/fetch-7zip.mjs",
     "build:decky": "node scripts/build-decky-plugin.mjs",
+    "build:companion": "node scripts/build-companion-web.mjs",
     "prebuild": "node scripts/build-decky-plugin.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",

@@ -5,6 +5,8 @@ on:
     branches: [main, master, overhaul]
     paths:
       - "docs/**"
+      - "companion-web/**"
+      - "scripts/build-companion-web.mjs"
       - ".github/workflows/pages.yml"
       - "install/**"
       - "scripts/sync-install-docs.mjs"
@@ -30,6 +32,19 @@ jobs:
 
       - name: Sync install scripts to docs
         run: node scripts/sync-install-docs.mjs "${{ github.repository }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build companion web app
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: npm run build:companion
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

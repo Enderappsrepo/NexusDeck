@@ -66,6 +66,7 @@ import type {
   DiscoveredDeck,
   RemoteTransferResult,
   RemoteModInstallMeta,
+  RemoteNexusInstallMeta,
   PreviewFileResult,
   PreviewNode,
   Profile,
@@ -168,6 +169,9 @@ export const api = {
       archivePath,
       meta,
     }),
+
+  sendNexusModToDeck: (host: string, port: number, token: string, meta: RemoteNexusInstallMeta) =>
+    invoke<RemoteTransferResult>("send_nexus_mod_to_deck", { host, port, token, meta }),
 
   sendPresetsToDeck: (host: string, port: number, token: string, profileId: string) =>
     invoke<RemoteTransferResult>("send_presets_to_deck", {
