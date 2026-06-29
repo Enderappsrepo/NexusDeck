@@ -25,6 +25,7 @@ import { VoiceAudioPanel } from "@/components/game/VoiceAudioPanel";
 import { LoadOrderBanner } from "@/components/game/LoadOrderBanner";
 import { ModUpdatesPanel } from "@/components/mod/ModUpdatesPanel";
 import { ProfileBackupPanel } from "@/components/game/ProfileBackupPanel";
+import { OneClickEssentialsPanel } from "@/components/essentials/OneClickEssentialsPanel";
 import { ModLoadoutsPanel } from "@/components/library/ModLoadoutsPanel";
 import { TextureBudgetPanel } from "@/components/library/TextureBudgetPanel";
 import { ModSearchBar } from "@/components/mod/ModSearchBar";
@@ -281,6 +282,7 @@ function GameDashboard() {
         </TabsList>
 
         <TabsContent value="play" className="space-y-5">
+          <OneClickEssentialsPanel profileId={profile.id} domain={domain} profile={profile} />
           <LoadOrderBanner profileId={profile.id} gameDomain={domain} />
           <VoiceAudioPanel profileId={profile.id} gameDomain={domain} />
           <ModUpdatesPanel profileId={profile.id} gameDomain={domain} compact />

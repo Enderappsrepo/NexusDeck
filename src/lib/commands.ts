@@ -771,6 +771,38 @@ export const api = {
       profileId,
     }),
 
+  getGameEssentialsManifest: (domain: string) =>
+    invoke<import("@/lib/nexus/types").GameEssentialsManifest>("get_game_essentials_manifest", {
+      domain,
+    }),
+
+  getGameEssentialsStatus: (profileId: string) =>
+    invoke<import("@/lib/nexus/types").GameEssentialModStatus[]>("get_game_essentials_status", {
+      profileId,
+    }),
+
+  queueGameEssentialMods: (profileId: string, modIds: string[]) =>
+    invoke<import("@/lib/nexus/types").QueuedEssentialMod[]>("queue_game_essential_mods", {
+      profileId,
+      modIds,
+    }),
+
+  finishGameEssentials: (profileId: string) =>
+    invoke<string[]>("finish_game_essentials", { profileId }),
+
+  queueModForInstall: (args: {
+    profileId: string;
+    nexusModId: number;
+    nexusFileId?: number;
+    modName: string;
+  }) =>
+    invoke<import("@/lib/nexus/types").DownloadProgress>("queue_mod_for_install", {
+      profileId: args.profileId,
+      nexusModId: args.nexusModId,
+      nexusFileId: args.nexusFileId ?? null,
+      modName: args.modName,
+    }),
+
   checkPrefixStatus: (
     protonPrefixPath: string | null,
     myGamesFolder: string,

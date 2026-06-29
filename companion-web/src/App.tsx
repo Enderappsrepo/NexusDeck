@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { InstallOptions, defaultSelectionsFromPrepare } from "./components/InstallOptions";
+import { QrScanPanel } from "./components/QrScanPanel";
 import {
   clearPaired,
   companionAppUrl,
   confirmInstallSession,
+  fetchDiscovery,
   fetchLatest,
+  fetchLibraryMods,
   fetchModDetail,
   fetchModFiles,
   fetchTrending,
   getInstallSession,
+  isApiNotFoundError,
+  isGitHubPagesHost,
   listGames,
   loadPaired,
   pairWithDeck,
@@ -16,25 +20,60 @@ import {
   savePaired,
   searchModsViaDeck,
   startInstallSession,
+  toggleLibraryMod,
+  uninstallLibraryMod,
   type PairedDeck,
   type PingInfo,
 } from "./deckApi";
+import { CompanionEssentialsCard } from "./components/CompanionEssentialsCard";
+import { InstallOptions, defaultSelectionsFromPrepare } from "./components/InstallOptions";
 import { usePullToRefresh } from "./hooks/usePullToRefresh";
 import { formatBytes, formatEta } from "./lib/format";
 import { hapticSuccess } from "./lib/haptic";
+import {
+  discoverDevicesOnLan,
+  getReceiverSelfHost,
+  readConnectParamsFromUrl,
+  type LanDevice,
+} from "./lib/lanDiscovery";
 import { groupModFiles, pickDefaultFile } from "./lib/modFiles";
+import {
+  isStandalonePwa,
+  listenForInstallPrompt,
+  type BeforeInstallPromptEvent,
+} from "./lib/pwa";
 import { loadLastGame, saveLastGame } from "./lib/preferences";
 import type {
   CompanionGame,
+  CompanionInstalledMod,
+  DiscoveryFeeds,
   InstallSessionStatus,
   ModDetail,
   ModFileInfo,
   ModSummary,
   SelectedInstallOption,
 } from "./types";
+import { EMPTY_DISCOVERY } from "./types";
 
-type Screen = "connect" | "browse" | "mod" | "install";
-type ConnectStep = "ip" | "pair";
+type Screen = "connect" | "browse" | "library" | "mod" | "install";
+type ConnectStep = "find" | "pair" | "manual" | "qr";
+
+const DISCOVERY_SHELVES: {
+  key: keyof DiscoveryFeeds;
+  title: string;
+  layout: "hero" | "shelf" | "stack";
+}[] = [
+  { key: "featured", title: "Featured", layout: "hero" },
+  { key: "top_endorsed", title: "Most endorsed", layout: "shelf" },
+  { key: "most_downloaded", title: "Most downloaded", layout: "shelf" },
+  { key: "trending", title: "Trending now", layout: "shelf" },
+  { key: "newly_added", title: "Newly added", layout: "stack" },
+  { key: "recently_updated", title: "Recently updated", layout: "stack" },
+  { key: "hot_this_week", title: "Hot this week", layout: "stack" },
+];
+
+const OUTDATED_DEVICE_MSG =
+  "Your NexusDeck app is out of date — update it on your PC or Deck, then open the companion at http://YOUR_DEVICE_IP:8731/app/ (not GitHub Pages).";
 
 function coverUrl(mod: { picture_url?: string | null; hero_image_url?: string | null }) {
   return mod.hero_image_url || mod.picture_url || null;
@@ -77,8 +116,9 @@ function stripHtml(html: string): string {
 export default function App() {
   const [paired, setPaired] = useState<PairedDeck | null>(() => loadPaired());
   const [screen, setScreen] = useState<Screen>(paired ? "browse" : "connect");
-  const [connectStep, setConnectStep] = useState<ConnectStep>("ip");
+  const [connectStep, setConnectStep] = useState<ConnectStep>("find");
   const installLock = useRef(false);
+  const autoConnectTried = useRef(false);
 
   const [host, setHost] = useState(paired?.host ?? "");
   const [port, setPort] = useState(String(paired?.port ?? 8731));
@@ -86,15 +126,22 @@ export default function App() {
   const [deviceInfo, setDeviceInfo] = useState<PingInfo | null>(null);
   const [connectBusy, setConnectBusy] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [foundDevices, setFoundDevices] = useState<LanDevice[]>([]);
+  const [scanProgress, setScanProgress] = useState<{ done: number; total: number } | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
   const [games, setGames] = useState<CompanionGame[]>([]);
   const [gameDomain, setGameDomain] = useState(() => loadLastGame());
   const [query, setQuery] = useState("");
-  const [trending, setTrending] = useState<ModSummary[]>([]);
-  const [latest, setLatest] = useState<ModSummary[]>([]);
+  const [discovery, setDiscovery] = useState<DiscoveryFeeds>(EMPTY_DISCOVERY);
   const [searchResults, setSearchResults] = useState<ModSummary[]>([]);
   const [browseBusy, setBrowseBusy] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
+
+  const [libraryMods, setLibraryMods] = useState<CompanionInstalledMod[]>([]);
+  const [libraryBusy, setLibraryBusy] = useState(false);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [libraryActionId, setLibraryActionId] = useState<string | null>(null);
 
   const [selectedMod, setSelectedMod] = useState<ModSummary | null>(null);
   const [modDetail, setModDetail] = useState<ModDetail | null>(null);
@@ -105,6 +152,7 @@ export default function App() {
 
   const [session, setSession] = useState<InstallSessionStatus | null>(null);
   const [selections, setSelections] = useState<SelectedInstallOption[]>([]);
+  const [strategy, setStrategy] = useState("auto");
   const [installBusy, setInstallBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -115,26 +163,118 @@ export default function App() {
 
   const activeGame = games.find((g) => g.domain === gameDomain);
   const { mainFiles, otherFiles } = useMemo(() => groupModFiles(modFiles), [modFiles]);
+  const onGitHubPages = isGitHubPagesHost();
+  const deviceCompanionUrl = paired ? companionAppUrl(paired.host, paired.port) : companionLink;
+  const receiverSelf = getReceiverSelfHost();
+
+  const connectToDevice = useCallback(async (nextHost: string, nextPort: number) => {
+    setConnectBusy(true);
+    setConnectError(null);
+    setHost(nextHost);
+    setPort(String(nextPort));
+    try {
+      const info = await pingDeck(nextHost, nextPort);
+      setDeviceInfo(info);
+      if (info.games?.length) setGames(info.games);
+      setConnectStep("pair");
+    } catch (e) {
+      setConnectError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConnectBusy(false);
+    }
+  }, []);
+
+  const scanForDevices = useCallback(async () => {
+    setConnectBusy(true);
+    setConnectError(null);
+    setFoundDevices([]);
+    setScanProgress({ done: 0, total: 1 });
+    try {
+      const portNum = Number(port) || 8731;
+      const found = await discoverDevicesOnLan(portNum, (done, total, partial) => {
+        setScanProgress({ done, total });
+        setFoundDevices([...partial]);
+      });
+      setFoundDevices(found);
+      if (!found.length) {
+        setConnectError(
+          "No NexusDeck devices found. Turn on Receive in NexusDeck Settings and make sure your phone is on the same Wi‑Fi."
+        );
+      }
+    } catch (e) {
+      setConnectError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConnectBusy(false);
+      setScanProgress(null);
+    }
+  }, [port]);
+
+  useEffect(() => {
+    return listenForInstallPrompt((event) => setInstallPrompt(event));
+  }, []);
+
+  useEffect(() => {
+    if (paired || autoConnectTried.current) return;
+    autoConnectTried.current = true;
+    const target = readConnectParamsFromUrl();
+    if (!target) return;
+    void connectToDevice(target.host, target.port);
+  }, [paired, connectToDevice]);
 
   const loadBrowse = useCallback(async (deck: PairedDeck, domain: string) => {
     setBrowseBusy(true);
     setBrowseError(null);
     try {
-      const [t, l] = await Promise.all([
-        fetchTrending(deck, domain),
-        fetchLatest(deck, domain),
-      ]);
-      setTrending(t);
-      setLatest(l);
+      const feeds = await fetchDiscovery(deck, domain);
+      setDiscovery(feeds);
       setSearchResults([]);
       setQuery("");
     } catch (e) {
-      setBrowseError(e instanceof Error ? e.message : String(e));
+      if (isApiNotFoundError(e)) {
+        try {
+          const [t, l] = await Promise.all([
+            fetchTrending(deck, domain),
+            fetchLatest(deck, domain),
+          ]);
+          setDiscovery({
+            ...EMPTY_DISCOVERY,
+            featured: t.slice(0, 6),
+            trending: t,
+            recently_updated: l,
+          });
+          setSearchResults([]);
+          setQuery("");
+          setBrowseError(
+            "Limited browse — update NexusDeck on your device for full discovery shelves."
+          );
+        } catch {
+          setBrowseError(OUTDATED_DEVICE_MSG);
+        }
+      } else {
+        setBrowseError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setBrowseBusy(false);
     }
   }, []);
 
+  const loadLibrary = useCallback(async (deck: PairedDeck, domain: string) => {
+    setLibraryBusy(true);
+    setLibraryError(null);
+    try {
+      const mods = await fetchLibraryMods(deck, domain);
+      setLibraryMods(mods.sort((a, b) => a.sort_order - b.sort_order));
+    } catch (e) {
+      if (isApiNotFoundError(e)) {
+        setLibraryError(OUTDATED_DEVICE_MSG);
+      } else {
+        setLibraryError(e instanceof Error ? e.message : String(e));
+      }
+      setLibraryMods([]);
+    } finally {
+      setLibraryBusy(false);
+    }
+  }, []);
   const refreshBrowse = useCallback(async () => {
     if (!paired || !gameDomain) return;
     await loadBrowse(paired, gameDomain);
@@ -176,6 +316,11 @@ export default function App() {
     if (!paired || !gameDomain) return;
     void loadBrowse(paired, gameDomain);
   }, [paired, gameDomain, loadBrowse]);
+
+  useEffect(() => {
+    if (!paired || !gameDomain || screen !== "library") return;
+    void loadLibrary(paired, gameDomain);
+  }, [paired, gameDomain, screen, loadLibrary]);
 
   useEffect(() => {
     if (!paired || !session?.session_id) return;
@@ -233,6 +378,7 @@ export default function App() {
     setBrowseError(null);
     setSession(null);
     setSelections([]);
+    setStrategy("auto");
     try {
       const started = await startInstallSession(paired, {
         game_domain: gameDomain,
@@ -262,7 +408,7 @@ export default function App() {
       const result = await confirmInstallSession(paired, session.session_id, {
         selected_options: selections,
         enable_mod: true,
-        strategy: "auto",
+        strategy,
       });
       setSession(result);
       setNote(result.message);
@@ -288,6 +434,49 @@ export default function App() {
 
   const showSearch = query.trim().length > 0;
   const heroImg = modDetail ? coverUrl(modDetail) : selectedMod ? coverUrl(selectedMod) : null;
+  const hasDiscoveryContent = DISCOVERY_SHELVES.some((s) => discovery[s.key].length > 0);
+
+  const handleToggleMod = async (mod: CompanionInstalledMod) => {
+    if (!paired) return;
+    setLibraryActionId(mod.id);
+    setLibraryError(null);
+    try {
+      await toggleLibraryMod(paired, mod.id, !mod.enabled);
+      setLibraryMods((prev) =>
+        prev.map((m) => (m.id === mod.id ? { ...m, enabled: !m.enabled } : m))
+      );
+      hapticSuccess();
+    } catch (e) {
+      setLibraryError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLibraryActionId(null);
+    }
+  };
+
+  const handleUninstallMod = async (mod: CompanionInstalledMod) => {
+    if (!paired) return;
+    if (!window.confirm(`Uninstall "${mod.name}" from your device?`)) return;
+    setLibraryActionId(mod.id);
+    setLibraryError(null);
+    try {
+      await uninstallLibraryMod(paired, mod.id);
+      setLibraryMods((prev) => prev.filter((m) => m.id !== mod.id));
+      setNote(`Uninstalled "${mod.name}".`);
+      hapticSuccess();
+    } catch (e) {
+      setLibraryError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLibraryActionId(null);
+    }
+  };
+
+  const openInstalledMod = (mod: CompanionInstalledMod) => {
+    void openMod({
+      mod_id: mod.nexus_mod_id,
+      name: mod.name,
+      author: "",
+    });
+  };
 
   return (
     <div className="shell">
@@ -298,7 +487,7 @@ export default function App() {
         </h1>
         <p className="cc-sub">
           {paired
-            ? "Browse and send installs to your device — Creation Club style."
+            ? "Browse Nexus and send installs straight to your device."
             : "Pair with your Deck or PC to browse Nexus mods."}
         </p>
       </header>
@@ -313,6 +502,13 @@ export default function App() {
             onClick={() => setScreen("browse")}
           >
             Browse
+          </button>
+          <button
+            type="button"
+            className={screen === "library" ? "cc-tab cc-tab-active" : "cc-tab"}
+            onClick={() => setScreen("library")}
+          >
+            Library
           </button>
           <button
             type="button"
@@ -332,27 +528,140 @@ export default function App() {
         </nav>
       )}
 
-      {note && screen === "browse" && <p className="cc-banner-ok">{note}</p>}
+      {!isStandalonePwa() && installPrompt && (
+        <div className="cc-pwa-banner mx-4 flex items-center gap-2">
+          <p className="flex-1 text-xs text-[var(--cc-muted)]">Install for quick access from your home screen.</p>
+          <button
+            type="button"
+            className="cc-btn shrink-0 px-3 py-2 text-[10px]"
+            onClick={() => {
+              void installPrompt.prompt().then(() => setInstallPrompt(null));
+            }}
+          >
+            Install
+          </button>
+        </div>
+      )}
+
+      {paired && onGitHubPages && deviceCompanionUrl && (
+        <p className="cc-banner-warn mx-4 text-xs leading-relaxed">
+          GitHub Pages cannot reach your device. For browse, install, and library management open{" "}
+          <a href={deviceCompanionUrl} className="text-[var(--cc-gold)] underline">
+            {deviceCompanionUrl}
+          </a>{" "}
+          on your phone (same Wi‑Fi).
+        </p>
+      )}
+
+      {note && (screen === "browse" || screen === "library") && (
+        <p className="cc-banner-ok">{note}</p>
+      )}
       {(connectError || browseError) && (
-        <p className="cc-banner-err">{connectError ?? browseError}</p>
+        <p className="cc-banner-err">
+          {screen === "connect" ? connectError : browseError ?? connectError}
+        </p>
+      )}
+      {libraryError && screen === "library" && (
+        <p className="cc-banner-err">{libraryError}</p>
       )}
 
       {screen === "connect" && (
         <div className="cc-body">
           {!paired ? (
             <>
-              {companionLink && (
-                <p className="cc-banner-warn text-xs">
-                  Open on your network:{" "}
-                  <a href={companionLink} className="text-[var(--cc-gold)] underline">
-                    {companionLink}
-                  </a>
+              {receiverSelf && connectStep === "find" && (
+                <p className="cc-banner-ok text-xs">
+                  You're on your NexusDeck device — tap a found device below or pair directly.
                 </p>
               )}
-              {connectStep === "ip" ? (
+
+              {connectStep === "find" && (
                 <div className="cc-panel space-y-3">
                   <p className="text-xs uppercase tracking-wider text-[var(--cc-muted)]">
-                    Step 1 — Device IP
+                    Find your PC or Deck
+                  </p>
+                  <p className="text-sm leading-relaxed text-[var(--cc-muted)]">
+                    On the same Wi‑Fi, NexusDeck can scan your network — no IP required. Turn on{" "}
+                    <strong>Receive</strong> in NexusDeck Settings first.
+                  </p>
+
+                  <button
+                    type="button"
+                    className="cc-btn w-full"
+                    disabled={connectBusy}
+                    onClick={() => void scanForDevices()}
+                  >
+                    {connectBusy
+                      ? scanProgress
+                        ? `Scanning… ${Math.round((scanProgress.done / scanProgress.total) * 100)}%`
+                        : "Scanning…"
+                      : "Scan network"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="cc-btn-secondary w-full"
+                    disabled={connectBusy}
+                    onClick={() => setConnectStep("qr")}
+                  >
+                    Scan QR code
+                  </button>
+
+                  {receiverSelf && (
+                    <button
+                      type="button"
+                      className="cc-btn-secondary w-full"
+                      disabled={connectBusy}
+                      onClick={() => void connectToDevice(receiverSelf.host, receiverSelf.port)}
+                    >
+                      Use this device ({receiverSelf.host})
+                    </button>
+                  )}
+
+                  {foundDevices.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--cc-gold)]">
+                        Found on your network
+                      </p>
+                      {foundDevices.map((device) => (
+                        <button
+                          key={`${device.host}:${device.port}`}
+                          type="button"
+                          className="cc-device-row w-full"
+                          disabled={connectBusy}
+                          onClick={() => void connectToDevice(device.host, device.port)}
+                        >
+                          <span className="block text-left font-medium">{device.name}</span>
+                          <span className="block text-left text-[10px] uppercase tracking-wide text-[var(--cc-muted)]">
+                            {device.host}:{device.port}
+                            {device.version ? ` · v${device.version}` : ""}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className="cc-btn-ghost w-full"
+                    onClick={() => setConnectStep("manual")}
+                  >
+                    Enter IP manually
+                  </button>
+                </div>
+              )}
+
+              {connectStep === "qr" && (
+                <QrScanPanel
+                  onFound={(h, p) => void connectToDevice(h, p)}
+                  onCancel={() => setConnectStep("find")}
+                />
+              )}
+
+              {connectStep === "manual" && (
+                <div className="cc-panel space-y-3">
+                  <p className="text-xs uppercase tracking-wider text-[var(--cc-muted)]">
+                    Manual connection
                   </p>
                   <input
                     className="cc-input"
@@ -366,34 +675,30 @@ export default function App() {
                     value={port}
                     onChange={(e) => setPort(e.target.value.replace(/\D/g, "").slice(0, 5))}
                   />
-                  <button
-                    type="button"
-                    className="cc-btn w-full"
-                    disabled={connectBusy}
-                    onClick={() => {
-                      void (async () => {
-                        setConnectBusy(true);
-                        setConnectError(null);
-                        try {
-                          const info = await pingDeck(host.trim(), Number(port) || 8731);
-                          setDeviceInfo(info);
-                          if (info.games?.length) setGames(info.games);
-                          setConnectStep("pair");
-                        } catch (e) {
-                          setConnectError(e instanceof Error ? e.message : String(e));
-                        } finally {
-                          setConnectBusy(false);
-                        }
-                      })();
-                    }}
-                  >
-                    {connectBusy ? "Connecting…" : "Connect"}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="cc-btn-secondary flex-1"
+                      onClick={() => setConnectStep("find")}
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      className="cc-btn flex-1"
+                      disabled={connectBusy || !host.trim()}
+                      onClick={() => void connectToDevice(host.trim(), Number(port) || 8731)}
+                    >
+                      {connectBusy ? "Connecting…" : "Connect"}
+                    </button>
+                  </div>
                 </div>
-              ) : (
+              )}
+
+              {connectStep === "pair" && (
                 <div className="cc-panel space-y-3">
                   <p className="text-xs text-[var(--cc-success)]">
-                    Found {deviceInfo?.name}
+                    Found {deviceInfo?.name} at {host}:{port}
                   </p>
                   <input
                     className="cc-input cc-input-code"
@@ -407,7 +712,7 @@ export default function App() {
                     <button
                       type="button"
                       className="cc-btn-secondary flex-1"
-                      onClick={() => setConnectStep("ip")}
+                      onClick={() => setConnectStep("find")}
                     >
                       Back
                     </button>
@@ -424,7 +729,9 @@ export default function App() {
                               Number(port) || 8731,
                               code
                             );
-                            const info = deviceInfo ?? (await pingDeck(host.trim(), Number(port) || 8731));
+                            const info =
+                              deviceInfo ??
+                              (await pingDeck(host.trim(), Number(port) || 8731));
                             savePaired({
                               name: info.name,
                               host: host.trim(),
@@ -495,6 +802,12 @@ export default function App() {
             ))}
           </div>
 
+          <CompanionEssentialsCard
+            paired={paired}
+            gameDomain={gameDomain}
+            canInstall={!!activeGame?.can_install}
+          />
+
           <div className="cc-search">
             <input
               className="cc-input flex-1"
@@ -559,34 +872,130 @@ export default function App() {
             </section>
           ) : (
             <>
-              {trending.length > 0 && (
-                <section>
-                  <p className="cc-section-label px-4">Featured</p>
-                  <div className="cc-shelf-track">
-                    {trending.map((mod) => (
-                      <CcTile
-                        key={mod.mod_id}
-                        mod={mod}
-                        className="cc-shelf-tile"
-                        onOpen={(m) => void openMod(m)}
-                      />
-                    ))}
-                  </div>
-                </section>
+              {!browseBusy && !hasDiscoveryContent && !showSearch && (
+                <p className="px-4 text-sm text-[var(--cc-muted)]">
+                  No mods loaded yet. Search above, or update NexusDeck on your device if shelves
+                  stay empty.
+                </p>
               )}
 
-              {latest.length > 0 && (
-                <section>
-                  <p className="cc-section-label px-4">Latest</p>
-                  <div className="cc-stack">
-                    {latest.map((mod) => (
-                      <CcTile key={mod.mod_id} mod={mod} onOpen={(m) => void openMod(m)} />
-                    ))}
-                  </div>
-                </section>
-              )}
+              {DISCOVERY_SHELVES.map((shelf) => {
+                const mods = discovery[shelf.key];
+                if (!mods.length) return null;
+
+                if (shelf.layout === "hero") {
+                  return (
+                    <section key={shelf.key}>
+                      <p className="cc-section-label px-4">{shelf.title}</p>
+                      <div className="cc-shelf-track cc-shelf-track-hero">
+                        {mods.map((mod) => (
+                          <CcTile
+                            key={mod.mod_id}
+                            mod={mod}
+                            className="cc-shelf-tile cc-shelf-tile-hero"
+                            onOpen={(m) => void openMod(m)}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  );
+                }
+
+                if (shelf.layout === "shelf") {
+                  return (
+                    <section key={shelf.key}>
+                      <p className="cc-section-label px-4">{shelf.title}</p>
+                      <div className="cc-shelf-track">
+                        {mods.map((mod) => (
+                          <CcTile
+                            key={mod.mod_id}
+                            mod={mod}
+                            className="cc-shelf-tile"
+                            onOpen={(m) => void openMod(m)}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  );
+                }
+
+                return (
+                  <section key={shelf.key}>
+                    <p className="cc-section-label px-4">{shelf.title}</p>
+                    <div className="cc-stack">
+                      {mods.map((mod) => (
+                        <CcTile key={mod.mod_id} mod={mod} onOpen={(m) => void openMod(m)} />
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
             </>
           )}
+        </div>
+      )}
+
+      {paired && screen === "library" && (
+        <div className="cc-browse-wrap">
+          <div className="cc-game-bar">
+            {games.map((g) => (
+              <button
+                key={g.domain}
+                type="button"
+                className={gameDomain === g.domain ? "cc-chip cc-chip-active" : "cc-chip"}
+                onClick={() => setGameDomain(g.domain)}
+              >
+                {g.name}
+              </button>
+            ))}
+          </div>
+
+          {libraryBusy && (
+            <p className="px-4 text-xs uppercase tracking-wider text-[var(--cc-muted)]">
+              Loading library…
+            </p>
+          )}
+
+          {!libraryBusy && libraryMods.length === 0 && !libraryError && (
+            <p className="px-4 text-sm text-[var(--cc-muted)]">
+              No mods installed for this game yet. Browse and send installs from the Browse tab.
+            </p>
+          )}
+
+          <div className="cc-library-list">
+            {libraryMods.map((mod) => (
+              <div key={mod.id} className="cc-library-row">
+                <button
+                  type="button"
+                  className="cc-library-main"
+                  onClick={() => openInstalledMod(mod)}
+                >
+                  <span className="cc-library-name">{mod.name}</span>
+                  <span className="cc-library-meta">
+                    {mod.version ? `v${mod.version}` : "Installed mod"}
+                    {!mod.enabled ? " · disabled" : ""}
+                  </span>
+                </button>
+                <label className="cc-toggle" title={mod.enabled ? "Disable mod" : "Enable mod"}>
+                  <input
+                    type="checkbox"
+                    checked={mod.enabled}
+                    disabled={libraryActionId === mod.id}
+                    onChange={() => void handleToggleMod(mod)}
+                  />
+                  <span className="cc-toggle-track" />
+                </label>
+                <button
+                  type="button"
+                  className="cc-library-uninstall"
+                  disabled={libraryActionId === mod.id}
+                  onClick={() => void handleUninstallMod(mod)}
+                >
+                  Uninstall
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -731,6 +1140,32 @@ export default function App() {
                 selections={selections}
                 onChange={setSelections}
               />
+
+              {session.prepare.strategies.length > 0 && (
+                <div className="cc-panel space-y-3">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--cc-gold)]">
+                    Deployment method
+                  </p>
+                  {session.prepare.strategies.map((s) => (
+                    <label
+                      key={s.id}
+                      className={`cc-file ${strategy === s.id ? "cc-file-active" : ""}`}
+                    >
+                      <input
+                        type="radio"
+                        name="strategy"
+                        checked={strategy === s.id}
+                        onChange={() => setStrategy(s.id)}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium">{s.label}</span>
+                        <span className="text-[11px] text-[var(--cc-muted)]">{s.description}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
               <button
                 type="button"
                 className="cc-btn w-full"

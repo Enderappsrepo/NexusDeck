@@ -13,6 +13,7 @@ const base = process.env.VITE_COMPANION_BASE ?? `/${repoName}/companion/`;
 export default defineConfig({
   root,
   base,
+  publicDir: path.resolve(root, "public"),
   plugins: [react(), tailwindcss()],
   build: {
     outDir: path.resolve(root, "../docs/companion"),

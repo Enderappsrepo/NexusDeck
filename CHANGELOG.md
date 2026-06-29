@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.37] - 2026-06-29
+
+### Added
+- **Companion PWA** — web manifest, service worker, and install-to-home-screen prompt.
+- **LAN device discovery** — scan network from the companion without typing an IP; QR scan and auto-detect when opened at `http://device:8731/app/`.
+- **Full companion browse** — discovery shelves (featured, endorsed, trending, etc.) via `/browse/discovery`.
+- **Companion library** — remote enable/disable and uninstall via `/library/*` API.
+- **Game essentials** — one-click essential mod setup for Skyrim SE and Fallout 4 (app + companion card).
+- **GitHub Pages landing** — redesigned install page with feature overview and companion link.
+
+### Changed
+- **README** — full rewrite with quick install, companion section, architecture, and usage tables.
+- **Remote receiver `/ping`** — exposes `lan_hosts`, `companion_urls`, and `companion_api` version.
+- **Settings → Receive** — shows companion URLs for phone pairing.
+- **Install GUI** — relative asset paths for GitHub Pages subdirectory hosting.
+
+### Fixed
+- **Pages sync script** — no longer overwrites hand-maintained `docs/index.html` landing page.
+- **Companion browse fallback** — graceful degradation when receiver lacks discovery API.
+
 ## [1.1.36] - 2026-06-29
 
 ### Fixed

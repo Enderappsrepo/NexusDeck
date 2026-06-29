@@ -16,7 +16,7 @@ import { LoadOrderHealthBadge } from "@/components/game/LoadOrderHealthBadge";
 import { ModSearchBar } from "@/components/mod/ModSearchBar";
 import { ModUpdatesPanel } from "@/components/mod/ModUpdatesPanel";
 import { LaunchButton } from "@/components/launch/LaunchButton";
-import { EssentialFixesPanel } from "@/components/setup/EssentialFixesPanel";
+import { OneClickEssentialsPanel } from "@/components/essentials/OneClickEssentialsPanel";
 import { BodySlideSetupPanel } from "@/components/game/BodySlideSetupPanel";
 import { DeckAdvisorPanel } from "@/components/advisor/DeckAdvisorPanel";
 import { Badge } from "@/components/ui/badge";
@@ -90,7 +90,7 @@ export function GameHubDeck({
         </div>
       </section>
 
-      <EssentialFixesPanel profileId={profile.id} domain={domain} />
+      <OneClickEssentialsPanel profileId={profile.id} domain={domain} profile={profile} />
 
       <GameModDiscovery domain={domain} signedIn={userSignedIn} sections="rows" compact />
 

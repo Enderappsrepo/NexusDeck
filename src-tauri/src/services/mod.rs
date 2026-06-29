@@ -71,6 +71,7 @@ pub mod app_update;
 pub mod decky_host;
 pub mod host_command;
 pub mod essential_fixes;
+pub mod game_essentials;
 pub mod window_lifecycle;
 pub mod gamescope;
 pub mod power_lifecycle;

@@ -18,7 +18,7 @@ import { useGamepadTabs } from "@/hooks/useGamepadTabs";
 import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
 import { GP } from "@/lib/gamepad/buttons";
 import { getPairedDeck, sendNexusModToPairedDeck } from "@/lib/remote/sendToDeck";
-import { useAuthStore, useDownloadsStore, useGamesStore } from "@/stores";
+import { useAuthStore, useDownloadsStore, useGamesStore, useInstallQueueStore } from "@/stores";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { api } from "@/lib/commands";
 import { formatModDescription } from "@/lib/bbcode";
@@ -38,6 +38,7 @@ function ModDetailPage() {
   const profile = getProfile(domain);
   const active = useDownloadsStore((s) => s.active);
   const setProgress = useDownloadsStore((s) => s.setProgress);
+  const registerPendingInstall = useInstallQueueStore((s) => s.registerPendingInstall);
 
   const [detail, setDetail] = useState<ModDetail | null>(null);
   const [files, setFiles] = useState<ModFileInfo[]>([]);
@@ -47,6 +48,7 @@ function ModDetailPage() {
   const [activeTab, setActiveTab] = useState<ModDetailTab>("overview");
   const [selectedScreenshot, setSelectedScreenshot] = useState(0);
   const [downloading, setDownloading] = useState(false);
+  const [queueing, setQueueing] = useState(false);
   const [installFile, setInstallFile] = useState<ModFileInfo | null>(null);
   const [freeDownloadFile, setFreeDownloadFile] = useState<ModFileInfo | null>(null);
   const [endorsing, setEndorsing] = useState(false);
@@ -114,6 +116,27 @@ function ModDetailPage() {
       }
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const queueForInstall = async (file: ModFileInfo) => {
+    if (!profile || !detail) return;
+    setQueueing(true);
+    try {
+      const progress = await api.queueModForInstall({
+        profileId: profile.id,
+        nexusModId: modId,
+        nexusFileId: file.file_id,
+        modName: detail.name,
+      });
+      registerPendingInstall(progress.id, {
+        source: "queued",
+        modId,
+        modName: detail.name,
+      });
+      setProgress(progress);
+    } finally {
+      setQueueing(false);
     }
   };
 
@@ -317,6 +340,8 @@ function ModDetailPage() {
         onDownload={downloadFile}
         onBrowserDownload={setFreeDownloadFile}
         onInstall={setInstallFile}
+        onQueueInstall={(file) => void queueForInstall(file)}
+        queueing={queueing}
         sendToDeck={Boolean(pairedDeck)}
         sendingToDeck={sendingToDeck}
         onSendToDeck={(file) => void sendToDeck(file)}

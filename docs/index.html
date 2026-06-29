@@ -1,39 +1,357 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NexusDeck — Install &amp; Uninstall</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
-    code, pre { background: #1a1a2e; color: #e8e8f0; border-radius: 8px; }
-    pre { padding: 1rem; overflow-x: auto; }
-    h1 { font-size: 1.75rem; }
-    h2 { font-size: 1.25rem; margin-top: 2rem; }
-    p.muted { color: #666; font-size: 0.95rem; }
-  </style>
-</head>
-<body>
-  <h1>NexusDeck on Steam Deck</h1>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      name="description"
+      content="NexusDeck — a controller-friendly Nexus Mods client for Steam Deck and PC. Browse, install, and manage mods with DeckModFix automation."
+    />
+    <meta name="theme-color" content="#08090c" />
+    <title>NexusDeck — Mod manager for Steam Deck &amp; PC</title>
+    <link rel="stylesheet" href="landing.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="site-header-inner">
+        <a class="brand" href="#top">
+          <span class="brand-mark" aria-hidden="true">N</span>
+          <span>NexusDeck</span>
+        </a>
+        <nav class="nav-links" aria-label="Page sections">
+          <a href="#features">Features</a>
+          <a href="#install">Install</a>
+          <a href="#companion">Companion</a>
+          <a href="https://github.com/Enderappsrepo/NexusDeck" target="_blank" rel="noreferrer">GitHub</a>
+          <a class="btn btn-primary btn-sm" href="#install">Get started</a>
+        </nav>
+      </div>
+    </header>
 
-  <h2>Install</h2>
-  <p><strong>Recommended:</strong> graphical installer in Desktop Mode (Konsole):</p>
-  <pre><code>curl -fsSL https://enderappsrepo.github.io/NexusDeck/i.sh -o install.sh &amp;&amp; bash install.sh --gui</code></pre>
-  <p class="muted">Or one-line terminal install:</p>
-  <pre><code>curl -fsSL https://enderappsrepo.github.io/NexusDeck/i.sh | bash</code></pre>
-  <p class="muted">Direct release link (alternative):</p>
-  <pre><code>curl -fsSL https://github.com/Enderappsrepo/NexusDeck/releases/latest/download/i.sh | bash</code></pre>
+    <main id="top">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Steam Deck · Windows · Handheld PC</p>
+          <h1 id="hero-title">Nexus mods, built for the couch.</h1>
+          <p class="hero-lead">
+            NexusDeck is a lightweight mod manager with full controller support, Nexus API
+            integration, and DeckModFix automation for Skyrim SE and Fallout 4 — browse, download,
+            install, and troubleshoot without fighting a desktop UI on a small screen.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#install">Install on Steam Deck</a>
+            <a class="btn btn-secondary" href="companion/">Open Companion app</a>
+          </div>
+        </div>
 
-  <h2>Uninstall</h2>
-  <pre><code>curl -fsSL https://enderappsrepo.github.io/NexusDeck/u.sh | bash</code></pre>
-  <p class="muted">Direct release link (alternative):</p>
-  <pre><code>curl -fsSL https://github.com/Enderappsrepo/NexusDeck/releases/latest/download/u.sh | bash</code></pre>
+        <div class="hero-visual" aria-hidden="true">
+          <div class="mock-shell">
+            <div class="mock-bar">
+              <span class="mock-dot"></span>
+              <span class="mock-dot"></span>
+              <span class="mock-dot"></span>
+            </div>
+            <div class="mock-body">
+              <div class="mock-tabs">
+                <span class="mock-tab active">Browse</span>
+                <span class="mock-tab">Library</span>
+                <span class="mock-tab">Install</span>
+              </div>
+              <div class="mock-row">
+                <div class="mock-tile"></div>
+                <div class="mock-tile"></div>
+                <div class="mock-tile"></div>
+              </div>
+              <p class="mock-caption">Creation Club–style catalog · gamepad ready</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-  <h2>Mobile companion</h2>
-  <p>Pair your phone with a Deck running NexusDeck and queue mod installs remotely:</p>
-  <p><a href="companion/">Open NexusDeck Companion</a></p>
-  <p class="muted">Or download <code>NexusDeck_*_companion_web.zip</code> from the latest GitHub release and open <code>index.html</code> locally.</p>
+      <section class="section" id="features" aria-labelledby="features-title">
+        <div class="section-head">
+          <h2 id="features-title">Everything you need on Deck</h2>
+          <p>
+            From first-time setup to load order and updates — NexusDeck is designed for SteamOS,
+            Proton, and one-handed navigation.
+          </p>
+        </div>
 
-  <p class="muted">Enable GitHub Pages (Settings → Pages → Deploy from branch <strong>main</strong>, folder <strong>/docs</strong>) if these URLs 404.</p>
-</body>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <div class="feature-icon" aria-hidden="true">🎮</div>
+            <h3>Controller-first UI</h3>
+            <p>D-pad tabs, shoulder shortcuts, and focus rings tuned for Gaming Mode and handheld PCs.</p>
+          </article>
+          <article class="feature-card">
+            <div class="feature-icon" aria-hidden="true">⬇</div>
+            <h3>Download &amp; deploy</h3>
+            <p>Queue Nexus downloads, run FOMOD installers, and deploy to your game with conflict preview.</p>
+          </article>
+          <article class="feature-card">
+            <div class="feature-icon" aria-hidden="true">🔧</div>
+            <h3>DeckModFix</h3>
+            <p>Skyrim SE &amp; Fallout 4 wizards — Proton deps, SKSE/F4SE, MO2 paths, and one-click safe fixes.</p>
+          </article>
+          <article class="feature-card">
+            <div class="feature-icon" aria-hidden="true">📦</div>
+            <h3>Mod library</h3>
+            <p>Enable, disable, update, compare, and export load orders — with backup before patches.</p>
+          </article>
+          <article class="feature-card">
+            <div class="feature-icon" aria-hidden="true">🔗</div>
+            <h3>nxm:// links</h3>
+            <p>Open Nexus download pages directly in NexusDeck from your browser or the companion app.</p>
+          </article>
+          <article class="feature-card">
+            <div class="feature-icon" aria-hidden="true">📡</div>
+            <h3>Remote install</h3>
+            <p>Pair your phone or PC on the same Wi‑Fi and push mod installs to your Deck without leaving the couch.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="install" aria-labelledby="install-title">
+        <div class="section-head">
+          <h2 id="install-title">Install NexusDeck</h2>
+          <p>
+            Steam Deck and Linux use Flatpak. The graphical installer is the easiest path — or paste a
+            one-liner in Konsole (Desktop Mode).
+          </p>
+        </div>
+
+        <div class="install-grid">
+          <article class="install-card featured">
+            <div>
+              <span class="badge badge-gold">Recommended</span>
+              <h3>Graphical installer</h3>
+              <p>
+                Setup wizard with progress, Steam shortcut, controller template, and nxm:// registration.
+                Run from Desktop Mode → Konsole:
+              </p>
+            </div>
+            <div class="code-block">
+              <button class="btn btn-ghost btn-sm copy-btn" type="button" data-copy="gui-cmd">Copy</button>
+              <pre><code id="gui-cmd"></code></pre>
+            </div>
+            <a class="btn btn-secondary" href="gui/">Open setup wizard in browser</a>
+          </article>
+
+          <article class="install-card">
+            <div>
+              <span class="badge">Quick</span>
+              <h3>One-line terminal install</h3>
+              <p>Downloads the latest Flatpak release and configures integration automatically.</p>
+            </div>
+            <div class="code-block">
+              <button class="btn btn-ghost btn-sm copy-btn" type="button" data-copy="install-cmd">Copy</button>
+              <pre><code id="install-cmd"></code></pre>
+            </div>
+          </article>
+
+          <article class="install-card">
+            <div>
+              <h3>Direct from GitHub Releases</h3>
+              <p>Works even before GitHub Pages is enabled — always points at the latest release script.</p>
+            </div>
+            <div class="code-block">
+              <button class="btn btn-ghost btn-sm copy-btn" type="button" data-copy="release-cmd">Copy</button>
+              <pre><code id="release-cmd"></code></pre>
+            </div>
+          </article>
+
+          <article class="install-card">
+            <div>
+              <h3>Windows</h3>
+              <p>
+                Download the NSIS installer or portable build from
+                <a href="https://github.com/Enderappsrepo/NexusDeck/releases/latest" target="_blank" rel="noreferrer">GitHub Releases</a>.
+                Build locally with <code>npm run tauri build</code> if you are developing.
+              </p>
+            </div>
+          </article>
+        </div>
+
+        <div class="section" style="padding-top: 2rem">
+          <div class="section-head">
+            <h2>After install</h2>
+          </div>
+          <ol class="steps">
+            <li>
+              <div>
+                <strong>Sign in with your Nexus API key</strong>
+                <span>Settings → Nexus — required for browsing and downloads.</span>
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add your game</strong>
+                <span>Run the setup wizard for Skyrim SE or Fallout 4 (paths, staging, script extender).</span>
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Turn on Receive (optional)</strong>
+                <span>Settings → Remote — pair the companion app or send mods from another PC.</span>
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Launch from Gaming Mode</strong>
+                <span>If you added the Steam shortcut, restart Steam once after install.</span>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="section" id="companion" aria-labelledby="companion-title">
+        <div class="section-head">
+          <h2 id="companion-title">NexusDeck Companion</h2>
+          <p>
+            Control your Deck or PC from your phone — browse Nexus like Creation Club, queue installs,
+            and manage your library without touching the handheld.
+          </p>
+        </div>
+
+        <div class="companion-banner">
+          <div>
+            <span class="badge">PWA · Same Wi‑Fi</span>
+            <h3>Your pocket mod catalog</h3>
+            <p>
+              Pair once, then browse featured shelves, search Nexus, send downloads to your device,
+              toggle mods, and uninstall — all from a installable web app.
+            </p>
+            <ul class="companion-points">
+              <li>Scan your network — no IP typing required</li>
+              <li>Featured, trending, and library tabs</li>
+              <li>FOMOD install wizard on the device</li>
+              <li>Add to home screen for quick access</li>
+            </ul>
+          </div>
+          <div style="display: grid; gap: 0.65rem; justify-items: start">
+            <a class="btn btn-primary" href="companion/">Launch Companion</a>
+            <a class="btn btn-ghost btn-sm" href="companion/" style="font-size: 0.72rem">
+              companion/ · installable web app
+            </a>
+          </div>
+        </div>
+
+        <p style="margin-top: 1rem; font-size: 0.88rem; color: var(--muted)">
+          Best experience: open
+          <code>http://YOUR_DEVICE_IP:8731/app/</code> on your phone after enabling
+          <strong>Receive</strong> in NexusDeck — or use network scan from the companion when on the
+          same Wi‑Fi.
+        </p>
+      </section>
+
+      <section class="section" id="help" aria-labelledby="help-title">
+        <div class="section-head">
+          <h2 id="help-title">Help &amp; uninstall</h2>
+        </div>
+
+        <div class="faq">
+          <details>
+            <summary>How do I update NexusDeck?</summary>
+            <p>
+              Re-run the install script, or use the in-app updater when a new release is available.
+              Flatpak installs can also use <code>flatpak update com.nexusdeck.app</code>.
+            </p>
+          </details>
+          <details>
+            <summary>GitHub Pages shows 404 — what now?</summary>
+            <p>
+              Enable Pages: repo Settings → Pages → deploy from branch <strong>main</strong>, folder
+              <strong>/docs</strong>. Or use the direct GitHub Releases install command above.
+            </p>
+          </details>
+          <details>
+            <summary>Uninstall NexusDeck</summary>
+            <p>Run in Konsole:</p>
+            <div class="code-block" style="margin-top: 0.65rem">
+              <button class="btn btn-ghost btn-sm copy-btn" type="button" data-copy="uninstall-cmd">Copy</button>
+              <pre><code id="uninstall-cmd"></code></pre>
+            </div>
+          </details>
+          <details>
+            <summary>Steam Input &amp; controller docs</summary>
+            <p>
+              See
+              <a href="steam-input.md">steam-input.md</a>
+              for the Deck controller layout and pass-through setup.
+            </p>
+          </details>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <span>NexusDeck — open source mod manager for handheld play.</span>
+        <div style="display: flex; flex-wrap: wrap; gap: 1rem">
+          <a href="https://github.com/Enderappsrepo/NexusDeck" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="companion/">Companion</a>
+          <a href="gui/">Installer wizard</a>
+          <a href="https://github.com/Enderappsrepo/NexusDeck/releases/latest" target="_blank" rel="noreferrer">Releases</a>
+        </div>
+      </footer>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite">Copied to clipboard</div>
+
+    <script>
+      (function () {
+        const parts = location.pathname.split("/").filter(Boolean);
+        const repo = parts[0] || "NexusDeck";
+        const site = location.origin + "/" + repo;
+
+        const commands = {
+          "gui-cmd":
+            "curl -fsSL " + site + "/i.sh -o install.sh && bash install.sh --gui",
+          "install-cmd": "curl -fsSL " + site + "/i.sh | bash",
+          "release-cmd":
+            "curl -fsSL https://github.com/Enderappsrepo/NexusDeck/releases/latest/download/i.sh | bash",
+          "uninstall-cmd": "curl -fsSL " + site + "/u.sh | bash",
+        };
+
+        Object.entries(commands).forEach(function (entry) {
+          var el = document.getElementById(entry[0]);
+          if (el) el.textContent = entry[1];
+        });
+
+        var toast = document.getElementById("toast");
+        var toastTimer;
+
+        function showToast(msg) {
+          toast.textContent = msg || "Copied to clipboard";
+          toast.classList.add("show");
+          clearTimeout(toastTimer);
+          toastTimer = setTimeout(function () {
+            toast.classList.remove("show");
+          }, 2000);
+        }
+
+        document.querySelectorAll("[data-copy]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var id = btn.getAttribute("data-copy");
+            var text = commands[id] || document.getElementById(id)?.textContent || "";
+            if (!text) return;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(text).then(function () {
+                showToast();
+              });
+            } else {
+              var ta = document.createElement("textarea");
+              ta.value = text;
+              document.body.appendChild(ta);
+              ta.select();
+              try {
+                document.execCommand("copy");
+                showToast();
+              } catch (e) {}
+              document.body.removeChild(ta);
+            }
+          });
+        });
+      })();
+    </script>
+  </body>
 </html>

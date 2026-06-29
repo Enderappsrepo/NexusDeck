@@ -46,6 +46,8 @@ pub struct ReceiverStatus {
     pub pair_code: String,
     pub http_port: u16,
     pub paired: bool,
+    #[serde(default)]
+    pub companion_urls: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,6 +176,7 @@ fn idle_status() -> ReceiverStatus {
         pair_code: String::new(),
         http_port: HTTP_PORT,
         paired: false,
+        companion_urls: Vec::new(),
     }
 }
 
@@ -302,6 +305,72 @@ fn respond_json_result(mut req: tiny_http::Request, result: Result<String>) {
     }
 }
 
+fn respond_library_toggle(mut req: tiny_http::Request) {
+    let mut body = String::new();
+    if req.as_reader().read_to_string(&mut body).is_err() {
+        let _ = req.respond(json_response(
+            400,
+            serde_json::json!({ "error": "Couldn't read request body." }).to_string(),
+        ));
+        return;
+    }
+    match serde_json::from_str::<crate::services::remote_companion::ToggleModBody>(&body) {
+        Ok(payload) => {
+            respond_json_result(req, crate::services::remote_companion::toggle_library_mod(payload));
+        }
+        Err(e) => {
+            let _ = req.respond(json_response(
+                400,
+                serde_json::json!({ "error": format!("Invalid JSON: {e}") }).to_string(),
+            ));
+        }
+    }
+}
+
+fn respond_library_uninstall(mut req: tiny_http::Request) {
+    let mut body = String::new();
+    if req.as_reader().read_to_string(&mut body).is_err() {
+        let _ = req.respond(json_response(
+            400,
+            serde_json::json!({ "error": "Couldn't read request body." }).to_string(),
+        ));
+        return;
+    }
+    match serde_json::from_str::<crate::services::remote_companion::UninstallModBody>(&body) {
+        Ok(payload) => {
+            respond_json_result(req, crate::services::remote_companion::uninstall_library_mod(payload));
+        }
+        Err(e) => {
+            let _ = req.respond(json_response(
+                400,
+                serde_json::json!({ "error": format!("Invalid JSON: {e}") }).to_string(),
+            ));
+        }
+    }
+}
+
+fn respond_essentials_start(mut req: tiny_http::Request) {
+    let mut body = String::new();
+    if req.as_reader().read_to_string(&mut body).is_err() {
+        let _ = req.respond(json_response(
+            400,
+            serde_json::json!({ "error": "Couldn't read request body." }).to_string(),
+        ));
+        return;
+    }
+    match serde_json::from_str::<crate::services::remote_companion::StartEssentialsBody>(&body) {
+        Ok(payload) => {
+            respond_json_result(req, crate::services::remote_companion::start_essentials(payload))
+        }
+        Err(e) => {
+            let _ = req.respond(json_response(
+                400,
+                serde_json::json!({ "error": format!("Invalid JSON: {e}") }).to_string(),
+            ));
+        }
+    }
+}
+
 fn respond_install_session_start(mut req: tiny_http::Request) {
     let mut body = String::new();
     if req.as_reader().read_to_string(&mut body).is_err() {
@@ -392,7 +461,7 @@ fn serve_companion_app(mut req: tiny_http::Request) {
     }
 }
 
-fn handle_search_mods(domain: &str, query: &str) -> Result<String> {
+fn handle_search_mods(domain: &str, query: &str, sort: &str, offset: u32, count: u32) -> Result<String> {
     let ctx = receiver_context().ok_or_else(|| {
         NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
     })?;
@@ -402,7 +471,7 @@ fn handle_search_mods(domain: &str, query: &str) -> Result<String> {
         ));
     }
     let _profile = profile_for_domain(domain)?;
-    let mods = async_runtime::block_on(ctx.nexus.search_mods(domain, query, "downloads", 0, 20))?;
+    let mods = async_runtime::block_on(ctx.nexus.search_mods(domain, query, sort, offset, count))?;
     Ok(serde_json::to_string(&mods).unwrap_or_else(|_| "[]".to_string()))
 }
 
@@ -746,6 +815,7 @@ impl Receiver {
             pair_code: self.pair_code.clone(),
             http_port: self.http_port,
             paired: self.token.lock().map(|t| t.is_some()).unwrap_or(false),
+            companion_urls: companion_urls_for_lan(self.http_port),
         }
     }
 
@@ -805,14 +875,19 @@ fn handle_request(
 
     if is_get && url.starts_with("/ping") {
         let paired = token.lock().map(|t| t.is_some()).unwrap_or(false);
+        let lan_hosts = local_ipv4_addresses();
+        let companion_urls = companion_urls_for_lan(HTTP_PORT);
         let body = serde_json::json!({
             "name": name,
             "version": env!("CARGO_PKG_VERSION"),
             "paired": paired,
             "nexus_configured": nexus_configured(),
+            "companion_api": crate::services::remote_companion::COMPANION_API_VERSION,
             "games": crate::services::remote_companion::list_companion_games()
                 .unwrap_or_default(),
             "companion_url": "/app/",
+            "lan_hosts": lan_hosts,
+            "companion_urls": companion_urls,
         })
         .to_string();
         let _ = req.respond(json_response(200, body));
@@ -828,6 +903,33 @@ fn handle_request(
 
     if is_get && url.starts_with("/app/") {
         serve_companion_app(req);
+        return;
+    }
+
+    if is_get && url.starts_with("/essentials/manifest") {
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        respond_json_result(req, crate::services::remote_companion::essentials_manifest(&domain));
+        return;
+    }
+
+    if is_get && url.starts_with("/essentials/status") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        respond_json_result(req, crate::services::remote_companion::essentials_status_for_domain(&domain));
+        return;
+    }
+
+    if is_post && url.starts_with("/essentials/start") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_essentials_start(req);
         return;
     }
 
@@ -857,7 +959,16 @@ fn handle_request(
         let params = query_params(&url);
         let domain = params.get("domain").cloned().unwrap_or_default();
         let query = params.get("q").cloned().unwrap_or_default();
-        match handle_search_mods(&domain, &query) {
+        let sort = params.get("sort").cloned().unwrap_or_else(|| "downloads".into());
+        let offset = params
+            .get("offset")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let count = params
+            .get("count")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20);
+        match handle_search_mods(&domain, &query, &sort, offset, count) {
             Ok(body) => {
                 let _ = req.respond(json_response(200, body));
             }
@@ -894,6 +1005,68 @@ fn handle_request(
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
         respond_json_result(req, crate::services::remote_companion::browse_latest(&domain, offset));
+        return;
+    }
+
+    if is_get && url.starts_with("/browse/discovery") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        respond_json_result(req, crate::services::remote_companion::browse_discovery(&domain));
+        return;
+    }
+
+    if is_get && url.starts_with("/browse/shelf") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        let sort = params.get("sort").cloned().unwrap_or_else(|| "endorsements".into());
+        let offset = params
+            .get("offset")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let updated_since_days = params
+            .get("updated_since_days")
+            .and_then(|v| v.parse().ok());
+        respond_json_result(
+            req,
+            crate::services::remote_companion::browse_shelf(&domain, &sort, offset, updated_since_days),
+        );
+        return;
+    }
+
+    if is_get && url.starts_with("/library/mods") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        respond_json_result(req, crate::services::remote_companion::list_library_mods(&domain));
+        return;
+    }
+
+    if is_post && url.starts_with("/library/mod/toggle") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_library_toggle(req);
+        return;
+    }
+
+    if is_post && url.starts_with("/library/mod/uninstall") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_library_uninstall(req);
         return;
     }
 
@@ -1342,6 +1515,30 @@ pub fn discover_decks(timeout_ms: u64) -> Result<Vec<DiscoveredDeck>> {
         }
     }
     Ok(found)
+}
+
+fn local_ipv4_addresses() -> Vec<String> {
+    let mut addrs = Vec::new();
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect("8.8.8.8:80").is_ok() {
+            if let Ok(addr) = socket.local_addr() {
+                if let std::net::IpAddr::V4(ip) = addr.ip() {
+                    let s = ip.to_string();
+                    if !s.starts_with("127.") {
+                        addrs.push(s);
+                    }
+                }
+            }
+        }
+    }
+    addrs
+}
+
+fn companion_urls_for_lan(http_port: u16) -> Vec<String> {
+    local_ipv4_addresses()
+        .into_iter()
+        .map(|host| format!("http://{host}:{http_port}/app/"))
+        .collect()
 }
 
 fn blocking_client(timeout_secs: u64) -> Result<reqwest::blocking::Client> {

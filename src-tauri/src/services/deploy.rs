@@ -100,6 +100,11 @@ pub fn has_f4se_root_files(paths: &[String]) -> bool {
 }
 
 pub fn has_loose_fallout4_data_folders(paths: &[String]) -> bool {
+    // Standard Bethesda `Data/` subfolders. If an archive ships these loose (no
+    // `Data/` wrapper), every file belongs in `Data/` — so we route to
+    // merge_loose_to_data (copy ALL files) rather than copy_loose_to_data (which
+    // keeps only .esp/.ba2 and would drop F4SE plugins, MCM configs, Interface
+    // assets — the reason MCM / Full Dialogue Interface installed broken).
     const FOLDERS: &[&str] = &[
         "meshes/",
         "textures/",
@@ -108,11 +113,26 @@ pub fn has_loose_fallout4_data_folders(paths: &[String]) -> bool {
         "materials/",
         "sound/",
         "music/",
+        "video/",
         "strings/",
         "tools/",
         "seq/",
         "facegen/",
         "calientetools/",
+        "f4se/",
+        "skse/",
+        "mcm/",
+        "config/",
+        "shadersfx/",
+        "lodsettings/",
+        "vis/",
+        "grass/",
+        "terrain/",
+        "distantlod/",
+        "programs/",
+        "fonts/",
+        "source/",
+        "misc/",
     ];
 
     paths.iter().any(|p| {
@@ -565,6 +585,32 @@ mod tests {
             description: String::new(),
             requires_confirmation: false,
         }
+    }
+
+    #[test]
+    fn loose_f4se_and_mcm_folders_count_as_data_content() {
+        // MCM ships F4SE/Plugins + MCM/ + Interface with no Data/ wrapper; some
+        // mods add an .esp too. These must route to merge_loose_to_data (copy ALL
+        // files into Data), not copy_loose_to_data (which kept only .esp/.ba2 and
+        // dropped the F4SE plugin + MCM config — the broken-install bug).
+        let mcm = normalized_relative_paths(&[
+            entry("F4SE/Plugins/ConfigMenu.dll"),
+            entry("MCM/Config/ConfigMenu/settings.ini"),
+            entry("Interface/MCM.swf"),
+        ]);
+        assert!(has_loose_fallout4_data_folders(&mcm));
+
+        let quest_with_extender = normalized_relative_paths(&[
+            entry("MyMod.esp"),
+            entry("F4SE/Plugins/MyMod.dll"),
+            entry("MCM/Config/MyMod/config.json"),
+        ]);
+        assert!(has_loose_fallout4_data_folders(&quest_with_extender));
+
+        // A bare plugin + docs is NOT loose Data content → copy_loose_to_data still
+        // applies (keeps the plugin, skips the readme).
+        let bare = normalized_relative_paths(&[entry("MyMod.esp"), entry("readme.txt")]);
+        assert!(!has_loose_fallout4_data_folders(&bare));
     }
 
     #[test]

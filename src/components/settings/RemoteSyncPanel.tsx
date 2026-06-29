@@ -164,16 +164,36 @@ export function RemoteSyncPanel() {
         </div>
 
         {status?.running && (
-          <div className="mt-4 flex items-center gap-3 rounded-xl bg-[var(--color-secondary)]/50 p-4">
-            <span className="text-sm text-[var(--color-muted)]">Pairing code</span>
-            <span className="font-mono text-2xl font-bold tracking-[0.3em] text-[var(--color-primary)]">
-              {status.pair_code}
-            </span>
-            {status.paired && (
-              <Badge variant="success" className="ml-auto">
-                Paired
-              </Badge>
-            )}
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center gap-3 rounded-xl bg-[var(--color-secondary)]/50 p-4">
+              <span className="text-sm text-[var(--color-muted)]">Pairing code</span>
+              <span className="font-mono text-2xl font-bold tracking-[0.3em] text-[var(--color-primary)]">
+                {status.pair_code}
+              </span>
+              {status.paired && (
+                <Badge variant="success" className="ml-auto">
+                  Paired
+                </Badge>
+              )}
+            </div>
+            {status.companion_urls?.length ? (
+              <div className="rounded-xl border border-[var(--color-border)] p-4 text-sm">
+                <p className="font-semibold">Phone companion</p>
+                <p className="mt-1 text-[var(--color-muted)]">
+                  Open this URL on your phone (same Wi‑Fi), or scan it from the companion app →
+                  Scan QR code.
+                </p>
+                <ul className="mt-2 space-y-1 font-mono text-xs text-[var(--color-primary)]">
+                  {status.companion_urls.map((url) => (
+                    <li key={url}>
+                      <a href={url} target="_blank" rel="noreferrer" className="underline">
+                        {url}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

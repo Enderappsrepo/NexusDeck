@@ -62,6 +62,8 @@ interface ModDetailViewProps {
   onDownload: (file: ModFileInfo) => void;
   onBrowserDownload: (file: ModFileInfo) => void;
   onInstall: (file: ModFileInfo) => void;
+  onQueueInstall?: (file: ModFileInfo) => void;
+  queueing?: boolean;
   sendToDeck?: boolean;
   sendingToDeck?: boolean;
   onSendToDeck?: (file: ModFileInfo) => void;
@@ -106,6 +108,8 @@ function ModDetailDeckLayout(props: ModDetailViewProps) {
     onDownload,
     onBrowserDownload,
     onInstall,
+    onQueueInstall,
+    queueing,
     sendToDeck,
     sendingToDeck,
     onSendToDeck,
@@ -285,6 +289,8 @@ function ModDetailDeckLayout(props: ModDetailViewProps) {
         sendingToDeck={sendingToDeck}
         onDownload={onDownload}
         onInstall={onInstall}
+        onQueueInstall={onQueueInstall}
+        queueing={queueing}
         onBrowserDownload={onBrowserDownload}
         onSendToDeck={onSendToDeck}
       />
@@ -317,6 +323,8 @@ function ModDetailDesktopLayout(props: ModDetailViewProps) {
     onDownload,
     onBrowserDownload,
     onInstall,
+    onQueueInstall,
+    queueing,
     sendToDeck,
     sendingToDeck,
     onSendToDeck,

@@ -6,6 +6,7 @@ import { DownloadQueuePanel } from "@/components/download/DownloadQueuePanel";
 import { InstallPromptDialog } from "@/components/install/InstallPromptDialog";
 import { InstallQueuePanel } from "@/components/install/InstallQueuePanel";
 import { CollectionInstallProgressPanel } from "@/components/collections/CollectionInstallProgressPanel";
+import { EssentialsInstallProgressPanel } from "@/components/essentials/EssentialsInstallProgressPanel";
 import { ModInstallDialog } from "@/components/mod/ModInstallDialog";
 import { InstallSuccessDialog } from "@/components/install/InstallSuccessDialog";
 import {
@@ -25,6 +26,7 @@ import { resolveContextFromPath } from "@/lib/gamepad/contexts";
 import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
 import { useLaunchStore } from "@/stores/launchStore";
 import { useCollectionInstallStore } from "@/stores/collectionInstallStore";
+import { useEssentialsInstallStore } from "@/stores/essentialsInstallStore";
 import { api } from "@/lib/commands";
 import { ensureGamepadPolyfill } from "@/lib/gamepadPolyfill";
 import { applyPerfAttribute } from "@/lib/platform";
@@ -96,6 +98,9 @@ function RootLayout() {
   const syncCollectionDownload = useCollectionInstallStore((s) => s.syncFromDownload);
   const syncCollectionInstall = useCollectionInstallStore((s) => s.syncFromInstallJob);
   const collectionActive = useCollectionInstallStore((s) => s.active);
+  const syncEssentialsDownload = useEssentialsInstallStore((s) => s.syncFromDownload);
+  const syncEssentialsInstall = useEssentialsInstallStore((s) => s.syncFromInstallJob);
+  const essentialsActive = useEssentialsInstallStore((s) => s.active);
   const downloadErrors = useDownloadsStore((s) => s.errors);
 
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
@@ -165,16 +170,19 @@ function RootLayout() {
         pending?.source === "bodyslide" ||
         pending?.source === "cbbe" ||
         pending?.source === "nxm" ||
+        pending?.source === "essentials" ||
+        pending?.source === "queued" ||
         downloadSettings.auto_install_after_download;
 
       if (autoInstall) {
         const source = pending?.source ?? "manual";
         const installPreset =
-          source === "bodyslide"
+          pending?.installPreset ??
+          (source === "bodyslide"
             ? { strategy: "merge_loose_to_data", autoConfirm: true }
             : source === "cbbe"
               ? { strategy: "auto", fomodPreset: "cbbe_deck" as const, autoConfirm: true }
-              : undefined;
+              : undefined);
         await enqueueFromDownload(download, source, profiles, {
           replaceModId: pending?.replaceModId,
           installPreset,
@@ -266,11 +274,14 @@ function RootLayout() {
       pending?.source === "bodyslide" ||
       pending?.source === "cbbe" ||
       pending?.source === "nxm" ||
+      pending?.source === "essentials" ||
+      pending?.source === "queued" ||
       downloadSettings.auto_install_after_download;
 
     if (autoInstall) {
       void enqueueFromDownload(download, pending?.source ?? "manual", profiles, {
         replaceModId: pending?.replaceModId,
+        installPreset: pending?.installPreset,
       });
     } else {
       showInstallPrompt(download);
@@ -394,6 +405,20 @@ function RootLayout() {
     }
   }, [installJobs, collectionActive, syncCollectionInstall]);
 
+  useEffect(() => {
+    if (!essentialsActive) return;
+    for (const download of Object.values(active)) {
+      syncEssentialsDownload(download, downloadErrors[download.id]);
+    }
+  }, [active, essentialsActive, downloadErrors, syncEssentialsDownload]);
+
+  useEffect(() => {
+    if (!essentialsActive) return;
+    for (const job of installJobs) {
+      syncEssentialsInstall(job);
+    }
+  }, [installJobs, essentialsActive, syncEssentialsInstall]);
+
   const promptProfile = installPrompt
     ? resolveProfile(profiles, installPrompt)
     : undefined;
@@ -427,6 +452,7 @@ function RootLayout() {
         {!isOnboarding && <DownloadQueuePanel />}
         {!isOnboarding && <InstallQueuePanel />}
         {!isOnboarding && <CollectionInstallProgressPanel />}
+        {!isOnboarding && <EssentialsInstallProgressPanel />}
         {!isOnboarding && <ControllerHintBar />}
         <CommandPalette />
 

@@ -1,0 +1,4 @@
+/* Preview-only: pull in the companion's real styles + scan ../../src so Tailwind
+   v4 generates the utility classes used in the components. */
+@import "../../src/tw.css";
+@source "../../src/**/*.{ts,tsx,html}";

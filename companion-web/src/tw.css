@@ -1,47 +1,58 @@
 @import "tailwindcss";
 
+/* Modern dark + orange identity to match the main NexusDeck app (was a gold
+   "Creation Club" theme). Everything keys off these tokens; the `--cc-gold`
+   name is kept (now orange) so component classes didn't need renaming. */
 :root {
   color-scheme: dark;
-  --cc-bg: #0a0a0c;
-  --cc-bg-elevated: #121216;
-  --cc-bg-panel: #16161c;
-  --cc-border: rgba(212, 175, 85, 0.22);
+  --cc-bg: #0a0b10;
+  --cc-bg-elevated: #15161f;
+  --cc-bg-panel: #1d1f2b;
+  --cc-border: rgba(255, 107, 43, 0.20);
   --cc-border-subtle: rgba(255, 255, 255, 0.08);
-  --cc-gold: #d4af55;
-  --cc-gold-dim: #9a7b3a;
-  --cc-gold-glow: rgba(212, 175, 85, 0.35);
-  --cc-text: #f5f3ee;
-  --cc-muted: #9b9688;
-  --cc-success: #6ecf8a;
-  --cc-danger: #e07070;
+  --cc-gold: #ff6b2b;
+  --cc-gold-dim: #ff8552;
+  --cc-gold-glow: rgba(255, 107, 43, 0.40);
+  --cc-cyan: #35e3ff;
+  --cc-text: #f2f3f8;
+  --cc-muted: #9499b0;
+  --cc-success: #4ade80;
+  --cc-danger: #f87171;
+  --cc-grad: linear-gradient(135deg, #ff7c3f 0%, #ff5a1f 100%);
 }
 
 body {
   margin: 0;
   min-height: 100dvh;
   background:
-    radial-gradient(ellipse 90% 50% at 50% -10%, rgba(212, 175, 85, 0.08), transparent 60%),
+    radial-gradient(ellipse 80% 55% at 8% -8%, rgba(255, 107, 43, 0.12), transparent 50%),
+    radial-gradient(ellipse 70% 55% at 100% 0%, rgba(53, 227, 255, 0.09), transparent 48%),
+    radial-gradient(ellipse 90% 70% at 50% 115%, rgba(167, 139, 250, 0.08), transparent 55%),
     var(--cc-bg);
   color: var(--cc-text);
-  font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  font-family: "Segoe UI", "Inter", system-ui, -apple-system, Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 @layer components {
   .shell {
-    @apply mx-auto flex min-h-dvh max-w-lg flex-col gap-5 px-0 pb-14 pt-0;
+    @apply mx-auto flex min-h-dvh max-w-lg flex-col gap-5 px-0 pt-0;
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
   }
 
   .cc-header {
-    @apply border-b border-[var(--cc-border-subtle)] bg-[var(--cc-bg-elevated)] px-4 py-4;
+    @apply border-b border-[var(--cc-border-subtle)] px-4 py-4;
+    background:
+      radial-gradient(ellipse 70% 100% at 0% 0%, rgba(255, 107, 43, 0.10), transparent 60%),
+      var(--cc-bg-elevated);
   }
 
   .cc-brand {
-    @apply text-[10px] font-bold uppercase tracking-[0.35em] text-[var(--cc-gold)];
+    @apply text-[10px] font-bold uppercase tracking-[0.3em] text-[var(--cc-gold)];
   }
 
   .cc-title {
-    @apply mt-1 text-lg font-semibold tracking-wide text-[var(--cc-text)];
+    @apply mt-1 text-2xl font-bold tracking-tight text-[var(--cc-text)];
   }
 
   .cc-sub {
@@ -53,19 +64,25 @@ body {
   }
 
   .cc-section-label {
-    @apply mb-3 border-b border-[var(--cc-border)] pb-2 text-[11px] font-bold uppercase tracking-[0.28em] text-[var(--cc-gold)];
+    @apply mb-3 text-base font-bold tracking-tight text-[var(--cc-text)];
   }
 
   .cc-tab-bar {
-    @apply mx-4 flex gap-1 rounded-lg border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] p-1;
+    @apply fixed inset-x-0 bottom-0 z-50 mx-auto flex max-w-lg gap-1 border-t border-[var(--cc-border-subtle)] bg-[var(--cc-bg-elevated)] px-3 pt-2;
+    padding-bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -8px 24px -12px rgba(0, 0, 0, 0.7);
   }
 
   .cc-tab {
-    @apply flex-1 rounded-md py-2.5 text-xs font-semibold uppercase tracking-wider text-[var(--cc-muted)];
+    @apply flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--cc-muted)] transition-colors disabled:opacity-40;
+  }
+
+  .cc-tab svg {
+    @apply h-5 w-5;
   }
 
   .cc-tab-active {
-    @apply bg-[var(--cc-gold)] text-[#1a1508];
+    @apply text-[var(--cc-gold)];
   }
 
   .cc-game-bar {
@@ -73,11 +90,12 @@ body {
   }
 
   .cc-chip {
-    @apply shrink-0 rounded-full border border-[var(--cc-border-subtle)] px-4 py-1.5 text-xs font-medium uppercase tracking-wide text-[var(--cc-muted)];
+    @apply shrink-0 rounded-full border border-[var(--cc-border-subtle)] px-4 py-2 text-xs font-semibold text-[var(--cc-muted)] transition-colors;
   }
 
   .cc-chip-active {
-    @apply border-[var(--cc-gold)] bg-[rgba(212,175,85,0.12)] text-[var(--cc-gold)];
+    @apply border-transparent text-white;
+    background-image: var(--cc-grad);
   }
 
   .cc-search {
@@ -85,7 +103,7 @@ body {
   }
 
   .cc-input {
-    @apply w-full rounded-md border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] px-4 py-3 text-sm text-[var(--cc-text)] outline-none placeholder:text-[var(--cc-muted)] focus:border-[var(--cc-gold)];
+    @apply w-full rounded-xl border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] px-4 py-3 text-sm text-[var(--cc-text)] outline-none transition-colors placeholder:text-[var(--cc-muted)] focus:border-[var(--cc-gold)];
   }
 
   .cc-input-code {
@@ -93,20 +111,25 @@ body {
   }
 
   .cc-btn {
-    @apply inline-flex items-center justify-center rounded-md bg-[var(--cc-gold)] px-5 py-3 text-xs font-bold uppercase tracking-[0.15em] text-[#1a1508] shadow-[0_0_20px_var(--cc-gold-glow)] disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-[0_6px_22px_-6px_var(--cc-gold-glow)] transition-transform active:scale-[0.98] disabled:opacity-50;
+    background-image: var(--cc-grad);
   }
 
   .cc-btn-secondary {
-    @apply inline-flex items-center justify-center rounded-md border border-[var(--cc-border)] bg-transparent px-5 py-3 text-xs font-bold uppercase tracking-[0.15em] text-[var(--cc-gold)];
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--cc-border)] bg-[var(--cc-bg-panel)] px-5 py-3 text-sm font-semibold text-[var(--cc-gold)] transition-colors active:scale-[0.98];
   }
 
   .cc-btn-ghost {
-    @apply text-xs font-semibold uppercase tracking-wider text-[var(--cc-gold)];
+    @apply text-sm font-semibold text-[var(--cc-gold)];
   }
 
-  /* Creation Club–style full-bleed tile */
+  /* Image-forward cover tile */
   .cc-tile {
-    @apply relative block w-full overflow-hidden rounded-lg border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] text-left;
+    @apply relative block w-full overflow-hidden rounded-2xl border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] text-left transition-colors;
+  }
+
+  .cc-tile:hover {
+    @apply border-[var(--cc-cyan)]/40;
   }
 
   .cc-tile-media {
@@ -126,8 +149,8 @@ body {
     background: linear-gradient(
       180deg,
       transparent 35%,
-      rgba(10, 10, 12, 0.55) 70%,
-      rgba(10, 10, 12, 0.95) 100%
+      rgba(10, 11, 16, 0.55) 70%,
+      rgba(10, 11, 16, 0.96) 100%
     );
   }
 
@@ -140,11 +163,11 @@ body {
   }
 
   .cc-tile-meta {
-    @apply mt-1 text-[11px] uppercase tracking-wider text-[var(--cc-gold-dim)];
+    @apply mt-1 text-[11px] font-medium text-[var(--cc-muted)];
   }
 
   .cc-tile-fallback {
-    @apply h-full w-full bg-gradient-to-br from-[#1e1c18] to-[#0a0a0c];
+    @apply h-full w-full bg-gradient-to-br from-[#1d1f2b] to-[#0a0b10];
   }
 
   /* Horizontal shelf (featured row) */
@@ -154,11 +177,81 @@ body {
   }
 
   .cc-shelf-tile {
-    @apply relative block w-[72vw] max-w-[280px] shrink-0 snap-start overflow-hidden rounded-lg border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] text-left;
+    @apply relative block w-[72vw] max-w-[280px] shrink-0 snap-start overflow-hidden rounded-2xl border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] text-left transition-colors;
   }
 
   .cc-shelf-tile .cc-tile-media {
     @apply aspect-[3/4];
+  }
+
+  .cc-shelf-track-hero .cc-shelf-tile-hero {
+    @apply w-[85vw] max-w-[320px];
+  }
+
+  .cc-shelf-tile-hero .cc-tile-media {
+    @apply aspect-[16/10];
+  }
+
+  .cc-library-list {
+    @apply flex flex-col gap-2 px-4 pb-4;
+  }
+
+  .cc-library-row {
+    @apply flex items-center gap-2 rounded-2xl border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] p-2.5;
+  }
+
+  .cc-library-main {
+    @apply min-w-0 flex-1 text-left;
+  }
+
+  .cc-library-name {
+    @apply block truncate text-sm font-semibold text-[var(--cc-text)];
+  }
+
+  .cc-library-meta {
+    @apply mt-0.5 block truncate text-[11px] text-[var(--cc-muted)];
+  }
+
+  .cc-library-uninstall {
+    @apply shrink-0 rounded-lg border border-[var(--cc-danger)]/50 px-2.5 py-2 text-[11px] font-semibold text-[var(--cc-danger)] disabled:opacity-50;
+  }
+
+  .cc-toggle {
+    @apply relative inline-flex h-7 w-11 shrink-0 cursor-pointer items-center;
+  }
+
+  .cc-toggle input {
+    @apply sr-only;
+  }
+
+  .cc-toggle-track {
+    @apply block h-6 w-11 rounded-full border border-[var(--cc-border-subtle)] bg-[var(--cc-bg)] transition-colors;
+  }
+
+  .cc-toggle-track::after {
+    content: "";
+    @apply absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-[var(--cc-muted)] transition-transform;
+  }
+
+  .cc-toggle input:checked + .cc-toggle-track {
+    @apply border-[var(--cc-gold)] bg-[rgba(255,107,43,0.25)];
+  }
+
+  .cc-toggle input:checked + .cc-toggle-track::after {
+    transform: translateX(1.25rem);
+    background: var(--cc-gold);
+  }
+
+  .cc-device-row {
+    @apply rounded-lg border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] px-4 py-3 text-left transition-colors;
+  }
+
+  .cc-device-row:hover {
+    @apply border-[var(--cc-gold)];
+  }
+
+  .cc-pwa-banner {
+    @apply rounded-lg border border-[var(--cc-border)] bg-[var(--cc-bg-panel)] px-3 py-2;
   }
 
   .cc-stack {
@@ -179,8 +272,8 @@ body {
     @apply absolute inset-0;
     background: linear-gradient(
       180deg,
-      rgba(10, 10, 12, 0.15) 0%,
-      rgba(10, 10, 12, 0.85) 75%,
+      rgba(10, 11, 16, 0.15) 0%,
+      rgba(10, 11, 16, 0.85) 75%,
       var(--cc-bg) 100%
     );
   }
@@ -190,43 +283,44 @@ body {
   }
 
   .cc-hero-title {
-    @apply text-2xl font-semibold leading-tight text-white;
+    @apply text-2xl font-bold leading-tight text-white;
   }
 
   .cc-hero-author {
-    @apply mt-2 text-xs uppercase tracking-[0.2em] text-[var(--cc-gold)];
+    @apply mt-2 text-xs font-semibold uppercase tracking-[0.15em] text-[var(--cc-gold)];
   }
 
   .cc-panel {
-    @apply rounded-lg border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] p-4;
+    @apply rounded-2xl border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] p-4;
   }
 
   .cc-file {
-    @apply flex cursor-pointer items-start gap-3 rounded-md border border-[var(--cc-border-subtle)] p-3 transition-colors;
+    @apply flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--cc-border-subtle)] p-3 transition-colors;
   }
 
   .cc-file-active {
-    @apply border-[var(--cc-gold)] bg-[rgba(212,175,85,0.08)];
+    @apply border-[var(--cc-gold)] bg-[rgba(255,107,43,0.10)];
   }
 
   .cc-banner-ok {
-    @apply mx-4 rounded-md border border-[var(--cc-success)]/30 bg-[var(--cc-success)]/10 px-4 py-3 text-sm text-[var(--cc-success)];
+    @apply mx-4 rounded-xl border border-[var(--cc-success)]/30 bg-[var(--cc-success)]/10 px-4 py-3 text-sm text-[var(--cc-success)];
   }
 
   .cc-banner-warn {
-    @apply mx-4 rounded-md border border-[var(--cc-gold)]/30 bg-[rgba(212,175,85,0.08)] px-4 py-3 text-sm;
+    @apply mx-4 rounded-xl border border-[var(--cc-gold)]/30 bg-[rgba(255,107,43,0.08)] px-4 py-3 text-sm;
   }
 
   .cc-banner-err {
-    @apply mx-4 rounded-md border border-[var(--cc-danger)]/30 bg-[var(--cc-danger)]/10 px-4 py-3 text-sm text-[var(--cc-danger)];
+    @apply mx-4 rounded-xl border border-[var(--cc-danger)]/30 bg-[var(--cc-danger)]/10 px-4 py-3 text-sm text-[var(--cc-danger)];
   }
 
   .cc-progress {
-    @apply h-1 overflow-hidden rounded-full bg-black/40;
+    @apply h-1.5 overflow-hidden rounded-full bg-black/40;
   }
 
   .cc-progress-fill {
-    @apply h-full bg-[var(--cc-gold)] transition-all duration-500;
+    @apply h-full transition-all duration-500;
+    background-image: var(--cc-grad);
   }
 
   .cc-browse-wrap {

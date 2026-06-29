@@ -1,0 +1,73 @@
+{
+  "id": "skyrim_essentials",
+  "domain": "skyrimspecialedition",
+  "display_name": "Skyrim SE One-Click Essentials",
+  "description": "Community-recommended setup: Proton fixes, SKSE, unofficial patch, and UI essentials.",
+  "setup_steps": [
+    { "id": "proton_deps", "label": "Proton dependencies" },
+    { "id": "bethesda_audio", "label": "Bethesda audio (XAudio2)" },
+    { "id": "script_extender", "label": "SKSE (version-matched)" },
+    { "id": "archive_invalidation", "label": "Archive invalidation" },
+    { "id": "plugins_sync", "label": "Sync plugins.txt" }
+  ],
+  "mods": [
+    {
+      "id": "address_library",
+      "name": "Address Library for SKSE Plugins",
+      "nexus_mod_id": 32444,
+      "priority": 20,
+      "required": true,
+      "optional": false,
+      "depends_on": [],
+      "description": "Prerequisite for many SKSE plugins.",
+      "install_preset": { "strategy": "auto", "auto_confirm": true }
+    },
+    {
+      "id": "ussep",
+      "name": "Unofficial Skyrim Special Edition Patch",
+      "nexus_mod_id": 164,
+      "priority": 30,
+      "required": true,
+      "optional": false,
+      "depends_on": [],
+      "description": "Community bugfix patch — install before most other mods.",
+      "install_preset": { "strategy": "auto", "auto_confirm": true }
+    },
+    {
+      "id": "skyui",
+      "name": "SkyUI",
+      "nexus_mod_id": 126,
+      "priority": 35,
+      "required": true,
+      "optional": false,
+      "depends_on": ["ussep"],
+      "description": "Essential UI overhaul for modded Skyrim.",
+      "install_preset": { "strategy": "auto", "auto_confirm": true }
+    },
+    {
+      "id": "bodyslide",
+      "name": "BodySlide & Outfit Studio",
+      "kind": "bodyslide",
+      "nexus_mod_id": 201,
+      "priority": 40,
+      "required": false,
+      "optional": true,
+      "depends_on": ["ussep"],
+      "description": "Build body and outfit presets.",
+      "install_preset": { "strategy": "merge_loose_to_data", "auto_confirm": true }
+    },
+    {
+      "id": "cbbe",
+      "name": "Caliente's Beautiful Bodies Enhancer (CBBE)",
+      "kind": "cbbe",
+      "nexus_mod_id": 198,
+      "priority": 50,
+      "required": false,
+      "optional": true,
+      "depends_on": ["bodyslide"],
+      "description": "Standard body replacer with a Deck-friendly FOMOD preset.",
+      "install_preset": { "strategy": "auto", "fomod_preset": "cbbe_deck", "auto_confirm": true }
+    }
+  ],
+  "post_batch": ["loot_sort", "bodyslide_paths", "plugins_sync"]
+}

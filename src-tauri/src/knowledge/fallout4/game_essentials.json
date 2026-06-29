@@ -1,0 +1,62 @@
+{
+  "id": "fallout4_essentials",
+  "domain": "fallout4",
+  "display_name": "Fallout 4 One-Click Essentials",
+  "description": "Community-recommended setup: Proton fixes, F4SE, unofficial patch, and optional body-mod stack.",
+  "setup_steps": [
+    { "id": "proton_deps", "label": "Proton dependencies" },
+    { "id": "bethesda_audio", "label": "Bethesda audio (XAudio2)" },
+    { "id": "script_extender", "label": "F4SE (version-matched)" },
+    { "id": "archive_invalidation", "label": "Archive invalidation" },
+    { "id": "plugins_sync", "label": "Sync plugins.txt" }
+  ],
+  "mods": [
+    {
+      "id": "address_library",
+      "name": "Address Library for F4SE Plugins",
+      "nexus_mod_id": 47327,
+      "priority": 20,
+      "required": true,
+      "optional": false,
+      "depends_on": [],
+      "description": "Prerequisite for many F4SE plugins.",
+      "install_preset": { "strategy": "auto", "auto_confirm": true }
+    },
+    {
+      "id": "ufo4p",
+      "name": "Unofficial Fallout 4 Patch",
+      "nexus_mod_id": 4598,
+      "priority": 30,
+      "required": true,
+      "optional": false,
+      "depends_on": [],
+      "description": "Community bugfix patch — install before most other mods.",
+      "install_preset": { "strategy": "auto", "auto_confirm": true }
+    },
+    {
+      "id": "bodyslide",
+      "name": "BodySlide & Outfit Studio",
+      "kind": "bodyslide",
+      "nexus_mod_id": 25,
+      "priority": 40,
+      "required": false,
+      "optional": true,
+      "depends_on": ["ufo4p"],
+      "description": "Build body and outfit presets for CBBE.",
+      "install_preset": { "strategy": "merge_loose_to_data", "auto_confirm": true }
+    },
+    {
+      "id": "cbbe",
+      "name": "Caliente's Beautiful Bodies Enhancer (CBBE)",
+      "kind": "cbbe",
+      "nexus_mod_id": 111,
+      "priority": 50,
+      "required": false,
+      "optional": true,
+      "depends_on": ["bodyslide"],
+      "description": "Standard body replacer with a Deck-friendly FOMOD preset.",
+      "install_preset": { "strategy": "auto", "fomod_preset": "cbbe_deck", "auto_confirm": true }
+    }
+  ],
+  "post_batch": ["loot_sort", "bodyslide_paths", "plugins_sync"]
+}

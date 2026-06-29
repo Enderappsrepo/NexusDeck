@@ -12,7 +12,12 @@ use crate::commands::deploy::{self, InstallOptions, InstallPrepareResult};
 use crate::db::{self, Profile};
 use crate::error::{NexusDeckError, Result};
 use crate::services::credentials;
+use crate::services::mod_uninstall;
+use crate::services::nexus_client::{ModSearchFilters, ModSummary};
 use crate::services::remote_sync::{receiver_context, RemoteNexusInstallMeta};
+
+/// Bump when companion HTTP API adds routes (browse/discovery, library, etc.).
+pub const COMPANION_API_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CompanionGame {
@@ -190,6 +195,247 @@ pub fn browse_latest(domain: &str, offset: u32) -> Result<String> {
         ctx.nexus.search_mods(domain, "", "updated", offset, 24),
     )?;
     Ok(serde_json::to_string(&mods).unwrap_or_else(|_| "[]".to_string()))
+}
+
+const DISCOVERY_FEED_COUNT: u32 = 12;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DiscoveryFeeds {
+    pub featured: Vec<ModSummary>,
+    pub top_endorsed: Vec<ModSummary>,
+    pub most_downloaded: Vec<ModSummary>,
+    pub trending: Vec<ModSummary>,
+    pub newly_added: Vec<ModSummary>,
+    pub recently_updated: Vec<ModSummary>,
+    pub hot_this_week: Vec<ModSummary>,
+}
+
+struct DiscoveryFeedSpec {
+    sort: &'static str,
+    updated_since_days: Option<u32>,
+}
+
+const DISCOVERY_FEEDS: [(&str, DiscoveryFeedSpec); 6] = [
+    (
+        "top_endorsed",
+        DiscoveryFeedSpec {
+            sort: "endorsements",
+            updated_since_days: None,
+        },
+    ),
+    (
+        "most_downloaded",
+        DiscoveryFeedSpec {
+            sort: "downloads",
+            updated_since_days: None,
+        },
+    ),
+    (
+        "trending",
+        DiscoveryFeedSpec {
+            sort: "trending",
+            updated_since_days: Some(30),
+        },
+    ),
+    (
+        "newly_added",
+        DiscoveryFeedSpec {
+            sort: "created",
+            updated_since_days: None,
+        },
+    ),
+    (
+        "recently_updated",
+        DiscoveryFeedSpec {
+            sort: "updated",
+            updated_since_days: None,
+        },
+    ),
+    (
+        "hot_this_week",
+        DiscoveryFeedSpec {
+            sort: "endorsements",
+            updated_since_days: Some(7),
+        },
+    ),
+];
+
+fn fetch_discovery_feed(
+    domain: &str,
+    spec: &DiscoveryFeedSpec,
+) -> Result<Vec<ModSummary>> {
+    require_nexus()?;
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let mut filters = ModSearchFilters::default();
+    filters.updated_since_days = spec.updated_since_days;
+    let result = async_runtime::block_on(ctx.nexus.search_mods_with_filters(
+        domain,
+        "",
+        spec.sort,
+        0,
+        DISCOVERY_FEED_COUNT,
+        &filters,
+    ))?;
+    Ok(result.mods)
+}
+
+pub fn browse_shelf(
+    domain: &str,
+    sort: &str,
+    offset: u32,
+    updated_since_days: Option<u32>,
+) -> Result<String> {
+    require_nexus()?;
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let mut filters = ModSearchFilters::default();
+    filters.updated_since_days = updated_since_days;
+    let result = async_runtime::block_on(ctx.nexus.search_mods_with_filters(
+        domain,
+        "",
+        sort,
+        offset,
+        24,
+        &filters,
+    ))?;
+    Ok(serde_json::to_string(&result.mods).unwrap_or_else(|_| "[]".to_string()))
+}
+
+pub fn browse_discovery(domain: &str) -> Result<String> {
+    let mut feeds = DiscoveryFeeds {
+        featured: Vec::new(),
+        top_endorsed: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[0].1).unwrap_or_default(),
+        most_downloaded: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[1].1).unwrap_or_default(),
+        trending: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[2].1).unwrap_or_default(),
+        newly_added: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[3].1).unwrap_or_default(),
+        recently_updated: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[4].1).unwrap_or_default(),
+        hot_this_week: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[5].1).unwrap_or_default(),
+    };
+    feeds.featured = feeds.top_endorsed.iter().take(6).cloned().collect();
+
+    let any = !feeds.top_endorsed.is_empty()
+        || !feeds.most_downloaded.is_empty()
+        || !feeds.trending.is_empty()
+        || !feeds.newly_added.is_empty()
+        || !feeds.recently_updated.is_empty()
+        || !feeds.hot_this_week.is_empty();
+
+    if !any {
+        require_nexus()?;
+    }
+
+    Ok(serde_json::to_string(&feeds).unwrap_or_else(|_| "{}".to_string()))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CompanionInstalledMod {
+    pub id: String,
+    pub nexus_mod_id: i64,
+    pub name: String,
+    pub version: Option<String>,
+    pub enabled: bool,
+    pub sort_order: i32,
+    pub installed_at: i64,
+}
+
+pub fn list_library_mods(domain: &str) -> Result<String> {
+    let profile = profile_for_domain(domain)?;
+    let mods: Vec<CompanionInstalledMod> = db::list_installed_mods(&profile.id)?
+        .into_iter()
+        .map(|m| CompanionInstalledMod {
+            id: m.id,
+            nexus_mod_id: m.nexus_mod_id,
+            name: m.name,
+            version: m.version,
+            enabled: m.enabled,
+            sort_order: m.sort_order,
+            installed_at: m.installed_at,
+        })
+        .collect();
+    Ok(serde_json::to_string(&mods).unwrap_or_else(|_| "[]".to_string()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ToggleModBody {
+    pub mod_id: String,
+    pub enabled: bool,
+}
+
+pub fn toggle_library_mod(body: ToggleModBody) -> Result<String> {
+    deploy::set_mod_enabled(body.mod_id, body.enabled)?;
+    Ok(serde_json::json!({ "ok": true }).to_string())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UninstallModBody {
+    pub mod_id: String,
+}
+
+pub fn uninstall_library_mod(body: UninstallModBody) -> Result<String> {
+    let result = mod_uninstall::uninstall_mod(&body.mod_id)?;
+    Ok(serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string()))
+}
+
+pub fn essentials_manifest(domain: &str) -> Result<String> {
+    let manifest = crate::services::game_essentials::get_game_essentials_manifest(domain)?;
+    Ok(serde_json::to_string(&manifest).unwrap_or_else(|_| "{}".to_string()))
+}
+
+pub fn essentials_status_for_domain(game_domain: &str) -> Result<String> {
+    let profile = db::get_profile_by_domain(game_domain)?.ok_or_else(|| {
+        NexusDeckError::NotFound(format!(
+            "No profile for \"{game_domain}\" on this device. Add the game in NexusDeck first."
+        ))
+    })?;
+    let status = crate::services::game_essentials::get_game_essentials_status(&profile.id)?;
+    Ok(serde_json::to_string(&status).unwrap_or_else(|_| "[]".to_string()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StartEssentialsBody {
+    pub game_domain: String,
+    #[serde(default)]
+    pub mod_ids: Vec<String>,
+    #[serde(default = "default_true")]
+    pub include_setup: bool,
+}
+
+pub fn start_essentials(body: StartEssentialsBody) -> Result<String> {
+    require_nexus()?;
+    let profile = profile_for_domain(&body.game_domain)?;
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+
+    if body.include_setup {
+        let app = ctx.app.clone();
+        let pid = profile.id.clone();
+        async_runtime::block_on(async move {
+            tokio::task::spawn_blocking(move || {
+                crate::services::essential_fixes::apply_essential_fixes(&app, &pid)
+            })
+            .await
+            .map_err(|e| NexusDeckError::Other(format!("Setup failed: {e}")))??;
+            Ok::<(), NexusDeckError>(())
+        })?;
+    }
+
+    let queued = async_runtime::block_on(crate::services::game_essentials::queue_game_essential_mods(
+        ctx.app.clone(),
+        ctx.nexus.clone(),
+        ctx.downloads.clone(),
+        &profile.id,
+        body.mod_ids,
+    ))?;
+
+    Ok(serde_json::to_string(&queued).unwrap_or_else(|_| "[]".to_string()))
+}
+
+fn default_true() -> bool {
+    true
 }
 
 pub fn mod_detail(domain: &str, mod_id: u64) -> Result<String> {

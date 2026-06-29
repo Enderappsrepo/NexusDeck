@@ -1,11 +1,16 @@
 import type {
   CompanionGame,
+  CompanionInstalledMod,
+  DiscoveryFeeds,
   InstallSessionStatus,
   ModDetail,
   ModFileInfo,
   ModSummary,
   SelectedInstallOption,
+  UninstallResult,
 } from "./types";
+
+export const COMPANION_API_VERSION = 2;
 
 export interface PairedDeck {
   name: string;
@@ -19,8 +24,11 @@ export interface PingInfo {
   version?: string;
   paired?: boolean;
   nexus_configured?: boolean;
+  companion_api?: number;
   games?: CompanionGame[];
   companion_url?: string;
+  lan_hosts?: string[];
+  companion_urls?: string[];
 }
 
 export const PAIRED_KEY = "nexusdeck_paired_deck";
@@ -61,9 +69,13 @@ function fetchError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err));
 }
 
-async function fetchDeck(url: string, init?: RequestInit): Promise<Response> {
+async function fetchDeck(
+  url: string,
+  init?: RequestInit,
+  timeoutMs = FETCH_TIMEOUT_MS
+): Promise<Response> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (err) {
@@ -92,6 +104,20 @@ async function readJson<T>(resp: Response): Promise<T> {
 export async function pingDeck(host: string, port: number): Promise<PingInfo> {
   const resp = await fetchDeck(`http://${host}:${port}/ping`);
   return readJson<PingInfo>(resp);
+}
+
+/** Fast probe for LAN discovery scans (short timeout, no throw on failure). */
+export async function probeDeck(
+  host: string,
+  port: number,
+  timeoutMs = 700
+): Promise<PingInfo | null> {
+  try {
+    const resp = await fetchDeck(`http://${host}:${port}/ping`, undefined, timeoutMs);
+    return await readJson<PingInfo>(resp);
+  } catch {
+    return null;
+  }
 }
 
 export async function pairWithDeck(host: string, port: number, code: string): Promise<string> {
@@ -148,6 +174,63 @@ export async function fetchLatest(
     { headers: authHeaders(paired) }
   );
   return readJson<ModSummary[]>(resp);
+}
+
+export async function fetchDiscovery(
+  paired: PairedDeck,
+  gameDomain: string
+): Promise<DiscoveryFeeds> {
+  const params = new URLSearchParams({ domain: gameDomain });
+  const resp = await fetchDeck(
+    `http://${paired.host}:${paired.port}/browse/discovery?${params}`,
+    { headers: authHeaders(paired) }
+  );
+  return readJson<DiscoveryFeeds>(resp);
+}
+
+export async function fetchLibraryMods(
+  paired: PairedDeck,
+  gameDomain: string
+): Promise<CompanionInstalledMod[]> {
+  const params = new URLSearchParams({ domain: gameDomain });
+  const resp = await fetchDeck(
+    `http://${paired.host}:${paired.port}/library/mods?${params}`,
+    { headers: authHeaders(paired) }
+  );
+  return readJson<CompanionInstalledMod[]>(resp);
+}
+
+export async function toggleLibraryMod(
+  paired: PairedDeck,
+  modId: string,
+  enabled: boolean
+): Promise<void> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/library/mod/toggle`, {
+    method: "POST",
+    headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+    body: JSON.stringify({ mod_id: modId, enabled }),
+  });
+  await readJson<{ ok: boolean }>(resp);
+}
+
+export async function uninstallLibraryMod(
+  paired: PairedDeck,
+  modId: string
+): Promise<UninstallResult> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/library/mod/uninstall`, {
+    method: "POST",
+    headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+    body: JSON.stringify({ mod_id: modId }),
+  });
+  return readJson<UninstallResult>(resp);
+}
+
+export function isApiNotFoundError(err: unknown): boolean {
+  return err instanceof Error && err.message === "Not found";
+}
+
+export function isGitHubPagesHost(): boolean {
+  return typeof location !== "undefined" && location.hostname.endsWith("github.io");
 }
 
 export async function fetchModDetail(
@@ -229,4 +312,44 @@ export async function confirmInstallSession(
     }
   );
   return readJson<InstallSessionStatus>(resp);
+}
+
+export async function fetchEssentialsManifest(
+  paired: PairedDeck,
+  domain: string
+): Promise<import("./types").GameEssentialsManifest> {
+  const params = new URLSearchParams({ domain });
+  const resp = await fetchDeck(
+    `http://${paired.host}:${paired.port}/essentials/manifest?${params}`,
+    { headers: authHeaders(paired) }
+  );
+  return readJson(resp);
+}
+
+export async function fetchEssentialsStatus(
+  paired: PairedDeck,
+  domain: string
+): Promise<import("./types").GameEssentialModStatus[]> {
+  const params = new URLSearchParams({ domain });
+  const resp = await fetchDeck(
+    `http://${paired.host}:${paired.port}/essentials/status?${params}`,
+    { headers: authHeaders(paired) }
+  );
+  return readJson(resp);
+}
+
+export async function startEssentialsOnDeck(
+  paired: PairedDeck,
+  payload: {
+    game_domain: string;
+    mod_ids?: string[];
+    include_setup?: boolean;
+  }
+): Promise<import("./types").QueuedEssentialMod[]> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/essentials/start`, {
+    method: "POST",
+    headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson(resp);
 }

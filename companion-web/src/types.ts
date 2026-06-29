@@ -106,3 +106,68 @@ export interface InstallSessionStatus {
   prepare?: CompanionPreparePayload;
   error?: string;
 }
+
+export interface GameEssentialsManifest {
+  id: string;
+  domain: string;
+  display_name: string;
+  description: string;
+  setup_steps: { id: string; label: string }[];
+  mods: {
+    id: string;
+    name: string;
+    nexus_mod_id: number;
+    required: boolean;
+    optional: boolean;
+    description?: string | null;
+  }[];
+}
+
+export interface GameEssentialModStatus {
+  id: string;
+  name: string;
+  installed: boolean;
+  downloading: boolean;
+  optional: boolean;
+}
+
+export interface QueuedEssentialMod {
+  essential_id: string;
+  download: { id: string; mod_name: string; status: string };
+}
+
+export interface DiscoveryFeeds {
+  featured: ModSummary[];
+  top_endorsed: ModSummary[];
+  most_downloaded: ModSummary[];
+  trending: ModSummary[];
+  newly_added: ModSummary[];
+  recently_updated: ModSummary[];
+  hot_this_week: ModSummary[];
+}
+
+export interface CompanionInstalledMod {
+  id: string;
+  nexus_mod_id: number;
+  name: string;
+  version?: string | null;
+  enabled: boolean;
+  sort_order: number;
+  installed_at: number;
+}
+
+export interface UninstallResult {
+  removed_files: number;
+  restored_shared_files: number;
+  warnings: string[];
+}
+
+export const EMPTY_DISCOVERY: DiscoveryFeeds = {
+  featured: [],
+  top_endorsed: [],
+  most_downloaded: [],
+  trending: [],
+  newly_added: [],
+  recently_updated: [],
+  hot_this_week: [],
+};

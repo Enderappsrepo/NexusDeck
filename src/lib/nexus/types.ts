@@ -790,6 +790,60 @@ export interface EssentialFixesResult {
   steps: EssentialFixStepResult[];
 }
 
+export interface GameEssentialSetupStep {
+  id: string;
+  label: string;
+}
+
+export interface GameEssentialInstallPreset {
+  strategy: string;
+  auto_confirm?: boolean;
+  fomod_preset?: string;
+}
+
+export interface GameEssentialMod {
+  id: string;
+  name: string;
+  kind?: string | null;
+  nexus_mod_id: number;
+  nexus_file_id?: number | null;
+  priority: number;
+  required: boolean;
+  optional: boolean;
+  depends_on: string[];
+  description?: string | null;
+  install_preset?: GameEssentialInstallPreset | null;
+}
+
+export interface GameEssentialsManifest {
+  id: string;
+  domain: string;
+  display_name: string;
+  description: string;
+  setup_steps: GameEssentialSetupStep[];
+  mods: GameEssentialMod[];
+  post_batch?: string[];
+}
+
+export interface GameEssentialModStatus {
+  id: string;
+  name: string;
+  nexus_mod_id: number;
+  required: boolean;
+  optional: boolean;
+  installed: boolean;
+  downloading: boolean;
+  description?: string | null;
+  depends_on: string[];
+  install_preset?: GameEssentialInstallPreset | null;
+  kind?: string | null;
+}
+
+export interface QueuedEssentialMod {
+  essential_id: string;
+  download: DownloadProgress;
+}
+
 export interface BodySlideInfo {
   installed: boolean;
   exe_path?: string | null;
@@ -1006,6 +1060,7 @@ export interface RemoteReceiverStatus {
   pair_code: string;
   http_port: number;
   paired: boolean;
+  companion_urls?: string[];
 }
 
 export interface DiscoveredDeck {

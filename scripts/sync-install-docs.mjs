@@ -52,43 +52,7 @@ rmSync(docsGui, { recursive: true, force: true });
 cpSync(join(root, "install", "gui"), docsGui, { recursive: true });
 writeFileSync(join(docsDir, "u.sh"), patchScript(join(root, "install", "uninstall-steamdeck.sh")), "utf8");
 
-const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NexusDeck — Install &amp; Uninstall</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
-    code, pre { background: #1a1a2e; color: #e8e8f0; border-radius: 8px; }
-    pre { padding: 1rem; overflow-x: auto; }
-    h1 { font-size: 1.75rem; }
-    h2 { font-size: 1.25rem; margin-top: 2rem; }
-    p.muted { color: #666; font-size: 0.95rem; }
-  </style>
-</head>
-<body>
-  <h1>NexusDeck on Steam Deck</h1>
-
-  <h2>Install</h2>
-  <p><strong>Recommended:</strong> graphical installer in Desktop Mode (Konsole):</p>
-  <pre><code>curl -fsSL ${installPagesUrl} -o install.sh &amp;&amp; bash install.sh --gui</code></pre>
-  <p class="muted">Or one-line terminal install:</p>
-  <pre><code>curl -fsSL ${installPagesUrl} | bash</code></pre>
-  <p class="muted">Direct release link (alternative):</p>
-  <pre><code>curl -fsSL ${installReleaseUrl} | bash</code></pre>
-
-  <h2>Uninstall</h2>
-  <pre><code>curl -fsSL ${uninstallPagesUrl} | bash</code></pre>
-  <p class="muted">Direct release link (alternative):</p>
-  <pre><code>curl -fsSL ${uninstallReleaseUrl} | bash</code></pre>
-
-  <p class="muted">Enable GitHub Pages (Settings → Pages → Deploy from branch <strong>main</strong>, folder <strong>/docs</strong>) if these URLs 404.</p>
-</body>
-</html>
-`;
-
-writeFileSync(join(docsDir, "index.html"), html, "utf8");
+// docs/index.html and docs/landing.css are maintained as the public landing page — not overwritten here.
 
 console.log("Synced docs/i.sh and docs/u.sh");
 console.log(`Install (short):   ${installPagesUrl}`);
