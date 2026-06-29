@@ -299,6 +299,32 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_launch_settings: () => ({}),
   get_playtime_stats: () => ({}),
 
+  // Remote PC↔Deck (Phase 1 connection)
+  get_remote_receiver_status: () => ({ running: false, pair_code: "", http_port: 8731, paired: false }),
+  start_remote_receiver: () => ({ running: true, pair_code: "482917", http_port: 8731, paired: false }),
+  stop_remote_receiver: () => ({ running: false, pair_code: "", http_port: 8731, paired: false }),
+  discover_decks: () => [
+    { name: "Steam Deck", host: "192.168.1.42", http_port: 8731, version: "1.1.29" },
+  ],
+  pair_with_deck: () => "preview-token-abc123",
+  ping_deck: () => ({ name: "Steam Deck", host: "192.168.1.42", http_port: 8731, version: "1.1.29" }),
+  send_mod_to_deck: () => ({
+    ok: true,
+    message: "Preview: mod sent to Deck.",
+    mod_id: "mod-remote-1",
+    files_sent: 1,
+  }),
+  send_presets_to_deck: () => ({
+    ok: true,
+    message: "Preview: 12 BodySlide preset files sent to Deck.",
+    files_sent: 12,
+  }),
+  send_load_order_to_deck: () => ({
+    ok: true,
+    message: "Preview: load order synced to Deck.",
+    files_sent: 8,
+  }),
+
   // Tauri event plugin (no-op)
   "plugin:event|listen": () => 1,
   "plugin:event|unlisten": () => undefined,

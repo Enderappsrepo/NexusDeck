@@ -257,6 +257,7 @@ pub fn launch_direct_executable(exe_path: &Path, game_root: &Path, args: &[Strin
 
     let mut cmd = Command::new(exe_path);
     cmd.current_dir(game_root).args(args);
+    crate::services::proc::hide_console(&mut cmd);
     let child = cmd
         .spawn()
         .map_err(|e| NexusDeckError::LaunchFailed(e.to_string()))?;
@@ -264,6 +265,7 @@ pub fn launch_direct_executable(exe_path: &Path, game_root: &Path, args: &[Strin
 }
 
 fn run_command(mut cmd: Command) -> Result<()> {
+    crate::services::proc::hide_console(&mut cmd);
     cmd.spawn()
         .map_err(|e| NexusDeckError::LaunchFailed(e.to_string()))?;
     Ok(())
@@ -272,9 +274,10 @@ fn run_command(mut cmd: Command) -> Result<()> {
 fn open_uri(uri: &str) -> Result<()> {
     #[cfg(target_os = "windows")]
     {
-        Command::new("cmd")
-            .args(["/C", "start", "", uri])
-            .spawn()
+        let mut c = Command::new("cmd");
+        c.args(["/C", "start", "", uri]);
+        crate::services::proc::hide_console(&mut c);
+        c.spawn()
             .map_err(|e| NexusDeckError::LaunchFailed(e.to_string()))?;
     }
     #[cfg(target_os = "linux")]

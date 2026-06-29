@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ArrowDownAZ, Download, GitCompare, ListOrdered, Loader2, Package, Search, Trash2, Wrench } from "lucide-react";
+import { ArrowDownAZ, Download, GitCompare, ListOrdered, Loader2, MonitorSmartphone, Package, Search, Trash2, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -27,6 +27,8 @@ import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
 import { useProfile } from "@/stores";
 import { api } from "@/lib/commands";
 import { triggerHaptic } from "@/lib/haptics";
+import { getPairedDeck, sendLoadOrderToPairedDeck } from "@/lib/remote/sendToDeck";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { EXPORT_FORMATS } from "@/lib/nexus/export-formats";
 import type { DeployMode, InstalledMod, ModSafetyReport, ModUpdateInfo, ModUpdateProgress } from "@/lib/nexus/types";
 
@@ -75,6 +77,11 @@ function LibraryPage() {
     action: "disable" | "uninstall";
     report: ModSafetyReport;
   } | null>(null);
+  const [sendingToDeck, setSendingToDeck] = useState(false);
+  const [sendToDeckNote, setSendToDeckNote] = useState<string | null>(null);
+
+  const deckDetected = useSettingsStore((s) => s.deckDetected);
+  const pairedDeck = !deckDetected ? getPairedDeck() : null;
 
   const refreshLibrary = useCallback(async () => {
     if (!profile) return;
@@ -373,6 +380,23 @@ function LibraryPage() {
     };
   }, [profile?.id]);
 
+  const sendLoadOrderToDeck = async () => {
+    if (!profile || !pairedDeck) return;
+    setSendingToDeck(true);
+    setError(null);
+    setSendToDeckNote(null);
+    try {
+      const message = await sendLoadOrderToPairedDeck(pairedDeck, profile.id);
+      setSendToDeckNote(message);
+      void triggerHaptic("success");
+    } catch (e) {
+      setError(e);
+      void triggerHaptic("error");
+    } finally {
+      setSendingToDeck(false);
+    }
+  };
+
   const repairDeployment = async () => {
     if (!profile) return;
     setRepairing(true);
@@ -498,6 +522,9 @@ function LibraryPage() {
         {rescanNote && (
           <p className="mt-1 text-sm text-[var(--color-success)]">{rescanNote}</p>
         )}
+        {sendToDeckNote && (
+          <p className="mt-1 text-sm text-[var(--color-success)]">{sendToDeckNote}</p>
+        )}
         {deployMode && (
           <Badge
             variant={deployMode.hardlink ? "success" : "warning"}
@@ -523,6 +550,18 @@ function LibraryPage() {
             Load order
           </Button>
         </Link>
+        {pairedDeck && (
+          <Button
+            variant="secondary"
+            onClick={() => void sendLoadOrderToDeck()}
+            loading={sendingToDeck}
+            disabled={sendingToDeck || mods.length === 0}
+            data-focusable="true"
+          >
+            <MonitorSmartphone className="h-4 w-4" />
+            Send to Deck
+          </Button>
+        )}
         <Button
           variant={toolsOpen ? "default" : "secondary"}
           onClick={() => setToolsOpen((v) => !v)}

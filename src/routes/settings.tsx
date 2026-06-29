@@ -14,6 +14,7 @@ import { api } from "@/lib/commands";
 import { GAMEPAD_HINTS } from "@/hooks/useFocusNavigation";
 import { AddToSteamPanel } from "@/components/steam/AddToSteamPanel";
 import { DeckyHostPanel } from "@/components/decky/DeckyHostPanel";
+import { RemoteSyncPanel } from "@/components/settings/RemoteSyncPanel";
 import { ProtontricksGuidePanel } from "@/components/proton/ProtontricksGuidePanel";
 import { ResetModsDialog } from "@/components/mod/ResetModsDialog";
 import { ResetAppDialog } from "@/components/settings/ResetAppDialog";
@@ -589,6 +590,8 @@ function SettingsPage() {
       </Card>
 
       <AddToSteamPanel />
+
+      <RemoteSyncPanel />
 
       <DeckyHostPanel />
 

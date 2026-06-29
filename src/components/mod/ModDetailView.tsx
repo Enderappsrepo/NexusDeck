@@ -9,6 +9,7 @@ import {
   FolderOpen,
   Heart,
   ImageIcon,
+  MonitorSmartphone,
   Package,
   Star,
   User,
@@ -61,6 +62,9 @@ interface ModDetailViewProps {
   onDownload: (file: ModFileInfo) => void;
   onBrowserDownload: (file: ModFileInfo) => void;
   onInstall: (file: ModFileInfo) => void;
+  sendToDeck?: boolean;
+  sendingToDeck?: boolean;
+  onSendToDeck?: (file: ModFileInfo) => void;
   onEndorse: () => void;
   onTrack: () => void;
   onOpenNexus: () => void;
@@ -102,6 +106,9 @@ function ModDetailDeckLayout(props: ModDetailViewProps) {
     onDownload,
     onBrowserDownload,
     onInstall,
+    sendToDeck,
+    sendingToDeck,
+    onSendToDeck,
     onEndorse,
     onTrack,
     onOpenNexus,
@@ -274,9 +281,12 @@ function ModDetailDeckLayout(props: ModDetailViewProps) {
         primaryFile={primaryFile}
         downloading={downloading}
         isPremium={isPremium}
+        sendToDeck={sendToDeck}
+        sendingToDeck={sendingToDeck}
         onDownload={onDownload}
         onInstall={onInstall}
         onBrowserDownload={onBrowserDownload}
+        onSendToDeck={onSendToDeck}
       />
     </div>
   );
@@ -307,6 +317,9 @@ function ModDetailDesktopLayout(props: ModDetailViewProps) {
     onDownload,
     onBrowserDownload,
     onInstall,
+    sendToDeck,
+    sendingToDeck,
+    onSendToDeck,
     onEndorse,
     onTrack,
     onOpenNexus,
@@ -468,9 +481,12 @@ function ModDetailDesktopLayout(props: ModDetailViewProps) {
           downloading={downloading}
           endorsing={endorsing}
           tracking={tracking}
+          sendToDeck={sendToDeck}
+          sendingToDeck={sendingToDeck}
           onDownload={onDownload}
           onBrowserDownload={onBrowserDownload}
           onInstall={onInstall}
+          onSendToDeck={onSendToDeck}
           onEndorse={onEndorse}
           onTrack={onTrack}
           onOpenNexus={onOpenNexus}
@@ -812,6 +828,9 @@ function ModDetailSidebar({
   onDownload,
   onBrowserDownload,
   onInstall,
+  sendToDeck,
+  sendingToDeck,
+  onSendToDeck,
   onEndorse,
   onTrack,
   onOpenNexus,
@@ -827,9 +846,12 @@ function ModDetailSidebar({
   downloading: boolean;
   endorsing: boolean;
   tracking: boolean;
+  sendToDeck?: boolean;
+  sendingToDeck?: boolean;
   onDownload: (file: ModFileInfo) => void;
   onBrowserDownload: (file: ModFileInfo) => void;
   onInstall: (file: ModFileInfo) => void;
+  onSendToDeck?: (file: ModFileInfo) => void;
   onEndorse: () => void;
   onTrack: () => void;
   onOpenNexus: () => void;
@@ -884,6 +906,19 @@ function ModDetailSidebar({
                 <Package className="h-4 w-4" />
                 Install
               </Button>
+              {sendToDeck && onSendToDeck && (
+                <Button
+                  variant="outline"
+                  className="w-full min-h-[48px]"
+                  loading={sendingToDeck}
+                  disabled={sendingToDeck}
+                  onClick={() => onSendToDeck(primaryFile)}
+                  data-focusable="true"
+                >
+                  <MonitorSmartphone className="h-4 w-4" />
+                  Send to Deck
+                </Button>
+              )}
             </div>
           </div>
         </Card>

@@ -375,6 +375,15 @@ pub fn run() {
             claim_gamescope_focus,
             get_essential_fixes_manifest,
             apply_essential_fixes,
+            start_remote_receiver,
+            stop_remote_receiver,
+            get_remote_receiver_status,
+            discover_decks,
+            pair_with_deck,
+            ping_deck,
+            send_mod_to_deck,
+            send_presets_to_deck,
+            send_load_order_to_deck,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

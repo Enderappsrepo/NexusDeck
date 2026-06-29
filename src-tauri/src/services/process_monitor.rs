@@ -206,9 +206,10 @@ impl ProcessMonitor {
                     }
                     #[cfg(windows)]
                     {
-                        let _ = std::process::Command::new("taskkill")
-                            .args(["/PID", &pid.as_u32().to_string()])
-                            .spawn();
+                        let mut cmd = std::process::Command::new("taskkill");
+                        cmd.args(["/PID", &pid.as_u32().to_string()]);
+                        crate::services::proc::hide_console(&mut cmd);
+                        let _ = cmd.spawn();
                     }
                 } else {
                     let _ = process.kill();

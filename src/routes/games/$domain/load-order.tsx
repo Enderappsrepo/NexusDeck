@@ -6,6 +6,7 @@ import {
   ArrowUp,
   ChevronLeft,
   ListOrdered,
+  MonitorSmartphone,
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
@@ -18,6 +19,8 @@ import { LaunchButton } from "@/components/launch/LaunchButton";
 import { useProfile } from "@/stores";
 import { api } from "@/lib/commands";
 import { triggerHaptic } from "@/lib/haptics";
+import { getPairedDeck, sendLoadOrderToPairedDeck } from "@/lib/remote/sendToDeck";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { LoadOrderIssuesPanel } from "@/components/game/LoadOrderIssuesPanel";
 import type { LoadOrderState } from "@/lib/nexus/types";
 
@@ -45,7 +48,11 @@ function LoadOrderPage() {
   const [scanningDisk, setScanningDisk] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [sendingToDeck, setSendingToDeck] = useState(false);
   const [tab, setTab] = useState<"mods" | "plugins">("mods");
+
+  const deckDetected = useSettingsStore((s) => s.deckDetected);
+  const pairedDeck = !deckDetected ? getPairedDeck() : null;
 
   const refresh = useCallback(async () => {
     if (!profile) return;
@@ -151,6 +158,22 @@ function LoadOrderPage() {
     }
   };
 
+  const sendLoadOrderToDeck = async () => {
+    if (!profile || !pairedDeck) return;
+    setSendingToDeck(true);
+    setError(null);
+    try {
+      const message = await sendLoadOrderToPairedDeck(pairedDeck, profile.id);
+      setSyncNote(message);
+      void triggerHaptic("success");
+    } catch (e) {
+      setError(e);
+      void triggerHaptic("error");
+    } finally {
+      setSendingToDeck(false);
+    }
+  };
+
   const toggleMod = async (modId: string, enabled: boolean) => {
     setTogglingId(modId);
     setError(null);
@@ -245,6 +268,18 @@ function LoadOrderPage() {
               )}
             </div>
             <div className="flex flex-wrap gap-2">
+              {pairedDeck && (
+                <Button
+                  variant="outline"
+                  onClick={() => void sendLoadOrderToDeck()}
+                  loading={sendingToDeck}
+                  disabled={sendingToDeck || (state.mods.length ?? 0) === 0}
+                  data-focusable="true"
+                >
+                  <MonitorSmartphone className="h-4 w-4" />
+                  Send to Deck
+                </Button>
+              )}
               <Button
                 onClick={() => void syncPlugins()}
                 loading={syncing}

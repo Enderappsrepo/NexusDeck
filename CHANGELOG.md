@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.31] - 2026-06-29
+
+### Added
+- **PC→Deck remote install** — pair over Wi-Fi (UDP discovery + manual IP fallback), then push mods, BodySlide presets, and load order from the PC to a paired Deck.
+- **Send to Deck** actions on mod detail, library, load order, and BodySlide panels (PC side, after pairing in Settings).
+
+### Fixed
+- **Windows console flashing** — subprocess spawns (7-Zip, Steam launch, taskkill) use `CREATE_NO_WINDOW` so the PC app no longer opens command prompts constantly.
+
+### Changed
+- Mod browse coverflow/grid polish, mod detail Send-to-Deck bar, and browse position persistence refinements.
+
 ## [1.1.30] - 2026-06-28
 
 ### Added

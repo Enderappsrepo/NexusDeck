@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Shirt, Sparkles } from "lucide-react";
+import { MonitorSmartphone, Shirt, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/commands";
+import { getPairedDeck, sendPresetsToPairedDeck } from "@/lib/remote/sendToDeck";
+import { useSettingsStore } from "@/stores/settingsStore";
 import type { BodySlideInfo } from "@/lib/nexus/types";
 
 /**
@@ -12,8 +14,12 @@ import type { BodySlideInfo } from "@/lib/nexus/types";
 export function BodySlidePanel({ profileId }: { profileId: string }) {
   const [info, setInfo] = useState<BodySlideInfo | null>(null);
   const [launching, setLaunching] = useState(false);
+  const [sendingToDeck, setSendingToDeck] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const deckDetected = useSettingsStore((s) => s.deckDetected);
+  const pairedDeck = !deckDetected ? getPairedDeck() : null;
 
   useEffect(() => {
     let active = true;
@@ -41,6 +47,20 @@ export function BodySlidePanel({ profileId }: { profileId: string }) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLaunching(false);
+    }
+  };
+
+  const sendPresets = async () => {
+    if (!pairedDeck) return;
+    setSendingToDeck(true);
+    setError(null);
+    setMessage(null);
+    try {
+      setMessage(await sendPresetsToPairedDeck(pairedDeck, profileId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSendingToDeck(false);
     }
   };
 
@@ -74,14 +94,27 @@ export function BodySlidePanel({ profileId }: { profileId: string }) {
               <Badge variant="success">Detected</Badge>
             </div>
             <p className="text-sm text-[var(--color-muted)]">
-              Build body meshes from your presets — runs in this game's Proton prefix.
+              Build body meshes from your presets — runs in this game&apos;s Proton prefix.
             </p>
           </div>
         </div>
-        <Button onClick={launch} loading={launching} className="shrink-0">
-          <Sparkles className="h-5 w-5" />
-          Launch BodySlide
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {pairedDeck && (
+            <Button
+              variant="secondary"
+              onClick={() => void sendPresets()}
+              loading={sendingToDeck}
+              className="shrink-0"
+            >
+              <MonitorSmartphone className="h-5 w-5" />
+              Send presets to Deck
+            </Button>
+          )}
+          <Button onClick={() => void launch()} loading={launching} className="shrink-0">
+            <Sparkles className="h-5 w-5" />
+            Launch BodySlide
+          </Button>
+        </div>
       </div>
 
       {(message || error) && (

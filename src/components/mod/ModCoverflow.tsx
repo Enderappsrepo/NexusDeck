@@ -7,9 +7,10 @@ import {
   useState,
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Check, Download, Heart, ImageOff } from "lucide-react";
+import { Check, Download, Heart, ImageOff, Info } from "lucide-react";
 import { cn, formatNumber, formatRelativeDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { ModSummary } from "@/lib/nexus/types";
 
 interface ModCoverflowProps {
@@ -17,6 +18,9 @@ interface ModCoverflowProps {
   domain: string;
   installedIds: Set<number>;
   onNearEnd?: () => void;
+  initialIndex?: number;
+  onIndexChange?: (index: number) => void;
+  onInstall?: (mod: ModSummary) => void;
 }
 
 // Only covers within WINDOW of the active index are mounted, so the DOM stays
@@ -33,11 +37,29 @@ export function ModCoverflow({
   domain,
   installedIds,
   onNearEnd,
+  initialIndex = 0,
+  onIndexChange,
+  onInstall,
 }: ModCoverflowProps) {
   const navigate = useNavigate();
-  const [active, setActive] = useState(0);
+  const [active, setActive] = useState(() =>
+    Math.min(Math.max(0, initialIndex), Math.max(0, mods.length - 1))
+  );
   const rootRef = useRef<HTMLDivElement>(null);
   const centerRef = useRef<HTMLButtonElement>(null);
+
+  // Remember the position so returning from a mod's detail page lands here.
+  useEffect(() => {
+    onIndexChange?.(active);
+  }, [active, onIndexChange]);
+
+  const openDetail = (index: number) => {
+    onIndexChange?.(index);
+    navigate({
+      to: "/games/$domain/mods/$modId",
+      params: { domain, modId: String(mods[index].mod_id) },
+    });
+  };
 
   // A new result set (search/sort change) resets to the first cover; also keep
   // the index in range if the list shrank.
@@ -131,10 +153,7 @@ export function ModCoverflow({
                   return;
                 }
                 if (offset === 0) {
-                  navigate({
-                    to: "/games/$domain/mods/$modId",
-                    params: { domain, modId: String(mods[i].mod_id) },
-                  });
+                  openDetail(i);
                 } else {
                   setActive(i);
                 }
@@ -178,6 +197,31 @@ export function ModCoverflow({
         <p className="mt-1 text-xs font-medium text-[var(--color-muted)]/70">
           {(active + 1).toLocaleString()} of {mods.length.toLocaleString()}
         </p>
+
+        {/* Reachable by pressing down from the centre cover. */}
+        <div className="mx-auto mt-3 flex max-w-md items-center justify-center gap-2">
+          {onInstall && (
+            <Button
+              size="lg"
+              className="min-h-[52px] flex-1"
+              onClick={() => onInstall(current)}
+              data-focusable="true"
+            >
+              <Download className="h-5 w-5" />
+              Install
+            </Button>
+          )}
+          <Button
+            variant="secondary"
+            size="lg"
+            className="min-h-[52px] flex-1"
+            onClick={() => openDetail(active)}
+            data-focusable="true"
+          >
+            <Info className="h-5 w-5" />
+            Details
+          </Button>
+        </div>
       </div>
     </div>
   );

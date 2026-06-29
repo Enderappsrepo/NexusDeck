@@ -34,7 +34,7 @@ fn spawn_host(program: &str, args: &[&str], env: &[(&str, &str)]) -> Result<Outp
         for (key, value) in env {
             cmd.env(key, value);
         }
-        cmd.args(args).output()
+        crate::services::proc::hide_console(cmd.args(args)).output()
     }
     .map_err(|e| NexusDeckError::Other(format!("Host command failed: {e}")))?;
     Ok(output)

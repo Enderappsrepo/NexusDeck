@@ -17,7 +17,9 @@ import { ListRowSkeleton } from "@/components/ui/LoadingSkeleton";
 import { useGamepadTabs } from "@/hooks/useGamepadTabs";
 import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
 import { GP } from "@/lib/gamepad/buttons";
+import { getPairedDeck, resolveArchiveForSend, sendModFileToDeck } from "@/lib/remote/sendToDeck";
 import { useAuthStore, useDownloadsStore, useGamesStore } from "@/stores";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { api } from "@/lib/commands";
 import { formatModDescription } from "@/lib/bbcode";
 import type { InstalledMod, ModDetail, ModFileInfo } from "@/lib/nexus/types";
@@ -50,6 +52,11 @@ function ModDetailPage() {
   const [endorsing, setEndorsing] = useState(false);
   const [tracking, setTracking] = useState(false);
   const [installSuccessOpen, setInstallSuccessOpen] = useState(false);
+  const [sendingToDeck, setSendingToDeck] = useState(false);
+  const [sendToDeckNote, setSendToDeckNote] = useState<string | null>(null);
+
+  const deckDetected = useSettingsStore((s) => s.deckDetected);
+  const pairedDeck = !deckDetected ? getPairedDeck() : null;
 
   const isPremium = user?.is_premium ?? false;
 
@@ -157,6 +164,37 @@ function ModDetailPage() {
       params: { domain },
       search: { author, modId: undefined },
     });
+  };
+
+  const sendToDeck = async (file: ModFileInfo) => {
+    if (!profile || !detail || !pairedDeck) return;
+    setSendingToDeck(true);
+    setSendToDeckNote(null);
+    setError(null);
+    try {
+      const archivePath = await resolveArchiveForSend(
+        profile,
+        modId,
+        file.file_id,
+        modFileDownloadName(file)
+      );
+      if (!archivePath) {
+        throw new Error("Download this mod on your PC first, then send it to the Deck.");
+      }
+      const message = await sendModFileToDeck(
+        pairedDeck,
+        domain,
+        modId,
+        detail.name,
+        file,
+        archivePath
+      );
+      setSendToDeckNote(message);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setSendingToDeck(false);
+    }
   };
 
   const galleryLength = useMemo(() => {
@@ -289,12 +327,21 @@ function ModDetailPage() {
         onDownload={downloadFile}
         onBrowserDownload={setFreeDownloadFile}
         onInstall={setInstallFile}
+        sendToDeck={Boolean(pairedDeck)}
+        sendingToDeck={sendingToDeck}
+        onSendToDeck={(file) => void sendToDeck(file)}
         onEndorse={toggleEndorse}
         onTrack={toggleTrack}
         onOpenNexus={openOnNexus}
         onFilterTag={filterByTag}
         onFilterAuthor={filterByAuthor}
       />
+
+      {sendToDeckNote && (
+        <p className="mx-auto mt-4 max-w-6xl rounded-xl bg-[var(--color-success)]/10 px-4 py-3 text-sm text-[var(--color-success)]">
+          {sendToDeckNote}
+        </p>
+      )}
 
       {installFile && (
         <ModInstallDialog

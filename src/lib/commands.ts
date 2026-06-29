@@ -62,6 +62,10 @@ import type {
   SevenZipInfo,
   DeckyHostStatus,
   DeckyHostInstallResult,
+  RemoteReceiverStatus,
+  DiscoveredDeck,
+  RemoteTransferResult,
+  RemoteModInstallMeta,
   PreviewFileResult,
   PreviewNode,
   Profile,
@@ -137,6 +141,49 @@ export const api = {
   getDeckyHostStatus: () => invoke<DeckyHostStatus>("get_decky_host_status"),
 
   installDeckyHostPlugin: () => invoke<DeckyHostInstallResult>("install_decky_host_plugin"),
+
+  // Remote PC↔Deck install (Phase 1: connection + pairing)
+  startRemoteReceiver: (deviceName: string) =>
+    invoke<RemoteReceiverStatus>("start_remote_receiver", { deviceName }),
+  stopRemoteReceiver: () => invoke<RemoteReceiverStatus>("stop_remote_receiver"),
+  getRemoteReceiverStatus: () =>
+    invoke<RemoteReceiverStatus>("get_remote_receiver_status"),
+  discoverDecks: () => invoke<DiscoveredDeck[]>("discover_decks"),
+  pairWithDeck: (host: string, port: number, code: string) =>
+    invoke<string>("pair_with_deck", { host, port, code }),
+  pingDeck: (host: string, port: number) =>
+    invoke<DiscoveredDeck>("ping_deck", { host, port }),
+
+  sendModToDeck: (
+    host: string,
+    port: number,
+    token: string,
+    archivePath: string,
+    meta: RemoteModInstallMeta
+  ) =>
+    invoke<RemoteTransferResult>("send_mod_to_deck", {
+      host,
+      port,
+      token,
+      archivePath,
+      meta,
+    }),
+
+  sendPresetsToDeck: (host: string, port: number, token: string, profileId: string) =>
+    invoke<RemoteTransferResult>("send_presets_to_deck", {
+      host,
+      port,
+      token,
+      profileId,
+    }),
+
+  sendLoadOrderToDeck: (host: string, port: number, token: string, profileId: string) =>
+    invoke<RemoteTransferResult>("send_load_order_to_deck", {
+      host,
+      port,
+      token,
+      profileId,
+    }),
 
   searchMods: (
     gameDomain: string,

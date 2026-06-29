@@ -121,6 +121,7 @@ where
     };
 
     cmd.args(args);
+    crate::services::proc::hide_console(&mut cmd);
     Ok(cmd)
 }
 

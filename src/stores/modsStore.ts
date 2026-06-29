@@ -19,12 +19,28 @@ interface ModsState {
   categories: ModCategory[];
   categoriesLoading: boolean;
   hasMore: boolean;
+  // Remembered browse position (coverflow index / grid page derive from this) so
+  // returning from a mod's detail page lands back where you were.
+  browseIndex: number;
+  // Identifies the currently-loaded result set; lets search() skip a redundant
+  // refetch on back-navigation (which would otherwise reset the list + position).
+  lastKey: string | null;
   setQuery: (query: string) => void;
   setSort: (sort: string) => void;
   setFilters: (filters: ModSearchFilters) => void;
+  setBrowseIndex: (index: number) => void;
   loadCategories: (domain: string) => Promise<void>;
   search: (domain: string) => Promise<void>;
   loadMore: (domain: string) => Promise<void>;
+}
+
+function searchKey(
+  domain: string,
+  query: string,
+  sort: string,
+  filters: ModSearchFilters
+): string {
+  return `${domain}|${query}|${sort}|${JSON.stringify(filters)}`;
 }
 
 const MODS_PAGE_SIZE = 48;
@@ -41,10 +57,13 @@ export const useModsStore = create<ModsState>((set, get) => ({
   categories: [],
   categoriesLoading: false,
   hasMore: false,
+  browseIndex: 0,
+  lastKey: null,
 
   setQuery: (query) => set({ query }),
   setSort: (sort) => set({ sort }),
   setFilters: (filters) => set({ filters }),
+  setBrowseIndex: (browseIndex) => set({ browseIndex }),
 
   loadCategories: async (domain) => {
     set({ categoriesLoading: true });
@@ -58,9 +77,14 @@ export const useModsStore = create<ModsState>((set, get) => ({
   },
 
   search: async (domain) => {
-    set({ loading: true, error: null });
+    const { query, sort, filters, mods, lastKey } = get();
+    const key = searchKey(domain, query, sort, filters);
+    // Same query as what's already loaded (e.g. returning from a mod page) —
+    // keep the results and the remembered position instead of refetching.
+    if (key === lastKey && mods.length > 0) return;
+
+    set({ loading: true, error: null, browseIndex: 0 });
     try {
-      const { query, sort, filters } = get();
       const result = await api.searchModsFiltered(
         domain,
         query,
@@ -75,6 +99,7 @@ export const useModsStore = create<ModsState>((set, get) => ({
         loading: false,
         error: null,
         hasMore: result.mods.length >= MODS_PAGE_SIZE,
+        lastKey: key,
       });
     } catch (e) {
       set({

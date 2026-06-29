@@ -29,7 +29,7 @@ import { useModsStore, useGamesStore, useAuthStore, useDownloadsStore, useSettin
 import { api } from "@/lib/commands";
 import { DEFAULT_FILTERS } from "@/lib/nexus/filters";
 import { cn, gameGradient } from "@/lib/utils";
-import type { ModSearchFilters, SupportedGameInfo } from "@/lib/nexus/types";
+import type { ModSearchFilters, ModSummary, SupportedGameInfo } from "@/lib/nexus/types";
 import { getGameMeta, loadSupportedGames } from "@/lib/games";
 import {
   useGamepadContextAction,
@@ -133,9 +133,11 @@ function ModBrowserPage() {
     categoriesLoading,
     totalCount,
     hasMore,
+    browseIndex,
     setQuery,
     setSort,
     setFilters,
+    setBrowseIndex,
     loadCategories,
     search: runSearch,
     loadMore,
@@ -379,6 +381,37 @@ function ModBrowserPage() {
       params: { domain },
       search: buildSearchFromState(query, next),
     });
+  };
+
+  // Install the highlighted mod straight from the browse view (coverflow Install
+  // button / grid card Install button). Falls back to the detail page when a
+  // direct API download isn't available (e.g. free accounts).
+  const installMod = (mod: ModSummary) => {
+    if (!profile) return;
+    void (async () => {
+      try {
+        const result = await quickDownloadMod({
+          domain,
+          modId: mod.mod_id,
+          profile,
+          modName: mod.name,
+        });
+        if (!result.started || !result.progress) {
+          navigate({
+            to: "/games/$domain/mods/$modId",
+            params: { domain, modId: String(mod.mod_id) },
+          });
+          return;
+        }
+        setProgress(result.progress);
+        await enqueueFromDownload(result.progress, "manual", [profile], { front: true });
+      } catch {
+        navigate({
+          to: "/games/$domain/mods/$modId",
+          params: { domain, modId: String(mod.mod_id) },
+        });
+      }
+    })();
   };
 
   if (!profile) {
@@ -731,6 +764,9 @@ function ModBrowserPage() {
                 mods={mods}
                 domain={domain}
                 installedIds={installedIds}
+                initialIndex={browseIndex}
+                onIndexChange={setBrowseIndex}
+                onInstall={installMod}
                 onNearEnd={() => {
                   if (hasMore && !loadingMore) void loadMore(domain);
                 }}
@@ -741,6 +777,9 @@ function ModBrowserPage() {
               mods={mods}
               domain={domain}
               installedIds={installedIds}
+              initialIndex={browseIndex}
+              onIndexChange={setBrowseIndex}
+              onInstall={installMod}
               onNearEnd={() => {
                 if (hasMore && !loadingMore) void loadMore(domain);
               }}

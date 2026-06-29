@@ -1000,3 +1000,37 @@ export interface AppUpdateInfo {
   release_url: string;
   release_notes: string | null;
 }
+
+export interface RemoteReceiverStatus {
+  running: boolean;
+  pair_code: string;
+  http_port: number;
+  paired: boolean;
+}
+
+export interface DiscoveredDeck {
+  name: string;
+  host: string;
+  http_port: number;
+  version: string;
+}
+
+export interface RemoteTransferResult {
+  ok: boolean;
+  message: string;
+  mod_id?: string | null;
+  files_sent?: number;
+}
+
+export interface RemoteModInstallMeta {
+  game_domain: string;
+  mod_name: string;
+  nexus_mod_id: number;
+  nexus_file_id: number;
+  filename: string;
+  options?: InstallOptions;
+  category?: string | null;
+  tags?: string[] | null;
+  file_version?: string | null;
+  replace_mod_id?: string | null;
+}
