@@ -31,14 +31,17 @@ export const DISCOVERY_SHELVES: {
   key: keyof import("../types").DiscoveryFeeds;
   title: string;
   layout: "hero" | "shelf" | "stack";
+  previewCount?: number;
 }[] = [
-  { key: "featured", title: "Featured", layout: "hero" },
-  { key: "top_endorsed", title: "Most endorsed", layout: "shelf" },
-  { key: "most_downloaded", title: "Most downloaded", layout: "shelf" },
-  { key: "trending", title: "Trending now", layout: "shelf" },
-  { key: "newly_added", title: "Newly added", layout: "stack" },
-  { key: "recently_updated", title: "Recently updated", layout: "stack" },
-  { key: "hot_this_week", title: "Hot this week", layout: "stack" },
+  { key: "featured", title: "Featured", layout: "hero", previewCount: 6 },
+  { key: "top_endorsed", title: "Top rated", layout: "shelf", previewCount: 8 },
+  { key: "most_downloaded", title: "Top downloaded", layout: "shelf", previewCount: 8 },
+  { key: "trending", title: "Trending now", layout: "shelf", previewCount: 8 },
+  { key: "rising_stars", title: "Rising stars", layout: "stack", previewCount: 6 },
+  { key: "newly_added", title: "Newly added", layout: "stack", previewCount: 6 },
+  { key: "recently_updated", title: "Recently updated", layout: "stack", previewCount: 6 },
+  { key: "hot_this_week", title: "Hot this week", layout: "stack", previewCount: 6 },
+  { key: "community_favorites", title: "Community favorites", layout: "stack", previewCount: 6 },
 ];
 
 /** Params for GET /browse/shelf when drilling into a discovery shelf. */
@@ -50,9 +53,11 @@ export const SHELF_DRILL_DOWN: Record<
   top_endorsed: { sort: "endorsements" },
   most_downloaded: { sort: "downloads" },
   trending: { sort: "trending", updated_since_days: 30 },
+  rising_stars: { sort: "endorsements", updated_since_days: 14 },
   newly_added: { sort: "created" },
   recently_updated: { sort: "updated" },
   hot_this_week: { sort: "downloads", updated_since_days: 7 },
+  community_favorites: { sort: "downloads", updated_since_days: 30 },
 };
 
 export const OUTDATED_DEVICE_MSG =

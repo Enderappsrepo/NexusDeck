@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { installProgressPct as computeInstallProgressPct } from "./lib/installUi";
 import { BottomNav } from "./components/BottomNav";
 import { DownloadQueueBar, DownloadQueueSheet } from "./components/DownloadQueueBar";
@@ -164,6 +164,10 @@ export default function App() {
     (s) => s.items.filter((i) => i.status === "queued").length
   );
 
+  const installedModIds = useMemo(
+    () => new Set(libraryMods.map((m) => m.nexus_mod_id)),
+    [libraryMods]
+  );
   const onGitHubPages = isGitHubPagesHost();
   const deviceCompanionUrl = paired ? companionAppUrl(paired.host, paired.port) : null;
   const receiverSelf = getReceiverSelfHost();
@@ -350,6 +354,11 @@ export default function App() {
     if (!paired || !gameDomain) return;
     void loadBrowse(paired, gameDomain);
   }, [paired, gameDomain, loadBrowse]);
+
+  useEffect(() => {
+    if (!paired || !gameDomain) return;
+    void loadLibrary(paired, gameDomain);
+  }, [paired, gameDomain, loadLibrary]);
 
   useEffect(() => {
     if (!paired || !gameDomain || screen !== "library") return;
@@ -856,6 +865,7 @@ export default function App() {
           browseBusy={browseBusy}
           setBrowseBusy={setBrowseBusy}
           setBrowseError={setBrowseError}
+          installedModIds={installedModIds}
           onOpenMod={(m) => void openMod(m, "browse")}
           onOpenCollections={() => setScreen("collections")}
           refreshBrowse={refreshBrowse}
@@ -980,6 +990,7 @@ export default function App() {
 
       {paired && screen === "install" && session && (
         <InstallScreen
+          paired={paired}
           session={session}
           selections={selections}
           setSelections={setSelections}

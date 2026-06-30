@@ -16,6 +16,33 @@ import { DISCOVERY_SHELVES, SHELF_DRILL_DOWN } from "../lib/modUi";
 import type { CompanionGame, DiscoveryFeeds, ModSearchFilters, ModSummary } from "../types";
 
 const PAGE_SIZE = 20;
+const SHELF_PAGE_SIZE = 24;
+
+function ShelfHeader({
+  title,
+  shelfKey,
+  modCount,
+  previewCount,
+  onSeeAll,
+}: {
+  title: string;
+  shelfKey: string;
+  modCount: number;
+  previewCount: number;
+  onSeeAll: (key: string, title: string) => void;
+}) {
+  const canSeeAll = SHELF_DRILL_DOWN[shelfKey] && modCount > previewCount;
+  return (
+    <div className="flex items-center justify-between px-4">
+      <p className="cc-section-label !mb-0">{title}</p>
+      {canSeeAll && (
+        <button type="button" className="cc-btn-ghost text-xs" onClick={() => onSeeAll(shelfKey, title)}>
+          See all
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function BrowseScreen({
   paired,
@@ -39,6 +66,7 @@ export function BrowseScreen({
   browseBusy,
   setBrowseBusy,
   setBrowseError,
+  installedModIds,
   onOpenMod,
   onOpenCollections,
   refreshBrowse,
@@ -64,6 +92,7 @@ export function BrowseScreen({
   browseBusy: boolean;
   setBrowseBusy: (b: boolean) => void;
   setBrowseError: (e: string | null) => void;
+  installedModIds: ReadonlySet<number>;
   onOpenMod: (mod: ModSummary) => void;
   onOpenCollections: () => void;
   refreshBrowse: () => Promise<void>;
@@ -77,6 +106,9 @@ export function BrowseScreen({
   const [shelfView, setShelfView] = useState<{ key: string; title: string } | null>(null);
   const [shelfMods, setShelfMods] = useState<ModSummary[]>([]);
   const [shelfBusy, setShelfBusy] = useState(false);
+  const [shelfHasMore, setShelfHasMore] = useState(true);
+
+  const isInstalled = (modId: number) => installedModIds.has(modId);
 
   const loadShelf = useCallback(
     async (key: string, offset = 0) => {
@@ -90,6 +122,7 @@ export function BrowseScreen({
           updated_since_days: spec.updated_since_days,
         });
         setShelfMods((prev) => (offset === 0 ? mods : [...prev, ...mods]));
+        setShelfHasMore(mods.length >= SHELF_PAGE_SIZE);
         setBrowseError(null);
       } catch (err) {
         setBrowseError(err instanceof Error ? err.message : String(err));
@@ -103,6 +136,7 @@ export function BrowseScreen({
   const openShelf = (key: string, title: string) => {
     setShelfView({ key, title });
     setShelfMods([]);
+    setShelfHasMore(true);
     void loadShelf(key, 0);
   };
 
@@ -234,7 +268,7 @@ export function BrowseScreen({
           </p>
           <div className="cc-list">
             {searchResults.map((mod) => (
-              <CcListRow key={mod.mod_id} mod={mod} onOpen={onOpenMod} />
+              <CcListRow key={mod.mod_id} mod={mod} installed={isInstalled(mod.mod_id)} onOpen={onOpenMod} />
             ))}
           </div>
           {canLoadMore && (
@@ -260,10 +294,10 @@ export function BrowseScreen({
           </div>
           <div className="cc-list">
             {shelfMods.map((mod) => (
-              <CcListRow key={mod.mod_id} mod={mod} onOpen={onOpenMod} />
+              <CcListRow key={mod.mod_id} mod={mod} installed={isInstalled(mod.mod_id)} onOpen={onOpenMod} />
             ))}
           </div>
-          {shelfMods.length > 0 && (
+          {shelfHasMore && shelfMods.length > 0 && (
             <div className="px-4 pb-4 pt-2">
               <button
                 type="button"
@@ -280,13 +314,25 @@ export function BrowseScreen({
         DISCOVERY_SHELVES.map((shelf) => {
           const mods = discovery[shelf.key];
           if (!mods.length) return null;
+          const previewCount = shelf.previewCount ?? 6;
           if (shelf.layout === "hero") {
             return (
               <section key={shelf.key} className="cc-section">
-                <p className="cc-section-label px-4">{shelf.title}</p>
+                <ShelfHeader
+                  title={shelf.title}
+                  shelfKey={shelf.key}
+                  modCount={mods.length}
+                  previewCount={previewCount}
+                  onSeeAll={openShelf}
+                />
                 <div className="cc-hero-track">
-                  {mods.slice(0, 6).map((mod) => (
-                    <CcHeroCard key={mod.mod_id} mod={mod} onOpen={onOpenMod} />
+                  {mods.slice(0, previewCount).map((mod) => (
+                    <CcHeroCard
+                      key={mod.mod_id}
+                      mod={mod}
+                      installed={isInstalled(mod.mod_id)}
+                      onOpen={onOpenMod}
+                    />
                   ))}
                 </div>
               </section>
@@ -295,10 +341,22 @@ export function BrowseScreen({
           if (shelf.layout === "shelf") {
             return (
               <section key={shelf.key} className="cc-section">
-                <p className="cc-section-label px-4">{shelf.title}</p>
+                <ShelfHeader
+                  title={shelf.title}
+                  shelfKey={shelf.key}
+                  modCount={mods.length}
+                  previewCount={previewCount}
+                  onSeeAll={openShelf}
+                />
                 <div className="cc-shelf-track">
-                  {mods.map((mod) => (
-                    <CcTile key={mod.mod_id} mod={mod} className="cc-shelf-tile" onOpen={onOpenMod} />
+                  {mods.slice(0, previewCount).map((mod) => (
+                    <CcTile
+                      key={mod.mod_id}
+                      mod={mod}
+                      installed={isInstalled(mod.mod_id)}
+                      className="cc-shelf-tile"
+                      onOpen={onOpenMod}
+                    />
                   ))}
                 </div>
               </section>
@@ -306,17 +364,21 @@ export function BrowseScreen({
           }
           return (
             <section key={shelf.key} className="cc-section">
-              <div className="flex items-center justify-between px-4">
-                <p className="cc-section-label !mb-0">{shelf.title}</p>
-                {mods.length > 6 && SHELF_DRILL_DOWN[shelf.key] && (
-                  <button type="button" className="cc-btn-ghost text-xs" onClick={() => openShelf(shelf.key, shelf.title)}>
-                    See all
-                  </button>
-                )}
-              </div>
+              <ShelfHeader
+                title={shelf.title}
+                shelfKey={shelf.key}
+                modCount={mods.length}
+                previewCount={previewCount}
+                onSeeAll={openShelf}
+              />
               <div className="cc-list">
-                {mods.slice(0, 6).map((mod) => (
-                  <CcListRow key={mod.mod_id} mod={mod} onOpen={onOpenMod} />
+                {mods.slice(0, previewCount).map((mod) => (
+                  <CcListRow
+                    key={mod.mod_id}
+                    mod={mod}
+                    installed={isInstalled(mod.mod_id)}
+                    onOpen={onOpenMod}
+                  />
                 ))}
               </div>
             </section>

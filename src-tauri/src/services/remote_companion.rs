@@ -17,7 +17,7 @@ use crate::services::nexus_client::{ModSearchFilters, ModSearchResult, ModSummar
 use crate::services::remote_sync::{receiver_context, RemoteNexusInstallMeta};
 
 /// Bump when companion HTTP API adds routes (browse/discovery, library, etc.).
-pub const COMPANION_API_VERSION: u32 = 5;
+pub const COMPANION_API_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CompanionGame {
@@ -354,9 +354,11 @@ pub struct DiscoveryFeeds {
     pub top_endorsed: Vec<ModSummary>,
     pub most_downloaded: Vec<ModSummary>,
     pub trending: Vec<ModSummary>,
+    pub rising_stars: Vec<ModSummary>,
     pub newly_added: Vec<ModSummary>,
     pub recently_updated: Vec<ModSummary>,
     pub hot_this_week: Vec<ModSummary>,
+    pub community_favorites: Vec<ModSummary>,
 }
 
 struct DiscoveryFeedSpec {
@@ -364,7 +366,7 @@ struct DiscoveryFeedSpec {
     updated_since_days: Option<u32>,
 }
 
-const DISCOVERY_FEEDS: [(&str, DiscoveryFeedSpec); 6] = [
+const DISCOVERY_FEEDS: [(&str, DiscoveryFeedSpec); 8] = [
     (
         "top_endorsed",
         DiscoveryFeedSpec {
@@ -387,6 +389,13 @@ const DISCOVERY_FEEDS: [(&str, DiscoveryFeedSpec); 6] = [
         },
     ),
     (
+        "rising_stars",
+        DiscoveryFeedSpec {
+            sort: "endorsements",
+            updated_since_days: Some(14),
+        },
+    ),
+    (
         "newly_added",
         DiscoveryFeedSpec {
             sort: "created",
@@ -403,8 +412,15 @@ const DISCOVERY_FEEDS: [(&str, DiscoveryFeedSpec); 6] = [
     (
         "hot_this_week",
         DiscoveryFeedSpec {
-            sort: "endorsements",
+            sort: "downloads",
             updated_since_days: Some(7),
+        },
+    ),
+    (
+        "community_favorites",
+        DiscoveryFeedSpec {
+            sort: "downloads",
+            updated_since_days: Some(30),
         },
     ),
 ];
@@ -546,18 +562,22 @@ pub fn browse_discovery(domain: &str) -> Result<String> {
         top_endorsed: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[0].1).unwrap_or_default(),
         most_downloaded: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[1].1).unwrap_or_default(),
         trending: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[2].1).unwrap_or_default(),
-        newly_added: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[3].1).unwrap_or_default(),
-        recently_updated: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[4].1).unwrap_or_default(),
-        hot_this_week: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[5].1).unwrap_or_default(),
+        rising_stars: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[3].1).unwrap_or_default(),
+        newly_added: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[4].1).unwrap_or_default(),
+        recently_updated: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[5].1).unwrap_or_default(),
+        hot_this_week: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[6].1).unwrap_or_default(),
+        community_favorites: fetch_discovery_feed(domain, &DISCOVERY_FEEDS[7].1).unwrap_or_default(),
     };
     feeds.featured = feeds.top_endorsed.iter().take(6).cloned().collect();
 
     let any = !feeds.top_endorsed.is_empty()
         || !feeds.most_downloaded.is_empty()
         || !feeds.trending.is_empty()
+        || !feeds.rising_stars.is_empty()
         || !feeds.newly_added.is_empty()
         || !feeds.recently_updated.is_empty()
-        || !feeds.hot_this_week.is_empty();
+        || !feeds.hot_this_week.is_empty()
+        || !feeds.community_favorites.is_empty();
 
     if !any {
         require_nexus()?;
@@ -1014,6 +1034,35 @@ pub fn get_install_session(session_id: &str) -> Result<InstallSessionStatus> {
     Ok(build_session_status(session_id, s))
 }
 
+pub fn read_install_session_fomod_asset(
+    session_id: &str,
+    relative_path: &str,
+) -> Result<String> {
+    let extract_dir = {
+        let map = sessions().lock().unwrap();
+        let s = map.get(session_id).ok_or_else(|| {
+            NexusDeckError::NotFound("Install session not found or expired.".into())
+        })?;
+        s.prepared_extract_dir.clone().ok_or_else(|| {
+            NexusDeckError::Other("Install session is not ready for FOMOD assets.".into())
+        })?
+    };
+    let trimmed = relative_path.trim();
+    if trimmed.is_empty() {
+        return Err(NexusDeckError::Other("Missing FOMOD asset path.".into()));
+    }
+    let payload = crate::services::install_options::read_fomod_asset(
+        Path::new(&extract_dir),
+        trimmed,
+    )?;
+    match payload {
+        Some(asset) => Ok(serde_json::to_string(&asset).unwrap_or_else(|_| "{}".to_string())),
+        None => Err(NexusDeckError::NotFound(format!(
+            "FOMOD asset not found: {trimmed}"
+        ))),
+    }
+}
+
 /// Compact view of an in-flight companion install, for the device's
 /// "connected to companion" overlay. Returns the first non-terminal session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1095,13 +1144,33 @@ pub fn confirm_install_session(
         .as_ref()
         .map(|p| p.default_selections.clone())
         .unwrap_or_default();
+    let mut selected_options = body
+        .selected_options
+        .unwrap_or(default_selections);
+    if let Some(ref prepare) = prepare {
+        if let Some(ref extract_dir) = {
+            let map = sessions().lock().unwrap();
+            map.get(session_id)
+                .and_then(|s| s.prepared_extract_dir.clone())
+        } {
+            if !prepare.option_groups.is_empty() {
+                let entries =
+                    crate::services::archive::list_extracted_entries(Path::new(&extract_dir))
+                        .unwrap_or_default();
+                crate::services::install_options::sanitize_fomod_selections(
+                    &prepare.option_groups,
+                    &mut selected_options,
+                    &entries,
+                    prepare.install_wizard.as_ref(),
+                );
+            }
+        }
+    }
     let options = InstallOptions {
         strategy: body.strategy.unwrap_or_else(|| "auto".to_string()),
         enable_mod: body.enable_mod.unwrap_or(true),
         overwrite_files: body.overwrite_files.unwrap_or(false),
-        selected_options: body
-            .selected_options
-            .unwrap_or(default_selections),
+        selected_options,
         prepared_extract_dir: Some(prepared_extract_dir),
         wizard_hash: None,
         dry_run: false,

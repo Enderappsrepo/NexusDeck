@@ -1,11 +1,13 @@
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, FolderIcon } from "../components/icons";
 import { ConflictPreview } from "../components/ConflictPreview";
-import { InstallOptions } from "../components/InstallOptions";
+import { InstallOptions, formatFomodInstallError } from "../components/InstallOptions";
 import { formatBytes, formatEta } from "../lib/format";
 import { installDetailLine, installProgressPct, installStageLabel } from "../lib/installUi";
+import type { PairedDeck } from "../deckApi";
 import type { InstallSessionStatus, SelectedInstallOption } from "../types";
 
 export function InstallScreen({
+  paired,
   session,
   selections,
   setSelections,
@@ -24,6 +26,7 @@ export function InstallScreen({
   onDone,
   queueRemaining = 0,
 }: {
+  paired: PairedDeck;
   session: InstallSessionStatus;
   selections: SelectedInstallOption[];
   setSelections: (s: SelectedInstallOption[]) => void;
@@ -93,8 +96,10 @@ export function InstallScreen({
       {session.status === "ready" && session.prepare && (
         <>
           <InstallOptions
+            paired={paired}
+            sessionId={session.session_id}
             wizard={session.prepare.install_wizard}
-            optionGroups={session.prepare.install_wizard ? [] : session.prepare.option_groups}
+            optionGroups={session.prepare.option_groups}
             selections={selections}
             onChange={setSelections}
           />
@@ -185,7 +190,9 @@ export function InstallScreen({
         </button>
       )}
 
-      {session.status === "error" && <p className="cc-banner-err">{session.error ?? "Install failed."}</p>}
+      {session.status === "error" && (
+        <p className="cc-banner-err">{formatFomodInstallError(session.error) ?? "Install failed."}</p>
+      )}
     </div>
   );
 }

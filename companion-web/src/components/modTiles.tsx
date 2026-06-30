@@ -27,10 +27,12 @@ export function StatRow({ mod, className = "" }: { mod: ModSummary; className?: 
 export function CcTile({
   mod,
   className = "",
+  installed = false,
   onOpen,
 }: {
   mod: ModSummary;
   className?: string;
+  installed?: boolean;
   onOpen: (mod: ModSummary) => void;
 }) {
   const img = coverUrl(mod);
@@ -42,6 +44,7 @@ export function CcTile({
         ) : (
           <div className="cc-tile-fallback" />
         )}
+        {installed && <span className="cc-installed-pill">Installed</span>}
         <div className="cc-tile-scrim" />
         <div className="cc-tile-caption">
           <p className="cc-tile-title">{mod.name}</p>
@@ -55,9 +58,11 @@ export function CcTile({
 
 export function CcHeroCard({
   mod,
+  installed = false,
   onOpen,
 }: {
   mod: ModSummary;
+  installed?: boolean;
   onOpen: (mod: ModSummary) => void;
 }) {
   const img = coverUrl(mod);
@@ -69,6 +74,7 @@ export function CcHeroCard({
         ) : (
           <div className="cc-tile-fallback" />
         )}
+        {installed && <span className="cc-installed-pill">Installed</span>}
         <div className="cc-hero-card-scrim" />
         <span className="cc-hero-card-badge">Featured</span>
         <div className="cc-hero-card-body">
@@ -83,9 +89,11 @@ export function CcHeroCard({
 
 export function CcListRow({
   mod,
+  installed = false,
   onOpen,
 }: {
   mod: ModSummary;
+  installed?: boolean;
   onOpen: (mod: ModSummary) => void;
 }) {
   const img = coverUrl(mod);
@@ -99,7 +107,10 @@ export function CcListRow({
         )}
       </div>
       <div className="cc-list-body">
-        <p className="cc-list-title">{mod.name}</p>
+        <div className="flex min-w-0 items-start gap-2">
+          <p className="cc-list-title min-w-0 flex-1">{mod.name}</p>
+          {installed && <span className="cc-installed-pill cc-installed-pill-inline">Installed</span>}
+        </div>
         <p className="cc-list-author">{mod.author}</p>
         <StatRow mod={mod} className="mt-1" />
       </div>

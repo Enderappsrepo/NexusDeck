@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { fetchFomodAsset, type PairedDeck } from "../deckApi";
 import type {
   InstallOptionGroup,
   InstallWizard,
@@ -69,7 +70,52 @@ function updateSelection(
   return [...selections, { group_id: groupId, option_ids: optionIds }];
 }
 
+const fomodAssetCache = new Map<string, string>();
+
+function FomodImage({
+  paired,
+  sessionId,
+  relativePath,
+  className = "",
+}: {
+  paired: PairedDeck;
+  sessionId: string;
+  relativePath: string;
+  className?: string;
+}) {
+  const [url, setUrl] = useState<string | null>(() => {
+    const key = `${sessionId}:${relativePath}`;
+    return fomodAssetCache.get(key) ?? null;
+  });
+
+  useEffect(() => {
+    const key = `${sessionId}:${relativePath}`;
+    const cached = fomodAssetCache.get(key);
+    if (cached) {
+      setUrl(cached);
+      return;
+    }
+    let cancelled = false;
+    void fetchFomodAsset(paired, sessionId, relativePath).then((blobUrl) => {
+      if (cancelled || !blobUrl) return;
+      fomodAssetCache.set(key, blobUrl);
+      setUrl(blobUrl);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [paired, sessionId, relativePath]);
+
+  if (!url) {
+    return <div className={`cc-fomod-img-fallback ${className}`.trim()} aria-hidden="true" />;
+  }
+
+  return <img src={url} alt="" className={`cc-fomod-img ${className}`.trim()} loading="lazy" />;
+}
+
 interface InstallOptionsProps {
+  paired: PairedDeck;
+  sessionId: string;
   wizard: InstallWizard | null;
   optionGroups: InstallOptionGroup[];
   selections: SelectedInstallOption[];
@@ -77,6 +123,8 @@ interface InstallOptionsProps {
 }
 
 export function InstallOptions({
+  paired,
+  sessionId,
   wizard,
   optionGroups,
   selections,
@@ -99,6 +147,14 @@ export function InstallOptions({
     <div className="space-y-4">
       {wizard?.module_name && (
         <p className="text-sm font-medium text-white">{wizard.module_name}</p>
+      )}
+      {wizard?.module_image_path && (
+        <FomodImage
+          paired={paired}
+          sessionId={sessionId}
+          relativePath={wizard.module_image_path}
+          className="cc-fomod-module-img"
+        />
       )}
       {groups.map((group) => {
         const selected =
@@ -124,7 +180,7 @@ export function InstallOptions({
                       type={multi ? "checkbox" : "radio"}
                       name={group.id}
                       checked={checked}
-                      className="mt-1"
+                      className="mt-1 shrink-0"
                       onChange={() => {
                         if (multi) {
                           const next = checked
@@ -136,6 +192,14 @@ export function InstallOptions({
                         }
                       }}
                     />
+                    {option.image_path && (
+                      <FomodImage
+                        paired={paired}
+                        sessionId={sessionId}
+                        relativePath={option.image_path}
+                        className="cc-fomod-option-img"
+                      />
+                    )}
                     <span className="min-w-0">
                       <span className="block font-medium">{option.label}</span>
                       {option.description && (
@@ -159,4 +223,12 @@ export function defaultSelectionsFromPrepare(
   prepare: NonNullable<import("../types").CompanionPreparePayload>
 ): SelectedInstallOption[] {
   return prepare.default_selections;
+}
+
+export function formatFomodInstallError(error?: string | null): string | null {
+  if (!error) return null;
+  if (error.includes("[FOMOD_SELECTION_EMPTY]")) {
+    return "Some selected install options don't match files in this archive. Try different options in each group, then confirm again.";
+  }
+  return error;
 }

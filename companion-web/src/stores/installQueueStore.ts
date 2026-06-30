@@ -67,6 +67,18 @@ function queueKey(item: { gameDomain: string; modId: number; fileId: number }) {
   return `${item.gameDomain}:${item.modId}:${item.fileId}`;
 }
 
+/** crypto.randomUUID() is unavailable over plain HTTP (device IP), so fall back. */
+function newQueueItemId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      /* fall through */
+    }
+  }
+  return `q-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
   items: loadItems(),
   processing: false,
@@ -79,7 +91,7 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
     }
     const next: CompanionInstallQueueItem = {
       ...item,
-      id: crypto.randomUUID(),
+      id: newQueueItemId(),
       status: "queued",
     };
     set((s) => {

@@ -41,7 +41,7 @@ body {
   }
 
   .cc-header {
-    @apply border-b border-[var(--cc-border-subtle)] px-4 py-4;
+    @apply relative z-20 border-b border-[var(--cc-border-subtle)] px-4 py-4;
     background:
       radial-gradient(ellipse 70% 100% at 0% 0%, rgba(255, 107, 43, 0.10), transparent 60%),
       var(--cc-bg-elevated);
@@ -76,7 +76,7 @@ body {
   }
 
   .cc-install-queue-btn {
-    @apply relative inline-flex h-9 shrink-0 items-center rounded-lg border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] px-2.5 text-xs font-semibold text-[var(--cc-gold)];
+    @apply relative z-10 inline-flex h-9 shrink-0 items-center rounded-lg border border-[var(--cc-border-subtle)] bg-[var(--cc-bg-panel)] px-2.5 text-xs font-semibold text-[var(--cc-gold)];
   }
 
   .cc-install-queue-badge {
@@ -670,6 +670,34 @@ body {
   .cc-filter-sheet {
     @apply max-h-[85dvh] px-4 pb-4 pt-2;
     padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .cc-installed-pill {
+    @apply absolute right-2 top-2 z-10 rounded-full bg-[var(--cc-success)] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm;
+  }
+
+  .cc-installed-pill-inline {
+    @apply static shrink-0 px-1.5 py-0 text-[8px];
+  }
+
+  .cc-fomod-module-img {
+    @apply mx-auto max-h-32 w-full max-w-xs rounded-lg object-contain;
+  }
+
+  .cc-fomod-option-img {
+    @apply h-14 w-14 shrink-0 rounded-lg object-cover;
+  }
+
+  .cc-fomod-img-fallback {
+    @apply shrink-0 rounded-lg bg-[var(--cc-bg-elevated)];
+  }
+
+  .cc-fomod-img-fallback.cc-fomod-option-img {
+    @apply h-14 w-14;
+  }
+
+  .cc-fomod-img-fallback.cc-fomod-module-img {
+    @apply h-24 w-full max-w-xs;
   }
 
   .cc-filter-bar {

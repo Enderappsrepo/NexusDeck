@@ -30,7 +30,7 @@ import type {
   UninstallResult,
 } from "./types";
 
-export const COMPANION_API_VERSION = 5;
+export const COMPANION_API_VERSION = 6;
 
 export interface PairedDeck {
   name: string;
@@ -510,10 +510,29 @@ export async function getInstallSession(
   sessionId: string
 ): Promise<InstallSessionStatus> {
   const resp = await fetchDeck(
-    `http://${paired.host}:${paired.port}/install/session/${sessionId}`,
+    `http://${paired.host}:${paired.port}/install/session/${encodeURIComponent(sessionId)}`,
     { headers: authHeaders(paired) }
   );
   return readJson<InstallSessionStatus>(resp);
+}
+
+export async function fetchFomodAsset(
+  paired: PairedDeck,
+  sessionId: string,
+  relativePath: string
+): Promise<string | null> {
+  const params = new URLSearchParams({ path: relativePath });
+  const resp = await fetchDeck(
+    `http://${paired.host}:${paired.port}/install/session/${encodeURIComponent(sessionId)}/fomod-asset?${params}`,
+    { headers: authHeaders(paired) }
+  );
+  if (!resp.ok) return null;
+  const payload = await readJson<{ bytes: number[]; mime_type: string }>(resp);
+  if (!payload.bytes?.length) return null;
+  const blob = new Blob([Uint8Array.from(payload.bytes)], {
+    type: payload.mime_type || "application/octet-stream",
+  });
+  return URL.createObjectURL(blob);
 }
 
 export async function confirmInstallSession(

@@ -362,6 +362,86 @@ pub fn default_selections(groups: &[InstallOptionGroup]) -> Vec<SelectedInstallO
         .collect()
 }
 
+pub fn default_selections_for_entries(
+    groups: &[InstallOptionGroup],
+    entries: &[ArchiveEntry],
+    wizard: Option<&InstallWizard>,
+) -> Vec<SelectedInstallOption> {
+    let mut selections = default_selections(groups);
+    sanitize_fomod_selections(groups, &mut selections, entries, wizard);
+    selections
+}
+
+fn option_has_deploy_files(
+    option: &InstallOptionChoice,
+    kept_entries: &[ArchiveEntry],
+    wizard: Option<&InstallWizard>,
+) -> bool {
+    let prefixes = option_deploy_prefixes(option, wizard);
+    if prefixes.is_empty() {
+        return true;
+    }
+    let prefix = infer_content_prefix(kept_entries);
+    prefixes.iter().any(|folder| {
+        kept_entries.iter().any(|entry| {
+            let rel = normalize_entry_path(&entry.path, prefix.as_deref());
+            entry_matches_folder_prefix(&rel, folder)
+        })
+    })
+}
+
+/// Drop selected options whose folder prefixes don't match any extracted files.
+/// For required single-select groups, fall back to the first valid option.
+pub fn sanitize_fomod_selections(
+    groups: &[InstallOptionGroup],
+    selections: &mut Vec<SelectedInstallOption>,
+    kept_entries: &[ArchiveEntry],
+    wizard: Option<&InstallWizard>,
+) {
+    let group_map: HashMap<&str, &InstallOptionGroup> =
+        groups.iter().map(|g| (g.id.as_str(), g)).collect();
+
+    for selection in selections.iter_mut() {
+        let Some(group) = group_map.get(selection.group_id.as_str()) else {
+            selection.option_ids.clear();
+            continue;
+        };
+        selection.option_ids.retain(|option_id| {
+            group
+                .options
+                .iter()
+                .find(|o| o.id == *option_id)
+                .is_some_and(|option| option_has_deploy_files(option, kept_entries, wizard))
+        });
+
+        if selection.option_ids.is_empty() {
+            if matches!(
+                group.selection_type,
+                InstallOptionSelectionType::SelectOne | InstallOptionSelectionType::SelectAtLeastOne
+            ) {
+                if let Some(fallback) = group.options.iter().find(|option| {
+                    option_has_deploy_files(option, kept_entries, wizard)
+                }) {
+                    selection.option_ids.push(fallback.id.clone());
+                }
+            }
+        }
+    }
+
+    selections.retain(|selection| {
+        group_map
+            .get(selection.group_id.as_str())
+            .is_some_and(|group| {
+                !selection.option_ids.is_empty()
+                    || matches!(
+                        group.selection_type,
+                        InstallOptionSelectionType::SelectAny
+                            | InstallOptionSelectionType::SelectAtMostOne
+                    )
+            })
+    });
+}
+
 pub fn validate_fomod_selection_deploy(
     groups: &[InstallOptionGroup],
     selections: &[SelectedInstallOption],

@@ -68,6 +68,7 @@ export interface InstallOptionChoice {
   description?: string | null;
   default: boolean;
   condition_flags?: FomodFlag[];
+  image_path?: string | null;
 }
 
 export interface InstallOptionGroup {
@@ -88,6 +89,7 @@ export interface InstallWizardStep {
 
 export interface InstallWizard {
   module_name?: string | null;
+  module_image_path?: string | null;
   steps: InstallWizardStep[];
 }
 
@@ -175,9 +177,11 @@ export interface DiscoveryFeeds {
   top_endorsed: ModSummary[];
   most_downloaded: ModSummary[];
   trending: ModSummary[];
+  rising_stars: ModSummary[];
   newly_added: ModSummary[];
   recently_updated: ModSummary[];
   hot_this_week: ModSummary[];
+  community_favorites: ModSummary[];
 }
 
 export interface CompanionInstalledMod {
@@ -201,9 +205,11 @@ export const EMPTY_DISCOVERY: DiscoveryFeeds = {
   top_endorsed: [],
   most_downloaded: [],
   trending: [],
+  rising_stars: [],
   newly_added: [],
   recently_updated: [],
   hot_this_week: [],
+  community_favorites: [],
 };
 
 export interface FileConflict {

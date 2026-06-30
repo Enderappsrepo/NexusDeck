@@ -823,7 +823,11 @@ pub async fn prepare_mod_install_managed(
         };
 
     let default_selections =
-        crate::services::install_options::default_selections(&option_groups);
+        crate::services::install_options::default_selections_for_entries(
+            &option_groups,
+            &entries,
+            install_wizard.as_ref(),
+        );
     let archive_folders = archive_top_level_folders(&entries);
 
     session.info(
@@ -1025,7 +1029,7 @@ pub async fn install_mod_from_archive_impl(
         })?
     };
 
-    let selections = if options.selected_options.is_empty() {
+    let mut selections = if options.selected_options.is_empty() {
         crate::services::install_options::default_selections(&option_groups)
     } else {
         options.selected_options.clone()
@@ -1089,12 +1093,22 @@ pub async fn install_mod_from_archive_impl(
         })??;
     }
 
+    if !option_groups.is_empty() {
+        crate::services::install_options::sanitize_fomod_selections(
+            &option_groups,
+            &mut selections,
+            &all_entries,
+            fomod_wizard.as_ref(),
+        );
+    }
+
     let disk_entries = crate::services::install_options::apply_install_selections(
         &all_entries,
         &option_groups,
         &selections,
         fomod_wizard.as_ref(),
     );
+
     let entries = crate::services::install_options::apply_fomod_destination_remap(
         &disk_entries,
         &option_groups,

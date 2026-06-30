@@ -4,7 +4,7 @@ The companion PWA talks to NexusDeck over HTTP on port **8731** (same Wi‑Fi, *
 
 ## Versioning
 
-`GET /ping` returns `companion_api` (currently **5**). Older app builds may not expose newer routes; the companion shows an update prompt when endpoints return 404.
+`GET /ping` returns `companion_api` (currently **6**). Older app builds may not expose newer routes; the companion shows an update prompt when endpoints return 404.
 
 ## Authentication
 
@@ -29,6 +29,7 @@ The companion PWA talks to NexusDeck over HTTP on port **8731** (same Wi‑Fi, *
 | POST | `/install/session/start` | Start remote install session |
 | GET | `/install/session/:id` | Poll session (download → prepare → ready) |
 | POST | `/install/session/:id/confirm` | Confirm FOMOD/deploy |
+| GET | `/install/session/:id/fomod-asset?path=` | FOMOD wizard image bytes (v6+) |
 
 ### Search filters (v4+)
 

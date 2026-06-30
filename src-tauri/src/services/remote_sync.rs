@@ -1489,6 +1489,32 @@ fn handle_request(
         return;
     }
 
+    if is_get && url.contains("/install/session/") && url.contains("/fomod-asset") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let relative_path = params.get("path").cloned().unwrap_or_default();
+        let session_id = url
+            .trim_start_matches("/install/session/")
+            .split("/fomod-asset")
+            .next()
+            .unwrap_or("")
+            .split('?')
+            .next()
+            .unwrap_or("")
+            .to_string();
+        respond_json_result(
+            req,
+            crate::services::remote_companion::read_install_session_fomod_asset(
+                &session_id,
+                &relative_path,
+            ),
+        );
+        return;
+    }
+
     if is_get && url.starts_with("/install/session/") {
         if !authorized(&req, token) {
             unauthorized(req);
@@ -1497,6 +1523,9 @@ fn handle_request(
         let session_id = url
             .trim_start_matches("/install/session/")
             .split('?')
+            .next()
+            .unwrap_or("")
+            .split('/')
             .next()
             .unwrap_or("")
             .to_string();
