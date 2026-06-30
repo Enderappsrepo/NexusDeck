@@ -1,6 +1,6 @@
 [package]
 name = "nexusdeck"
-version = "2.1.0"
+version = "2.2.0"
 description = "Lightweight Nexus Mods client for Steam Deck and Windows"
 authors = ["NexusDeck"]
 edition = "2021"
