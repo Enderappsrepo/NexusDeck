@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { installProgressPct as computeInstallProgressPct } from "./lib/installUi";
 import { BottomNav } from "./components/BottomNav";
 import { DownloadQueueBar, DownloadQueueSheet } from "./components/DownloadQueueBar";
 import {
@@ -316,7 +317,22 @@ export default function App() {
     if (["ready", "done", "error"].includes(session.status)) return;
     const timer = window.setInterval(() => {
       void getInstallSession(paired, session.session_id).then((next) => {
-        setSession(next);
+        setSession((prev) => {
+          if (
+            prev &&
+            next.status === "downloading" &&
+            next.progress &&
+            next.progress.progress_pct !== prev.progress?.progress_pct
+          ) {
+            showCompanionNotification(
+              companionSettings.notifications,
+              "download_progress",
+              "Downloading mod",
+              next.message
+            );
+          }
+          return next;
+        });
         if (next.prepare && selections.length === 0) {
           setSelections(defaultSelectionsFromPrepare(next.prepare));
         }
@@ -330,7 +346,7 @@ export default function App() {
           if (companionSettings.haptics) hapticSuccess();
         }
       });
-    }, 1200);
+    }, 800);
     return () => window.clearInterval(timer);
   }, [paired, session?.session_id, session?.status, selections.length, companionSettings]);
 
@@ -407,14 +423,7 @@ export default function App() {
     }
   };
 
-  const installProgressPct = useMemo(() => {
-    if (!session) return 12;
-    if (session.status === "ready" || session.status === "done") return 100;
-    if (session.status === "downloading" && session.progress) return Math.max(session.progress.progress_pct, 4);
-    if (session.status === "extracting") return 92;
-    if (session.status === "installing") return 96;
-    return 12;
-  }, [session]);
+  const installProgressPct = computeInstallProgressPct(session);
 
   const handleToggleMod = async (mod: CompanionInstalledMod) => {
     if (!paired) return;

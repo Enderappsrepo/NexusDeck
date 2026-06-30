@@ -120,6 +120,14 @@ fn basic_plan_for_profile(profile: &db::Profile, strategy: &str) -> Result<games
 }
 
 fn emit_install_progress(app: &AppHandle, progress: InstallProgress) {
+    crate::services::remote_companion::touch_companion_install_progress(
+        &progress.mod_name,
+        &progress.stage,
+        &progress.message,
+        progress.files_done,
+        progress.files_total,
+        progress.current_file.clone(),
+    );
     let _ = app.emit("install:progress", &progress);
 }
 

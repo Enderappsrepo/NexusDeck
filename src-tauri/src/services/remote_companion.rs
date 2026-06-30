@@ -33,6 +33,15 @@ pub struct InstallDownloadProgress {
     pub bytes_total: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub eta_seconds: Option<u64>,
+    /// Current phase: downloading, extracting, reading_options, deploying, etc.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub stage: String,
+    #[serde(default)]
+    pub files_done: u32,
+    #[serde(default)]
+    pub files_total: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -119,6 +128,7 @@ fn detect_plan_for_session(
 struct RemoteInstallSession {
     status: String,
     message: String,
+    stage: String,
     profile: Profile,
     meta: RemoteNexusInstallMeta,
     download_id: Option<String>,
@@ -127,10 +137,90 @@ struct RemoteInstallSession {
     bytes_done: i64,
     bytes_total: i64,
     eta_seconds: Option<u64>,
+    files_done: u32,
+    files_total: u32,
+    current_file: Option<String>,
     archive_path: Option<PathBuf>,
     prepared_extract_dir: Option<String>,
     prepare: Option<CompanionPreparePayload>,
     error: Option<String>,
+}
+
+/// Map byte/file progress into a single 0–100 bar across download → extract → deploy.
+fn overall_session_progress(s: &RemoteInstallSession) -> u8 {
+    match s.status.as_str() {
+        "downloading" => {
+            let byte_pct = if s.bytes_total > 0 {
+                ((s.bytes_done.saturating_mul(100)) / s.bytes_total).clamp(0, 99) as u32
+            } else {
+                0
+            };
+            ((byte_pct * 30) / 100).clamp(2, 29) as u8
+        }
+        "extracting" => {
+            let file_pct = if s.files_total > 0 {
+                (s.files_done.saturating_mul(25) / s.files_total).min(25)
+            } else {
+                0
+            };
+            (30 + file_pct).min(58) as u8
+        }
+        "ready" => 60,
+        "installing" => {
+            let file_pct = if s.files_total > 0 {
+                (s.files_done.saturating_mul(38) / s.files_total).min(38)
+            } else {
+                0
+            };
+            (62 + file_pct).min(99) as u8
+        }
+        "done" => 100,
+        _ => s.progress_pct.max(2),
+    }
+}
+
+/// Called from the main install pipeline so companion sessions stay in sync with
+/// extract/deploy progress (the phone polls this instead of Tauri events).
+pub fn touch_companion_install_progress(
+    mod_name: &str,
+    stage: &str,
+    message: &str,
+    files_done: u32,
+    files_total: u32,
+    current_file: Option<String>,
+) {
+    let mut map = sessions().lock().unwrap();
+    for s in map.values_mut() {
+        if s.meta.mod_name != mod_name {
+            continue;
+        }
+        if !matches!(s.status.as_str(), "downloading" | "extracting" | "installing") {
+            continue;
+        }
+        match stage {
+            "extracting" | "reading_options" | "nested_extract" => {
+                s.status = "extracting".into();
+            }
+            "deploying" | "preparing" | "plan" | "validating" => {
+                if s.status != "ready" {
+                    s.status = "installing".into();
+                }
+            }
+            _ if s.status == "downloading" => {}
+            _ => {
+                if s.status != "ready" {
+                    s.status = "installing".into();
+                }
+            }
+        }
+        s.stage = stage.to_string();
+        s.message = message.to_string();
+        s.files_done = files_done;
+        s.files_total = files_total;
+        s.current_file = current_file;
+        s.progress_pct = overall_session_progress(s);
+        return;
+    }
 }
 
 fn sessions() -> &'static Mutex<HashMap<String, RemoteInstallSession>> {
@@ -564,14 +654,18 @@ pub fn start_install_session(body: StartInstallSessionBody) -> Result<InstallSes
             RemoteInstallSession {
                 status: "downloading".into(),
                 message: "Starting download on your device…".into(),
+                stage: "downloading".into(),
                 profile: profile.clone(),
                 meta: meta.clone(),
                 download_id: None,
                 download_started_at: None,
-                progress_pct: 0,
+                progress_pct: 2,
                 bytes_done: 0,
                 bytes_total: (meta.expected_size_kb.saturating_mul(1024)) as i64,
                 eta_seconds: None,
+                files_done: 0,
+                files_total: 0,
+                current_file: None,
                 archive_path: None,
                 prepared_extract_dir: None,
                 prepare: None,
@@ -649,7 +743,20 @@ async fn run_install_session(
         }
     }
 
-    update_session(session_id, "extracting", "Extracting mod archive…", None, None);
+    update_session(
+        session_id,
+        "extracting",
+        "Extracting mod archive on your device…",
+        None,
+        None,
+    );
+    {
+        let mut map = sessions().lock().unwrap();
+        if let Some(s) = map.get_mut(session_id) {
+            s.stage = "extracting".into();
+            s.progress_pct = overall_session_progress(s);
+        }
+    }
 
     let prepare: InstallPrepareResult = deploy::prepare_mod_install_managed(
         ctx.app.clone(),
@@ -689,6 +796,8 @@ async fn run_install_session(
             s.prepared_extract_dir = Some(prepare.prepared_extract_dir.clone());
             s.prepare = Some(payload.clone());
             s.status = "ready".into();
+            s.stage = "ready".into();
+            s.progress_pct = overall_session_progress(s);
             s.message = if wizard_required {
                 "Choose install options on your phone.".into()
             } else if !prepare.option_groups.is_empty() {
@@ -741,13 +850,14 @@ async fn wait_for_download(download_id: &str) -> Result<PathBuf> {
                         });
                         s.bytes_done = bytes_done;
                         s.bytes_total = bytes_total;
-                        s.progress_pct = pct;
                         s.eta_seconds = eta_seconds;
+                        s.stage = "downloading".into();
                         s.message = if bytes_total > 0 {
-                            format!("Downloading… {pct}%")
+                            format!("Downloading from Nexus… {pct}%")
                         } else {
-                            "Downloading…".into()
+                            "Downloading from Nexus…".into()
                         };
+                        s.progress_pct = overall_session_progress(s);
                         break;
                     }
                 }
@@ -779,12 +889,21 @@ fn update_session(
 }
 
 fn build_session_status(session_id: &str, s: &RemoteInstallSession) -> InstallSessionStatus {
-    let progress = if s.status == "downloading" {
+    let pct = overall_session_progress(s);
+    let progress = if matches!(s.status.as_str(), "downloading" | "extracting" | "installing") {
         Some(InstallDownloadProgress {
-            progress_pct: s.progress_pct,
+            progress_pct: pct,
             bytes_done: s.bytes_done,
             bytes_total: s.bytes_total,
             eta_seconds: s.eta_seconds,
+            stage: if s.stage.is_empty() {
+                s.status.clone()
+            } else {
+                s.stage.clone()
+            },
+            files_done: s.files_done,
+            files_total: s.files_total,
+            current_file: s.current_file.clone(),
         })
     } else {
         None
@@ -830,7 +949,7 @@ pub fn latest_install_summary() -> Option<CompanionInstallSummary> {
             mod_name: s.meta.mod_name.clone(),
             status: s.status.clone(),
             message: s.message.clone(),
-            progress_pct: s.progress_pct,
+            progress_pct: overall_session_progress(s),
         })
 }
 
@@ -872,7 +991,17 @@ pub fn confirm_install_session(
         )
     };
 
-    update_session(session_id, "installing", "Installing mod…", None, None);
+    update_session(session_id, "installing", "Installing mod files to your game…", None, None);
+    {
+        let mut map = sessions().lock().unwrap();
+        if let Some(s) = map.get_mut(session_id) {
+            s.stage = "preparing".into();
+            s.files_done = 0;
+            s.files_total = 0;
+            s.current_file = None;
+            s.progress_pct = overall_session_progress(s);
+        }
+    }
 
     let default_selections = prepare
         .as_ref()

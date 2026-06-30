@@ -2,6 +2,7 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon, FolderIcon } from "../compon
 import { ConflictPreview } from "../components/ConflictPreview";
 import { InstallOptions } from "../components/InstallOptions";
 import { formatBytes, formatEta } from "../lib/format";
+import { installDetailLine, installProgressPct, installStageLabel } from "../lib/installUi";
 import type { InstallSessionStatus, SelectedInstallOption } from "../types";
 
 export function InstallScreen({
@@ -13,7 +14,7 @@ export function InstallScreen({
   showStrategyOverride,
   setShowStrategyOverride,
   installBusy,
-  installProgressPct,
+  installProgressPct: _installProgressPct,
   conflictAck,
   setConflictAck,
   onConfirm,
@@ -35,21 +36,50 @@ export function InstallScreen({
 }) {
   const conflicts = session.prepare?.conflicts ?? [];
   const needsConflictAck = conflicts.length > 0 && !conflictAck;
+  const pct = installProgressPct(session);
+  const stageLabel = installStageLabel(session);
+  const detail = installDetailLine(session);
+  const isActive = ["downloading", "extracting", "installing"].includes(session.status);
 
   return (
     <div className="cc-body space-y-4">
       <div className="cc-panel space-y-3">
-        <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--cc-gold)]">Install</p>
-        <p className="text-sm">{session.message}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--cc-gold)]">Install</p>
+          {isActive && (
+            <span className="shrink-0 rounded-full bg-[var(--cc-bg-panel)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--cc-muted)]">
+              {stageLabel}
+            </span>
+          )}
+        </div>
+        <p className="text-sm leading-snug">{session.message}</p>
         {session.status === "downloading" && session.progress && session.progress.bytes_total > 0 && (
           <p className="text-xs text-[var(--cc-muted)]">
             {formatBytes(session.progress.bytes_done)} / {formatBytes(session.progress.bytes_total)}
             {session.progress.eta_seconds ? ` · ~${formatEta(session.progress.eta_seconds)} left` : ""}
           </p>
         )}
-        <div className="cc-progress">
-          <div className="cc-progress-fill" style={{ width: `${installProgressPct}%` }} />
+        {detail && session.status !== "downloading" && (
+          <p className="truncate text-xs text-[var(--cc-muted)]" title={detail}>
+            {detail}
+          </p>
+        )}
+        <div
+          className="cc-progress"
+          role="progressbar"
+          aria-valuenow={pct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`Install progress: ${stageLabel}`}
+        >
+          <div
+            className={`cc-progress-fill ${isActive && pct < 99 ? "cc-progress-active" : ""}`}
+            style={{ width: `${pct}%` }}
+          />
         </div>
+        {isActive && (
+          <p className="text-center text-[11px] font-medium tabular-nums text-[var(--cc-muted)]">{pct}%</p>
+        )}
       </div>
 
       {session.status === "ready" && session.prepare && (

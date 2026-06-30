@@ -29,7 +29,12 @@ export function groupModFiles(files: ModFileInfo[]) {
   return { mainFiles, otherFiles, all: visible };
 }
 
+const ARCHIVE_NAME = /\.(7z|zip|rar|bin)$/i;
+
 export function pickDefaultFile(files: ModFileInfo[]): ModFileInfo | undefined {
   const { mainFiles, all } = groupModFiles(files);
-  return mainFiles.find((f) => f.is_primary) ?? mainFiles[0] ?? all[0];
+  const pool = mainFiles.length ? mainFiles : all;
+  const archives = pool.filter((f) => ARCHIVE_NAME.test(f.file_name || f.name));
+  const candidates = archives.length ? archives : pool;
+  return candidates.find((f) => f.is_primary) ?? candidates[0];
 }

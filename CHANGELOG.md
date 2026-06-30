@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-06-29
+
+### Added
+- **Companion install progress** — unified progress bar across download, extract, and deploy with stage labels, file counts, current file name, and shimmer animation so installs no longer look frozen.
+- **Install status on device** — companion connected overlay uses the same multi-phase progress from the backend.
+- **Download progress notifications** — companion can notify on download progress when that preference is enabled.
+
+### Fixed
+- **Nexus `.bin` downloads** — detect obfuscated `.bin` mod archives by magic bytes, rename to the correct extension, and match them in staging even when the API filename differs.
+- **Loose `.bin` mod assets** — `.bin` files inside archives route into `Data/` with other game assets instead of the game root.
+
 ## [2.2.0] - 2026-06-29
 
 ### Added

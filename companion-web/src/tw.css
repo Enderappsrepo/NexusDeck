@@ -361,6 +361,33 @@ body {
     background-image: var(--cc-grad);
   }
 
+  .cc-progress-active {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cc-progress-active::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.22) 50%,
+      transparent 100%
+    );
+    animation: cc-progress-shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes cc-progress-shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
   .cc-browse-wrap {
     @apply flex flex-col gap-5;
   }

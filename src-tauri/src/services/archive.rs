@@ -109,8 +109,16 @@ fn archive_candidates(staging_dir: &Path, file_name: &str) -> Vec<PathBuf> {
     };
 
     push(staging_dir.join(file_name));
-    for ext in ["7z", "zip", "rar"] {
+    for ext in ["7z", "zip", "rar", "bin"] {
         push(staging_dir.join(format!("{file_name}.{ext}")));
+    }
+    // Nexus CDN may rename downloads to .bin while the API still reports the original name.
+    if !file_name.to_lowercase().ends_with(".bin") {
+        let stem = Path::new(file_name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(file_name);
+        push(staging_dir.join(format!("{stem}.bin")));
     }
 
     let hint = normalize_file_hint(file_name);
@@ -165,9 +173,17 @@ fn normalize_file_hint(value: &str) -> String {
         .replace(".7z", "")
         .replace(".zip", "")
         .replace(".rar", "")
+        .replace(".bin", "")
         .chars()
         .filter(|c| c.is_alphanumeric())
         .collect()
+}
+
+/// Nexus sometimes serves mod downloads as `.bin` (CDN obfuscation). Detect by magic bytes.
+fn is_obfuscated_download_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
 }
 
 fn fuzzy_match(a: &str, b: &str) -> bool {
@@ -190,6 +206,17 @@ fn detect_archive_format(path: &Path) -> Result<ArchiveFormat> {
     }
     if name.ends_with(".rar") {
         return Ok(ArchiveFormat::Rar);
+    }
+    if name.ends_with(".bin") {
+        return match read_magic(path)? {
+            ArchiveMagic::SevenZ => Ok(ArchiveFormat::SevenZ),
+            ArchiveMagic::Zip => Ok(ArchiveFormat::Zip),
+            ArchiveMagic::Rar => Ok(ArchiveFormat::Rar),
+            ArchiveMagic::Unknown => Err(NexusDeckError::Archive(format!(
+                "{} looks like a Nexus .bin download but is not a supported archive (expected .7z or .zip inside).",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            ))),
+        };
     }
 
     match read_magic(path)? {
@@ -234,7 +261,15 @@ pub fn ensure_archive_extension(path: &Path) -> Result<PathBuf> {
         ArchiveMagic::SevenZ => "7z",
         ArchiveMagic::Zip => "zip",
         ArchiveMagic::Rar => "rar",
-        ArchiveMagic::Unknown => return Ok(path.to_path_buf()),
+        ArchiveMagic::Unknown => {
+            if is_obfuscated_download_extension(path) {
+                return Err(NexusDeckError::Archive(format!(
+                    "{} is not a valid mod archive — Nexus .bin downloads must be a .7z or .zip inside.",
+                    path.file_name().unwrap_or_default().to_string_lossy()
+                )));
+            }
+            return Ok(path.to_path_buf());
+        }
     };
 
     let new_path = path.with_extension(ext);

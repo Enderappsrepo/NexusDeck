@@ -236,6 +236,7 @@ pub fn entries_have_loose_assets(entries: &[ArchiveEntry]) -> bool {
             || lower.ends_with(".hkx")
             || lower.ends_with(".wav")
             || lower.ends_with(".xwm")
+            || lower.ends_with(".bin")
     })
 }
 
@@ -263,6 +264,7 @@ pub fn is_fallout4_data_file(path: &str) -> bool {
         || lower.ends_with(".esl")
         || lower.ends_with(".ba2")
         || lower.ends_with(".bsa")
+        || lower.ends_with(".bin")
         || lower.ends_with(".modgroups")
 }
 

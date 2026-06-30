@@ -106,6 +106,11 @@ export interface InstallDownloadProgress {
   bytes_done: number;
   bytes_total: number;
   eta_seconds?: number | null;
+  /** Current phase: downloading, extracting, deploying, etc. */
+  stage?: string;
+  files_done?: number;
+  files_total?: number;
+  current_file?: string | null;
 }
 
 export interface InstallSessionStatus {
