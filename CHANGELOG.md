@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-06-30
+
+### Added
+- **Companion FOMOD images** — install wizard shows module splash and option images via new `GET /install/session/:id/fomod-asset` API (companion API v6).
+- **Companion browse shelves** — Rising stars and Community favorites discovery sections; See all on Top rated, Top downloaded, Trending, and Featured.
+- **Installed pill in browse** — green Installed badge on mod tiles, hero cards, and list rows for mods already on your device.
+
+### Changed
+- **Companion filter sheet** — uses scrollable sheet layout with sticky Apply/Cancel footer so filters scroll properly on mobile.
+- **Companion library sync** — installed mod list loads on connect so browse and mod detail show correct installed state without visiting Library first.
+- **Top rated label** — Most endorsed shelf renamed to Top rated.
+
+### Fixed
+- **Companion install queue on HTTP** — queue add works over `http://DEVICE_IP:8731/app/` (fallback ID when `crypto.randomUUID` is unavailable outside secure contexts).
+- **FOMOD selection empty errors** — backend sanitizes default and confirmed selections to drop options with no matching archive files; clearer error message in companion install screen.
+
 ## [2.3.0] - 2026-06-30
 
 ### Added
