@@ -256,6 +256,51 @@
         </div>
       </section>
 
+      <section class="panel hidden" id="screen-static" data-screen="static">
+        <div class="done-hero">
+          <div class="done-icon warn" aria-hidden="true">!</div>
+          <h2 class="panel-title">Run this on your Steam Deck</h2>
+          <p class="lead tight">
+            This page is only a preview. The installer must run on your Deck or Linux PC in
+            <strong>Desktop Mode → Konsole</strong>, where it starts a local helper and downloads the
+            Flatpak from GitHub.
+          </p>
+        </div>
+
+        <div class="callout accent">
+          <strong>Recommended — graphical installer</strong>
+          <p class="tight">Keep the Konsole window open until setup finishes.</p>
+          <div class="command-box">
+            <code id="static-gui-cmd">curl -fsSL …/i.sh -o install.sh && bash install.sh --gui</code>
+            <button class="btn ghost btn-sm" id="btn-copy-static-gui" type="button">Copy</button>
+          </div>
+        </div>
+
+        <div class="callout">
+          <strong>Terminal install (no browser)</strong>
+          <div class="command-box">
+            <code id="static-cli-cmd">curl -fsSL …/i.sh | bash</code>
+            <button class="btn ghost btn-sm" id="btn-copy-static-cli" type="button">Copy</button>
+          </div>
+        </div>
+
+        <div class="callout">
+          <strong>Direct from GitHub Releases</strong>
+          <div class="command-box">
+            <code id="static-release-cmd">curl -fsSL https://github.com/…/i.sh | bash</code>
+            <button class="btn ghost btn-sm" id="btn-copy-static-release" type="button">Copy</button>
+          </div>
+        </div>
+
+        <p class="hint">
+          On Windows, download the NSIS installer from
+          <a href="https://github.com/Enderappsrepo/NexusDeck/releases/latest" target="_blank" rel="noreferrer"
+            >GitHub Releases</a
+          >
+          instead — the Flatpak GUI is for Steam Deck / Linux only.
+        </p>
+      </section>
+
       <section class="panel hidden" id="screen-error" data-screen="error">
         <div class="done-hero">
           <div class="done-icon error" aria-hidden="true">!</div>
@@ -266,6 +311,10 @@
         <div class="callout warn" id="error-hints">
           <strong>Common fixes:</strong>
           <ul>
+            <li>
+              Open the wizard from Konsole with
+              <code>bash install.sh --gui</code> — do not use the GitHub Pages preview link alone.
+            </li>
             <li>Ensure Flatpak is installed and Flathub is enabled.</li>
             <li>Check your internet connection for the Flatpak download.</li>
             <li>Quit Steam before adding a library shortcut.</li>

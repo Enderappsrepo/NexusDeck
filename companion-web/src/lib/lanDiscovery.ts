@@ -21,6 +21,40 @@ const DEFAULT_SUBNETS = [
 
 const BATCH_SIZE = 28;
 
+/** Common DHCP lease addresses — scanned first within each subnet for faster discovery. */
+const PRIORITY_OCTETS = [
+  1, 2, 3, 4, 5, 10, 20, 50, 100, 101, 102, 103, 104, 105, 254,
+];
+
+function buildHostList(prefixes: string[], priorityHosts: string[] = []): string[] {
+  const hosts: string[] = [...priorityHosts];
+  const seen = new Set(priorityHosts);
+
+  for (const prefix of prefixes) {
+    for (const last of PRIORITY_OCTETS) {
+      const host = `${prefix}.${last}`;
+      if (!seen.has(host)) {
+        seen.add(host);
+        hosts.push(host);
+      }
+    }
+    for (let last = 1; last <= 254; last += 1) {
+      const host = `${prefix}.${last}`;
+      if (!seen.has(host)) {
+        seen.add(host);
+        hosts.push(host);
+      }
+    }
+  }
+  return hosts;
+}
+
+function subnetPrefix(host: string): string | null {
+  const parts = host.split(".");
+  if (parts.length !== 4) return null;
+  return `${parts[0]}.${parts[1]}.${parts[2]}`;
+}
+
 async function guessLocalSubnet(): Promise<string | null> {
   if (typeof RTCPeerConnection === "undefined") return null;
 
@@ -73,31 +107,11 @@ async function probeHost(host: string, port: number): Promise<LanDevice | null> 
   };
 }
 
-function buildHostList(prefixes: string[]): string[] {
-  const hosts: string[] = [];
-  for (const prefix of prefixes) {
-    for (let last = 1; last <= 254; last += 1) {
-      hosts.push(`${prefix}.${last}`);
-    }
-  }
-  return hosts;
-}
-
-export async function discoverDevicesOnLan(
-  port = 8731,
+async function scanHosts(
+  hosts: string[],
+  port: number,
   onProgress?: (scanned: number, total: number, found: LanDevice[]) => void
 ): Promise<LanDevice[]> {
-  const hints = new Set(DEFAULT_SUBNETS);
-  const local = await guessLocalSubnet();
-  if (local) hints.add(local);
-
-  const selfHost = getReceiverSelfHost();
-  if (selfHost) {
-    const parts = selfHost.host.split(".");
-    if (parts.length === 4) hints.add(`${parts[0]}.${parts[1]}.${parts[2]}`);
-  }
-
-  const hosts = buildHostList([...hints]);
   const found: LanDevice[] = [];
   const seen = new Set<string>();
 
@@ -114,6 +128,40 @@ export async function discoverDevicesOnLan(
 
   found.sort((a, b) => a.name.localeCompare(b.name));
   return found;
+}
+
+/** Fast scan of a single /24 — used when reconnecting after a DHCP IP change. */
+export async function discoverDevicesNearHost(
+  hintHost: string,
+  port = 8731
+): Promise<LanDevice[]> {
+  const prefix = subnetPrefix(hintHost);
+  if (!prefix) return [];
+  return scanHosts(buildHostList([prefix], [hintHost]), port);
+}
+
+export async function discoverDevicesOnLan(
+  port = 8731,
+  onProgress?: (scanned: number, total: number, found: LanDevice[]) => void,
+  priorityHosts: string[] = []
+): Promise<LanDevice[]> {
+  const hints = new Set(DEFAULT_SUBNETS);
+  const local = await guessLocalSubnet();
+  if (local) hints.add(local);
+
+  const selfHost = getReceiverSelfHost();
+  if (selfHost) {
+    const prefix = subnetPrefix(selfHost.host);
+    if (prefix) hints.add(prefix);
+  }
+
+  for (const host of priorityHosts) {
+    const prefix = subnetPrefix(host);
+    if (prefix) hints.add(prefix);
+  }
+
+  const hosts = buildHostList([...hints], priorityHosts);
+  return scanHosts(hosts, port, onProgress);
 }
 
 export function getReceiverSelfHost(): { host: string; port: number } | null {

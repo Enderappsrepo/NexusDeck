@@ -98,6 +98,7 @@ export interface CompanionPreparePayload {
   install_wizard_required: boolean;
   strategies: StrategyOption[];
   detected?: DetectedDeployPlan | null;
+  conflicts?: FileConflict[];
 }
 
 export interface InstallDownloadProgress {
@@ -180,3 +181,139 @@ export const EMPTY_DISCOVERY: DiscoveryFeeds = {
   recently_updated: [],
   hot_this_week: [],
 };
+
+export interface FileConflict {
+  path: string;
+  existing_mod: string;
+  new_mod: string;
+}
+
+export interface LootPluginIssue {
+  code: string;
+  plugin?: string | null;
+  message: string;
+  severity: string;
+}
+
+export interface LoadOrderModEntry {
+  id: string;
+  name: string;
+  enabled: boolean;
+  sort_order: number;
+  plugins: string[];
+}
+
+export interface LoadOrderPluginEntry {
+  name: string;
+  kind: string;
+  enabled: boolean;
+  mod_id?: string | null;
+  mod_name?: string | null;
+}
+
+export interface LoadOrderState {
+  mods: LoadOrderModEntry[];
+  plugins: LoadOrderPluginEntry[];
+  plugins_txt_path?: string | null;
+  plugins_txt_ready: boolean;
+  active_plugin_count: number;
+  message: string;
+  loot_issues: LootPluginIssue[];
+}
+
+export interface CompanionDownloadRecord {
+  id: string;
+  game_domain: string;
+  mod_id: number;
+  file_id: number;
+  mod_name: string;
+  bytes_done: number;
+  bytes_total: number;
+  status: string;
+  progress_pct: number;
+}
+
+export interface ModUpdateInfo {
+  installed_mod_id: string;
+  nexus_mod_id: number;
+  name: string;
+  installed_version?: string | null;
+  latest_version: string;
+  latest_file_id: number;
+  changelog_available: boolean;
+}
+
+export interface CollectionSummary {
+  name: string;
+  slug: string;
+  summary?: string | null;
+  mod_count: number;
+  author: string;
+  revision_number: number;
+}
+
+export interface CollectionModEntry {
+  mod_id: number;
+  file_id?: number | null;
+  name: string;
+  optional: boolean;
+  version: string;
+}
+
+export interface CollectionDetail {
+  name: string;
+  slug: string;
+  author: string;
+  mod_count: number;
+  mods: CollectionModEntry[];
+}
+
+export interface CollectionModDiffEntry {
+  mod_id: number;
+  name: string;
+  optional: boolean;
+  status: string;
+  collection_version: string;
+  installed_version?: string | null;
+  installed_mod_id?: string | null;
+  collection_file_id?: number | null;
+  installed_file_id?: number | null;
+}
+
+export interface CollectionDiffResult {
+  installed_count: number;
+  total_count: number;
+  missing_count: number;
+  outdated_count: number;
+  wrong_file_count: number;
+  mods: CollectionModDiffEntry[];
+}
+
+export interface CompanionCollectionDetail {
+  detail: CollectionDetail;
+  diff: CollectionDiffResult;
+}
+
+export interface CollectionInstallQueued {
+  mod_id: number;
+  mod_name: string;
+  download_id: string;
+}
+
+export interface CompanionDeviceSettings {
+  app_version: string;
+  nexus_configured: boolean;
+  receive_enabled: boolean;
+  download_settings: {
+    max_concurrent: number;
+    speed_limit_kbps: number;
+    auto_install_after_download?: boolean;
+  };
+  auto_sort_after_install: boolean;
+  companion_api: number;
+}
+
+export interface SyncActionResult {
+  ok: boolean;
+  message: string;
+}

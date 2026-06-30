@@ -160,6 +160,7 @@ pub fn get_game_essentials_status(profile_id: &str) -> Result<Vec<GameEssentialM
             profile_id: d.profile_id,
             update_target_mod_id: d.update_target_mod_id,
             auto_install: false,
+            companion_managed: false,
             queue_position: 0,
         })
         .collect();

@@ -133,3 +133,30 @@ export function SearchIcon(props: IconProps) {
     </Svg>
   );
 }
+
+export function SettingsIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+    </Svg>
+  );
+}
+
+export function LoadOrderIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 6h16M4 12h10M4 18h16" />
+      <path d="M18 10v4l2-2-2-2z" />
+    </Svg>
+  );
+}
+
+export function AlertIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 9v4M12 17h.01" />
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+    </Svg>
+  );
+}

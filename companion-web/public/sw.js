@@ -1,4 +1,4 @@
-const CACHE = "nexusdeck-companion-v2";
+const CACHE = "nexusdeck-companion-v3";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -18,12 +18,21 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (data && data.type === "SHOW_NOTIFICATION" && self.registration) {
+    self.registration.showNotification(data.title || "NexusDeck", {
+      body: data.body || "",
+      tag: data.tag || "nexusdeck-companion",
+    });
+  }
+});
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
-  // Never cache device API calls or cross-origin requests.
   if (url.origin !== self.location.origin) return;
   if (url.port === "8731" || url.pathname.startsWith("/browse/")) return;
 

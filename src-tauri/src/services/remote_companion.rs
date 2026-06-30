@@ -17,7 +17,7 @@ use crate::services::nexus_client::{ModSearchFilters, ModSummary};
 use crate::services::remote_sync::{receiver_context, RemoteNexusInstallMeta};
 
 /// Bump when companion HTTP API adds routes (browse/discovery, library, etc.).
-pub const COMPANION_API_VERSION: u32 = 2;
+pub const COMPANION_API_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CompanionGame {
@@ -59,6 +59,8 @@ pub struct CompanionPreparePayload {
     /// where files will actually land instead of a bare strategy list.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detected: Option<DetectedDeployPlan>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conflicts: Vec<crate::services::conflict::FileConflict>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -439,12 +441,15 @@ pub fn reorder_library_mod(body: ReorderModBody) -> Result<String> {
 
 #[derive(Debug, Deserialize)]
 pub struct ToggleModBody {
+    pub game_domain: String,
     pub mod_id: String,
     pub enabled: bool,
 }
 
 pub fn toggle_library_mod(body: ToggleModBody) -> Result<String> {
+    let profile = profile_for_domain(&body.game_domain)?;
     deploy::set_mod_enabled(body.mod_id, body.enabled)?;
+    let _ = crate::services::plugins_txt::sync_plugins_txt(&profile);
     Ok(serde_json::json!({ "ok": true }).to_string())
 }
 
@@ -626,6 +631,7 @@ async fn run_install_session(
             0,
         )
         .await?;
+    ctx.downloads.mark_companion_managed(&progress.id);
 
     {
         let mut map = sessions().lock().unwrap();
@@ -662,6 +668,11 @@ async fn run_install_session(
         &prepare.prepared_extract_dir,
         &strategies,
     );
+    let conflicts = preview_conflicts_for_extract(
+        &profile.id,
+        &prepare.prepared_extract_dir,
+        &meta.mod_name,
+    );
     let payload = CompanionPreparePayload {
         option_groups: prepare.option_groups.clone(),
         default_selections: prepare.default_selections.clone(),
@@ -669,6 +680,7 @@ async fn run_install_session(
         install_wizard_required: wizard_required,
         strategies,
         detected,
+        conflicts,
     };
 
     {
@@ -923,6 +935,271 @@ pub fn confirm_install_session(
     });
 
     get_install_session(session_id)
+}
+
+fn preview_conflicts_for_extract(
+    profile_id: &str,
+    extract_dir: &str,
+    mod_name: &str,
+) -> Vec<crate::services::conflict::FileConflict> {
+    let entries = match crate::services::archive::list_extracted_entries(Path::new(extract_dir)) {
+        Ok(e) => e,
+        Err(_) => return vec![],
+    };
+    let deploy_files: Vec<String> = entries.into_iter().map(|e| e.path).collect();
+    let existing: Vec<(String, Vec<String>)> = db::list_installed_mods(profile_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|m| {
+            let files: Vec<String> =
+                serde_json::from_str(&m.installed_files_json).unwrap_or_default();
+            (m.name, files)
+        })
+        .collect();
+    crate::services::conflict::detect_conflicts(&existing, &deploy_files, mod_name)
+}
+
+// ---- Companion API v3: load order, downloads, collections, settings ----
+
+#[derive(Debug, Deserialize)]
+pub struct GameDomainBody {
+    pub game_domain: String,
+}
+
+pub fn get_load_order_state(domain: &str) -> Result<String> {
+    let profile = profile_for_domain(domain)?;
+    let state = crate::services::load_order::get_load_order_state(&profile.id)?;
+    Ok(serde_json::to_string(&state).unwrap_or_else(|_| "{}".to_string()))
+}
+
+pub fn sort_load_order(body: GameDomainBody) -> Result<String> {
+    let profile = profile_for_domain(&body.game_domain)?;
+    let _ = crate::services::load_order::auto_sort_load_order(&profile.id)?;
+    let _ = crate::services::plugins_txt::sync_plugins_txt(&profile)?;
+    get_load_order_state(&body.game_domain)
+}
+
+pub fn sync_plugins_for_game(body: GameDomainBody) -> Result<String> {
+    let profile = profile_for_domain(&body.game_domain)?;
+    let result = crate::services::plugins_txt::sync_plugins_txt(&profile)?;
+    Ok(serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string()))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CompanionDownloadRecord {
+    pub id: String,
+    pub game_domain: String,
+    pub mod_id: i64,
+    pub file_id: i64,
+    pub mod_name: String,
+    pub bytes_done: i64,
+    pub bytes_total: i64,
+    pub status: String,
+    pub progress_pct: u8,
+}
+
+pub fn list_companion_downloads(domain: &str) -> Result<String> {
+    let profile = profile_for_domain(domain)?;
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let all = ctx.downloads.list_downloads()?;
+    let records: Vec<CompanionDownloadRecord> = all
+        .into_iter()
+        .filter(|d| d.profile_id == profile.id || d.game_domain == domain)
+        .map(|d| {
+            let progress_pct = if d.bytes_total > 0 {
+                ((d.bytes_done * 100) / d.bytes_total).clamp(0, 100) as u8
+            } else {
+                0
+            };
+            CompanionDownloadRecord {
+                id: d.id,
+                game_domain: d.game_domain,
+                mod_id: d.mod_id,
+                file_id: d.file_id,
+                mod_name: d.mod_name,
+                bytes_done: d.bytes_done,
+                bytes_total: d.bytes_total,
+                status: d.status,
+                progress_pct,
+            }
+        })
+        .collect();
+    Ok(serde_json::to_string(&records).unwrap_or_else(|_| "[]".to_string()))
+}
+
+pub fn list_library_updates(domain: &str) -> Result<String> {
+    require_nexus()?;
+    let profile = profile_for_domain(domain)?;
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let updates = async_runtime::block_on(
+        crate::services::update_checker::check_profile_updates(&ctx.nexus, &profile.id),
+    )?;
+    Ok(serde_json::to_string(&updates).unwrap_or_else(|_| "[]".to_string()))
+}
+
+pub fn list_collections_for_game(domain: &str, offset: u32) -> Result<String> {
+    require_nexus()?;
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let list = async_runtime::block_on(crate::services::collections::list_collections(
+        &ctx.nexus,
+        domain,
+        offset,
+        24,
+    ))?;
+    Ok(serde_json::to_string(&list).unwrap_or_else(|_| "[]".to_string()))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CompanionCollectionDetail {
+    pub detail: crate::services::nexus_client::CollectionDetail,
+    pub diff: crate::services::profile_insights::CollectionDiffResult,
+}
+
+pub fn collection_detail_with_diff(domain: &str, slug: &str) -> Result<String> {
+    require_nexus()?;
+    let profile = profile_for_domain(domain)?;
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let detail = async_runtime::block_on(crate::services::collections::get_collection_detail(
+        &ctx.nexus,
+        domain,
+        slug,
+    ))?;
+    let inputs: Vec<crate::services::profile_insights::CollectionModInput> = detail
+        .mods
+        .iter()
+        .map(|m| crate::services::profile_insights::CollectionModInput {
+            mod_id: m.mod_id,
+            file_id: m.file_id,
+            name: m.name.clone(),
+            optional: m.optional,
+            version: m.version.clone(),
+        })
+        .collect();
+    let diff = crate::services::profile_insights::diff_collection(&profile.id, &inputs)?;
+    let payload = CompanionCollectionDetail { detail, diff };
+    Ok(serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StartCollectionInstallBody {
+    pub game_domain: String,
+    pub slug: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CollectionInstallQueued {
+    pub mod_id: u64,
+    pub mod_name: String,
+    pub download_id: String,
+}
+
+pub fn start_collection_install(body: StartCollectionInstallBody) -> Result<String> {
+    require_nexus()?;
+    let profile = profile_for_domain(&body.game_domain)?;
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let detail = async_runtime::block_on(crate::services::collections::get_collection_detail(
+        &ctx.nexus,
+        &body.game_domain,
+        &body.slug,
+    ))?;
+    let inputs: Vec<crate::services::profile_insights::CollectionModInput> = detail
+        .mods
+        .iter()
+        .map(|m| crate::services::profile_insights::CollectionModInput {
+            mod_id: m.mod_id,
+            file_id: m.file_id,
+            name: m.name.clone(),
+            optional: m.optional,
+            version: m.version.clone(),
+        })
+        .collect();
+    let diff = crate::services::profile_insights::diff_collection(&profile.id, &inputs)?;
+    let mut queued = Vec::new();
+    for entry in diff.mods {
+        if entry.status == "installed" {
+            continue;
+        }
+        if entry.optional && entry.status != "missing" {
+            continue;
+        }
+        let progress = async_runtime::block_on(
+            crate::services::game_essentials::queue_mod_for_install(
+                ctx.app.clone(),
+                ctx.nexus.clone(),
+                ctx.downloads.clone(),
+                profile.id.clone(),
+                entry.mod_id,
+                entry.collection_file_id,
+                entry.name.clone(),
+            ),
+        )?;
+        ctx.downloads.mark_auto_install(&progress.id);
+        queued.push(CollectionInstallQueued {
+            mod_id: entry.mod_id,
+            mod_name: entry.name,
+            download_id: progress.id,
+        });
+    }
+    Ok(serde_json::to_string(&queued).unwrap_or_else(|_| "[]".to_string()))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CompanionDeviceSettings {
+    pub app_version: String,
+    pub nexus_configured: bool,
+    pub receive_enabled: bool,
+    pub download_settings: crate::services::download_manager::DownloadSettings,
+    pub auto_sort_after_install: bool,
+    pub companion_api: u32,
+}
+
+pub fn device_settings_snapshot() -> Result<String> {
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let download_settings = ctx.downloads.get_download_settings().unwrap_or_default();
+    let payload = CompanionDeviceSettings {
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        nexus_configured: nexus_configured(),
+        receive_enabled: true,
+        download_settings,
+        auto_sort_after_install: false,
+        companion_api: COMPANION_API_VERSION,
+    };
+    Ok(serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()))
+}
+
+pub fn sync_presets_on_device(body: GameDomainBody) -> Result<String> {
+    let profile = profile_for_domain(&body.game_domain)?;
+    if crate::services::tools::game_supports_body_setup(&profile.game_domain) {
+        crate::services::tools::configure_bodyslide_paths(&profile.id)?;
+        Ok(serde_json::json!({ "ok": true, "message": "BodySlide paths configured." }).to_string())
+    } else {
+        Err(NexusDeckError::Other(
+            "BodySlide is not supported for this game.".into(),
+        ))
+    }
+}
+
+pub fn apply_load_order_on_device(body: GameDomainBody) -> Result<String> {
+    let profile = profile_for_domain(&body.game_domain)?;
+    let _ = crate::services::load_order::auto_sort_load_order(&profile.id)?;
+    let sync = crate::services::plugins_txt::sync_plugins_txt(&profile)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "message": format!("LOOT sort applied; {} plugin(s) in plugins.txt.", sync.plugin_count),
+    })
+    .to_string())
 }
 
 pub fn serve_companion_file(app: &AppHandle, url_path: &str) -> Result<(Vec<u8>, &'static str)> {

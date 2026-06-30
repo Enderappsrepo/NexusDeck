@@ -9,6 +9,7 @@ import {
   type NavMode,
   type PerformanceMode,
 } from "@/lib/platform";
+import { loadThemeId, saveTheme, type ThemeId } from "@/lib/themes";
 
 const SIDEBAR_COLLAPSED_KEY = "nexusdeck_sidebar_collapsed";
 const GYRO_SCROLL_KEY = "nexusdeck_gyro_scroll";
@@ -38,9 +39,11 @@ interface SettingsState {
   perfActive: boolean;
   sidebarCollapsed: boolean;
   gyroScroll: boolean;
+  theme: ThemeId;
   loading: boolean;
   loadSettings: () => Promise<void>;
   setDownloadSettings: (settings: DownloadSettings) => Promise<void>;
+  setTheme: (theme: ThemeId) => void;
   setPerformanceMode: (mode: PerformanceMode) => void;
   setNavMode: (mode: NavMode) => void;
   setGyroScroll: (enabled: boolean) => void;
@@ -63,6 +66,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   perfActive: initialPerfActive,
   sidebarCollapsed: localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true",
   gyroScroll: localStorage.getItem(GYRO_SCROLL_KEY) === "true",
+  theme: loadThemeId(),
   loading: false,
 
   loadSettings: async () => {
@@ -96,6 +100,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setGyroScroll: (enabled) => {
     localStorage.setItem(GYRO_SCROLL_KEY, String(enabled));
     set({ gyroScroll: enabled });
+  },
+
+  setTheme: (theme) => {
+    saveTheme(theme);
+    set({ theme });
   },
 
   toggleSidebar: () =>

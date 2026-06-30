@@ -32,9 +32,9 @@ const HTTP_PORT: u16 = 8731;
 /// Probe payload a sender broadcasts; the receiver replies with its info JSON.
 const DISCOVERY_MAGIC: &str = "NEXUSDECK_DISCOVER_V1";
 /// A paired companion counts as "connected" while it has talked to us within
-/// this window. The companion heartbeats every ~12s, so this tolerates a couple
-/// of missed beats (sleep, brief Wi-Fi blip) before we consider it gone.
-const COMPANION_CONNECT_WINDOW_SECS: u64 = 30;
+/// this window. The companion heartbeats every ~12s; 45s tolerates background
+/// tab throttling and a few missed beats before we consider it gone.
+const COMPANION_CONNECT_WINDOW_SECS: u64 = 45;
 
 /// Last-activity tracking for a paired companion, so the device can show a
 /// "connected to companion" state that reflects a LIVE connection rather than
@@ -400,6 +400,67 @@ fn respond_library_reorder(mut req: tiny_http::Request) {
     match serde_json::from_str::<crate::services::remote_companion::ReorderModBody>(&body) {
         Ok(payload) => {
             respond_json_result(req, crate::services::remote_companion::reorder_library_mod(payload));
+        }
+        Err(e) => {
+            let _ = req.respond(json_response(
+                400,
+                serde_json::json!({ "error": format!("Invalid JSON: {e}") }).to_string(),
+            ));
+        }
+    }
+}
+
+fn respond_game_domain_body<F>(mut req: tiny_http::Request, handler: F)
+where
+    F: FnOnce(crate::services::remote_companion::GameDomainBody) -> crate::error::Result<String>,
+{
+    let mut body = String::new();
+    if req.as_reader().read_to_string(&mut body).is_err() {
+        let _ = req.respond(json_response(
+            400,
+            serde_json::json!({ "error": "Couldn't read request body." }).to_string(),
+        ));
+        return;
+    }
+    match serde_json::from_str::<crate::services::remote_companion::GameDomainBody>(&body) {
+        Ok(payload) => respond_json_result(req, handler(payload)),
+        Err(e) => {
+            let _ = req.respond(json_response(
+                400,
+                serde_json::json!({ "error": format!("Invalid JSON: {e}") }).to_string(),
+            ));
+        }
+    }
+}
+
+fn respond_loadorder_sort(req: tiny_http::Request) {
+    respond_game_domain_body(req, crate::services::remote_companion::sort_load_order);
+}
+
+fn respond_loadorder_sync_plugins(req: tiny_http::Request) {
+    respond_game_domain_body(req, crate::services::remote_companion::sync_plugins_for_game);
+}
+
+fn respond_sync_presets(req: tiny_http::Request) {
+    respond_game_domain_body(req, crate::services::remote_companion::sync_presets_on_device);
+}
+
+fn respond_apply_loadorder(req: tiny_http::Request) {
+    respond_game_domain_body(req, crate::services::remote_companion::apply_load_order_on_device);
+}
+
+fn respond_collection_install_start(mut req: tiny_http::Request) {
+    let mut body = String::new();
+    if req.as_reader().read_to_string(&mut body).is_err() {
+        let _ = req.respond(json_response(
+            400,
+            serde_json::json!({ "error": "Couldn't read request body." }).to_string(),
+        ));
+        return;
+    }
+    match serde_json::from_str::<crate::services::remote_companion::StartCollectionInstallBody>(&body) {
+        Ok(payload) => {
+            respond_json_result(req, crate::services::remote_companion::start_collection_install(payload));
         }
         Err(e) => {
             let _ = req.respond(json_response(
@@ -993,7 +1054,14 @@ fn handle_request(
             unauthorized(req);
             return;
         }
-        let _ = req.respond(json_response(200, serde_json::json!({ "ok": true }).to_string()));
+        let lan_hosts = local_ipv4_addresses();
+        let body = serde_json::json!({
+            "ok": true,
+            "name": name,
+            "lan_hosts": lan_hosts,
+        })
+        .to_string();
+        let _ = req.respond(json_response(200, body));
         return;
     }
 
@@ -1179,6 +1247,126 @@ fn handle_request(
             return;
         }
         respond_library_reorder(req);
+        return;
+    }
+
+    if is_get && url.starts_with("/loadorder/state") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        respond_json_result(req, crate::services::remote_companion::get_load_order_state(&domain));
+        return;
+    }
+
+    if is_post && url.starts_with("/loadorder/sort") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_loadorder_sort(req);
+        return;
+    }
+
+    if is_post && url.starts_with("/loadorder/sync-plugins") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_loadorder_sync_plugins(req);
+        return;
+    }
+
+    if is_get && url.starts_with("/downloads") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        respond_json_result(req, crate::services::remote_companion::list_companion_downloads(&domain));
+        return;
+    }
+
+    if is_get && url.starts_with("/library/updates") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        respond_json_result(req, crate::services::remote_companion::list_library_updates(&domain));
+        return;
+    }
+
+    if is_get && url.starts_with("/collections/list") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        let offset = params
+            .get("offset")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        respond_json_result(
+            req,
+            crate::services::remote_companion::list_collections_for_game(&domain, offset),
+        );
+        return;
+    }
+
+    if is_get && url.starts_with("/collections/detail") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        let slug = params.get("slug").cloned().unwrap_or_default();
+        respond_json_result(
+            req,
+            crate::services::remote_companion::collection_detail_with_diff(&domain, &slug),
+        );
+        return;
+    }
+
+    if is_post && url.starts_with("/collections/install/start") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_collection_install_start(req);
+        return;
+    }
+
+    if is_get && url.starts_with("/settings/device") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_json_result(req, crate::services::remote_companion::device_settings_snapshot());
+        return;
+    }
+
+    if is_post && url.starts_with("/sync/presets") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_sync_presets(req);
+        return;
+    }
+
+    if is_post && url.starts_with("/sync/apply-loadorder") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_apply_loadorder(req);
         return;
     }
 

@@ -327,6 +327,8 @@ export interface DownloadProgress {
   profile_id?: string;
   update_target_mod_id?: string;
   auto_install?: boolean;
+  /** Download is part of a phone companion install session — device UI must stay out. */
+  companion_managed?: boolean;
   queue_position?: number;
 }
 

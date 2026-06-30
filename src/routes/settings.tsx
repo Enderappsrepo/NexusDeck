@@ -20,6 +20,7 @@ import { ResetModsDialog } from "@/components/mod/ResetModsDialog";
 import { ResetAppDialog } from "@/components/settings/ResetAppDialog";
 import { UninstallAppDialog } from "@/components/settings/UninstallAppDialog";
 import type { HardwareAccelerationMode, SevenZipInfo } from "@/lib/nexus/types";
+import { THEME_PRESETS } from "@/lib/themes";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -35,8 +36,10 @@ function SettingsPage() {
     navMode,
     deckDetected,
     gyroScroll,
+    theme,
     loadSettings,
     setDownloadSettings,
+    setTheme,
     setPerformanceMode,
     setNavMode,
     setGyroScroll,
@@ -463,6 +466,35 @@ function SettingsPage() {
               }}
               data-focusable="true"
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Appearance</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-[var(--color-muted)]">
+            Color theme for the app UI. Synced locally on this device.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {THEME_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                data-focusable="true"
+                className={`rounded-xl border p-3 text-left transition-colors ${
+                  theme === preset.id
+                    ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
+                    : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
+                }`}
+                onClick={() => setTheme(preset.id)}
+              >
+                <span className="block font-medium">{preset.label}</span>
+                <span className="text-xs text-[var(--color-muted)]">{preset.description}</span>
+              </button>
+            ))}
           </div>
         </CardContent>
       </Card>

@@ -11,4 +11,5 @@ export {
   useCompanionStore,
   useCompanionConnected,
   useCompanionPresencePoll,
+  isCompanionManagedDownload,
 } from "./companionStore";

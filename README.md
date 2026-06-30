@@ -125,9 +125,12 @@ A installable **Progressive Web App** for your phone — browse Nexus like Creat
 
 | Feature | Details |
 |---------|---------|
-| **Browse** | Featured shelves, trending, search, mod detail + file picker |
-| **Install** | Full remote session: download on device → FOMOD wizard → confirm from phone |
-| **Library** | Enable/disable and uninstall installed mods |
+| **Browse** | Featured shelves, trending, search, mod detail + file picker, Nexus Collections |
+| **Install** | Full remote session: download on device → FOMOD wizard → conflict preview → confirm from phone |
+| **Library** | Enable/disable, uninstall, update badges, LOOT health chip |
+| **Load order** | LOOT auto-sort, plugins.txt sync, issues panel, mods/plugins tabs |
+| **Settings** | Themes, notifications, device sync (LOOT, plugins, BodySlide paths) |
+| **Queue** | Live download progress bar while mods fetch on your device |
 | **Pairing** | Scan your network (no IP typing), QR code, or open `http://DEVICE_IP:8731/app/` |
 
 **Launch:** [companion/](https://enderappsrepo.github.io/NexusDeck/companion/) · **Best on-device URL:** `http://YOUR_PC_OR_DECK_IP:8731/app/` (same Wi‑Fi, Receive enabled)

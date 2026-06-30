@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-06-29
+
+### Added
+- **Companion API v3** — load order state, LOOT sort, plugins.txt sync, download queue, library updates, Nexus Collections browse/install, device settings snapshot, BodySlide path sync, and conflict preview on remote installs.
+- **Companion UI overhaul** — tabbed screens with bottom nav (Browse, Library, Load Order, Collections, Settings), download queue bar, conflict preview, and screen-based routing for mod detail and install flows.
+- **Companion settings & themes** — appearance presets (NexusDeck, Midnight, Ember, Creation, Light, High contrast), haptics, notifications, compact UI, default game, and device sync actions.
+- **Companion load order tab** — mods/plugins view, LOOT issues panel, sort and sync from your phone.
+- **Main app appearance settings** — same theme presets in Settings → Appearance.
+- **Companion pairing QR** — scan or display QR codes from Settings → Receive and the companion connect screen.
+- **Install wizard UI** — refreshed graphical installer styling on GitHub Pages and Desktop Mode setup.
+
+### Fixed
+- **Companion toggle mod** — enabling/disabling a mod from the phone now syncs `plugins.txt` on the device.
+
 ## [2.1.0] - 2026-06-29
 
 ### Added
@@ -217,6 +231,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Proton prefix auto-heal and hardened dependency install.
 
+[2.2.0]: https://github.com/Enderappsrepo/NexusDeck/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/Enderappsrepo/NexusDeck/compare/v2.0.0...v2.1.0
+[2.0.0]: https://github.com/Enderappsrepo/NexusDeck/compare/v1.1.37...v2.0.0
+[1.1.37]: https://github.com/Enderappsrepo/NexusDeck/compare/v1.1.36...v1.1.37
 [1.1.29]: https://github.com/Enderappsrepo/NexusDeck/compare/v1.1.28...v1.1.29
 [1.1.28]: https://github.com/Enderappsrepo/NexusDeck/compare/v1.1.27...v1.1.28
 [1.1.27]: https://github.com/Enderappsrepo/NexusDeck/compare/v1.1.26...v1.1.27

@@ -58,6 +58,7 @@ const screens = {
   progress: document.getElementById("screen-progress"),
   done: document.getElementById("screen-done"),
   error: document.getElementById("screen-error"),
+  static: document.getElementById("screen-static"),
 };
 
 const stepList = document.getElementById("step-list");
@@ -107,11 +108,32 @@ function setWizardStep(name) {
 
 function showScreen(name) {
   Object.entries(screens).forEach(([key, el]) => {
-    el.classList.toggle("hidden", key !== name);
+    if (el) el.classList.toggle("hidden", key !== name);
   });
-  if (name !== "error") {
+  if (name !== "error" && name !== "static") {
     setWizardStep(name);
   }
+}
+
+function isLocalInstallerHost() {
+  return location.hostname === "127.0.0.1" || location.hostname === "localhost";
+}
+
+function isStaticPreviewHost() {
+  return location.hostname.endsWith("github.io") || location.protocol === "file:";
+}
+
+function showStaticHostHelp() {
+  const repo = systemInfo.repo || "Enderappsrepo/NexusDeck";
+  const pagesBase = location.origin + location.pathname.replace(/\/gui\/?.*$/, "");
+  const guiCmd = `curl -fsSL ${pagesBase}/i.sh -o install.sh && bash install.sh --gui`;
+  const cliCmd = `curl -fsSL ${pagesBase}/i.sh | bash`;
+  const releaseCmd = `curl -fsSL https://github.com/${repo}/releases/latest/download/i.sh | bash`;
+
+  $("static-gui-cmd").textContent = guiCmd;
+  $("static-cli-cmd").textContent = cliCmd;
+  $("static-release-cmd").textContent = releaseCmd;
+  showScreen("static");
 }
 
 function stepIcon(status) {
@@ -361,8 +383,16 @@ function syncSteamOptions() {
 }
 
 async function fetchInfo() {
+  if (isStaticPreviewHost()) {
+    showStaticHostHelp();
+    return;
+  }
+
   try {
     const res = await fetch("/api/info");
+    if (!res.ok) {
+      throw new Error(`Installer backend unavailable (${res.status})`);
+    }
     systemInfo = await res.json();
 
     $("repo-label").textContent = systemInfo.repo || "NexusDeck";
@@ -399,9 +429,16 @@ async function fetchInfo() {
 
     syncSteamOptions();
     updateSummary();
-  } catch {
-    setPreset("deck");
-    updateSummary();
+  } catch (err) {
+    if (!isLocalInstallerHost()) {
+      showStaticHostHelp();
+      return;
+    }
+    errorMessage.textContent =
+      err instanceof Error
+        ? err.message
+        : "Could not reach the local installer. Re-run bash install.sh --gui and keep Konsole open.";
+    showScreen("error");
   }
 }
 
@@ -462,6 +499,11 @@ function stopPolling() {
 }
 
 async function startInstall() {
+  if (isStaticPreviewHost() || !isLocalInstallerHost()) {
+    showStaticHostHelp();
+    return;
+  }
+
   const opts = getOptions();
   if (opts.source === "local" && !opts.flatpakPath) {
     showToast("Enter the path to your .flatpak file");
@@ -524,6 +566,24 @@ $("btn-copy-cmd").addEventListener("click", async () => {
     showToast(cmd);
   }
 });
+
+function bindCopyButton(buttonId, codeId) {
+  const btn = $(buttonId);
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    const cmd = $(codeId).textContent;
+    try {
+      await navigator.clipboard.writeText(cmd);
+      showToast("Command copied");
+    } catch {
+      showToast(cmd);
+    }
+  });
+}
+
+bindCopyButton("btn-copy-static-gui", "static-gui-cmd");
+bindCopyButton("btn-copy-static-cli", "static-cli-cmd");
+bindCopyButton("btn-copy-static-release", "static-release-cmd");
 
 $("btn-toggle-log").addEventListener("click", () => {
   logVisible = !logVisible;

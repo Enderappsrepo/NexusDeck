@@ -41,6 +41,10 @@ pub struct DownloadProgress {
     pub update_target_mod_id: String,
     #[serde(default)]
     pub auto_install: bool,
+    /// Download is owned by a phone companion install session — do not open the
+    /// device install wizard; the companion drives FOMOD/deploy on the backend.
+    #[serde(default)]
+    pub companion_managed: bool,
     #[serde(default)]
     pub queue_position: u32,
 }
@@ -97,6 +101,7 @@ pub struct DownloadManager {
     running_count: Arc<AtomicUsize>,
     processing: Arc<Mutex<bool>>,
     auto_install_ids: Arc<Mutex<std::collections::HashSet<String>>>,
+    companion_managed_ids: Arc<Mutex<std::collections::HashSet<String>>>,
 }
 
 impl DownloadManager {
@@ -118,11 +123,20 @@ impl DownloadManager {
             running_count: Arc::new(AtomicUsize::new(0)),
             processing: Arc::new(Mutex::new(false)),
             auto_install_ids: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            companion_managed_ids: Arc::new(Mutex::new(std::collections::HashSet::new())),
         }
     }
 
     pub fn mark_auto_install(&self, download_id: &str) {
         self.auto_install_ids.lock().insert(download_id.to_string());
+    }
+
+    /// Companion install sessions download on-device but handle extract/FOMOD/deploy
+    /// themselves — the UI must not open ModInstallDialog for these downloads.
+    pub fn mark_companion_managed(&self, download_id: &str) {
+        self.companion_managed_ids
+            .lock()
+            .insert(download_id.to_string());
     }
 
     pub fn consume_auto_install(&self, download_id: &str) -> bool {
@@ -131,6 +145,10 @@ impl DownloadManager {
 
     fn progress_auto_install(&self, download_id: &str) -> bool {
         self.auto_install_ids.lock().contains(download_id)
+    }
+
+    fn progress_companion_managed(&self, download_id: &str) -> bool {
+        self.companion_managed_ids.lock().contains(download_id)
     }
 
     pub fn get_download_settings(&self) -> Result<DownloadSettings> {
@@ -305,6 +323,7 @@ impl DownloadManager {
             profile_id: profile_id.to_string(),
             update_target_mod_id: update_target_mod_id.to_string(),
             auto_install: self.auto_install_ids.lock().contains(&id),
+            companion_managed: self.companion_managed_ids.lock().contains(&id),
             queue_position,
         };
 
@@ -699,6 +718,7 @@ impl DownloadManager {
                     profile_id: profile_id.to_string(),
                     update_target_mod_id: update_target_mod_id.to_string(),
                     auto_install: self.progress_auto_install(id),
+                    companion_managed: self.progress_companion_managed(id),
                     queue_position: 0,
                 };
                 let _ = app.emit("download-progress", &progress);
@@ -740,6 +760,7 @@ impl DownloadManager {
             profile_id: profile_id.to_string(),
             update_target_mod_id: update_target_mod_id.to_string(),
             auto_install,
+            companion_managed: self.progress_companion_managed(id),
             queue_position: 0,
         };
         let _ = app.emit("download-complete", &progress);
@@ -758,6 +779,7 @@ impl DownloadManager {
             running_count: Arc::clone(&self.running_count),
             processing: Arc::clone(&self.processing),
             auto_install_ids: Arc::clone(&self.auto_install_ids),
+            companion_managed_ids: Arc::clone(&self.companion_managed_ids),
         }
     }
 }

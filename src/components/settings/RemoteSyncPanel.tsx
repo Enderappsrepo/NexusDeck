@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, MonitorSmartphone, RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { CompanionPairingQr } from "@/components/companion/CompanionPairingQr";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,25 @@ export function RemoteSyncPanel() {
   useEffect(() => {
     api.getRemoteReceiverStatus().then(setStatus).catch(() => {});
   }, []);
+
+  // Keep pairing code, companion URLs, and phone connection state fresh while Receive is on.
+  useEffect(() => {
+    if (!status?.running) return;
+    let cancelled = false;
+    const refresh = () => {
+      api
+        .getRemoteReceiverStatus()
+        .then((next) => {
+          if (!cancelled) setStatus(next);
+        })
+        .catch(() => {});
+    };
+    const id = window.setInterval(refresh, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [status?.running]);
 
   const toggleReceiver = useCallback(async () => {
     setBusy(true);
@@ -176,24 +196,11 @@ export function RemoteSyncPanel() {
                 </Badge>
               )}
             </div>
-            {status.companion_urls?.length ? (
-              <div className="rounded-xl border border-[var(--color-border)] p-4 text-sm">
-                <p className="font-semibold">Phone companion</p>
-                <p className="mt-1 text-[var(--color-muted)]">
-                  Open this URL on your phone (same Wi‑Fi), or scan it from the companion app →
-                  Scan QR code.
-                </p>
-                <ul className="mt-2 space-y-1 font-mono text-xs text-[var(--color-primary)]">
-                  {status.companion_urls.map((url) => (
-                    <li key={url}>
-                      <a href={url} target="_blank" rel="noreferrer" className="underline">
-                        {url}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
+            <CompanionPairingQr
+              companionUrls={status.companion_urls}
+              companionConnected={status.companion_connected}
+              companionHost={status.companion_host}
+            />
           </div>
         )}
       </div>

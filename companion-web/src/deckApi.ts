@@ -1,16 +1,24 @@
 import type {
+  CollectionInstallQueued,
+  CollectionSummary,
+  CompanionCollectionDetail,
+  CompanionDeviceSettings,
+  CompanionDownloadRecord,
   CompanionGame,
   CompanionInstalledMod,
   DiscoveryFeeds,
   InstallSessionStatus,
+  LoadOrderState,
   ModDetail,
   ModFileInfo,
   ModSummary,
+  ModUpdateInfo,
   SelectedInstallOption,
+  SyncActionResult,
   UninstallResult,
 } from "./types";
 
-export const COMPANION_API_VERSION = 2;
+export const COMPANION_API_VERSION = 3;
 
 export interface PairedDeck {
   name: string;
@@ -32,7 +40,29 @@ export interface PingInfo {
 }
 
 export const PAIRED_KEY = "nexusdeck_paired_deck";
+const LAN_HOSTS_KEY = "nexusdeck_paired_lan_hosts";
 const FETCH_TIMEOUT_MS = 20_000;
+
+export type HeartbeatResult = "ok" | "unauthorized" | "failed";
+
+export function loadCachedLanHosts(): string[] {
+  try {
+    const raw = localStorage.getItem(LAN_HOSTS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as string[]) : [];
+    return Array.isArray(parsed) ? parsed.filter((h) => typeof h === "string" && h.trim()) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCachedLanHosts(hosts: string[]) {
+  const unique = [...new Set(hosts.map((h) => h.trim()).filter(Boolean))];
+  localStorage.setItem(LAN_HOSTS_KEY, JSON.stringify(unique.slice(0, 8)));
+}
+
+export function clearCachedLanHosts() {
+  localStorage.removeItem(LAN_HOSTS_KEY);
+}
 
 export function loadPaired(): PairedDeck | null {
   try {
@@ -49,6 +79,7 @@ export function savePaired(deck: PairedDeck) {
 
 export function clearPaired() {
   localStorage.removeItem(PAIRED_KEY);
+  clearCachedLanHosts();
 }
 
 export function companionAppUrl(host: string, port = 8731): string {
@@ -103,7 +134,11 @@ async function readJson<T>(resp: Response): Promise<T> {
 
 export async function pingDeck(host: string, port: number): Promise<PingInfo> {
   const resp = await fetchDeck(`http://${host}:${port}/ping`);
-  return readJson<PingInfo>(resp);
+  const info = await readJson<PingInfo>(resp);
+  if (info.lan_hosts?.length) {
+    saveCachedLanHosts([host, ...info.lan_hosts]);
+  }
+  return info;
 }
 
 /** Fast probe for LAN discovery scans (short timeout, no throw on failure). */
@@ -120,19 +155,23 @@ export async function probeDeck(
   }
 }
 
-/** Authenticated keepalive — lets the device know this companion is still live.
- *  Returns false (never throws) so a dropped connection is easy to detect. */
-export async function heartbeatDeck(paired: PairedDeck): Promise<boolean> {
+/** Authenticated keepalive — lets the device know this companion is still live. */
+export async function heartbeatDeck(paired: PairedDeck): Promise<HeartbeatResult> {
   try {
     const resp = await fetchDeck(
       `http://${paired.host}:${paired.port}/heartbeat`,
       { headers: authHeaders(paired) },
       6000
     );
-    return resp.ok;
+    if (resp.status === 401) return "unauthorized";
+    return resp.ok ? "ok" : "failed";
   } catch {
-    return false;
+    return "failed";
   }
+}
+
+export function isHeartbeatOk(result: HeartbeatResult): boolean {
+  return result === "ok";
 }
 
 export async function pairWithDeck(host: string, port: number, code: string): Promise<string> {
@@ -217,13 +256,14 @@ export async function fetchLibraryMods(
 
 export async function toggleLibraryMod(
   paired: PairedDeck,
+  gameDomain: string,
   modId: string,
   enabled: boolean
 ): Promise<void> {
   const resp = await fetchDeck(`http://${paired.host}:${paired.port}/library/mod/toggle`, {
     method: "POST",
     headers: { ...authHeaders(paired), "Content-Type": "application/json" },
-    body: JSON.stringify({ mod_id: modId, enabled }),
+    body: JSON.stringify({ game_domain: gameDomain, mod_id: modId, enabled }),
   });
   await readJson<{ ok: boolean }>(resp);
 }
@@ -382,4 +422,136 @@ export async function startEssentialsOnDeck(
     body: JSON.stringify(payload),
   });
   return readJson(resp);
+}
+
+export async function fetchLoadOrderState(
+  paired: PairedDeck,
+  gameDomain: string
+): Promise<LoadOrderState> {
+  const params = new URLSearchParams({ domain: gameDomain });
+  const resp = await fetchDeck(
+    `http://${paired.host}:${paired.port}/loadorder/state?${params}`,
+    { headers: authHeaders(paired) }
+  );
+  return readJson<LoadOrderState>(resp);
+}
+
+export async function sortLoadOrder(paired: PairedDeck, gameDomain: string): Promise<LoadOrderState> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/loadorder/sort`, {
+    method: "POST",
+    headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+    body: JSON.stringify({ game_domain: gameDomain }),
+  });
+  return readJson<LoadOrderState>(resp);
+}
+
+export async function syncPluginsTxt(
+  paired: PairedDeck,
+  gameDomain: string
+): Promise<{ plugin_count: number; path?: string }> {
+  const resp = await fetchDeck(
+    `http://${paired.host}:${paired.port}/loadorder/sync-plugins`,
+    {
+      method: "POST",
+      headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+      body: JSON.stringify({ game_domain: gameDomain }),
+    }
+  );
+  return readJson(resp);
+}
+
+export async function fetchDownloads(
+  paired: PairedDeck,
+  gameDomain: string
+): Promise<CompanionDownloadRecord[]> {
+  const params = new URLSearchParams({ domain: gameDomain });
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/downloads?${params}`, {
+    headers: authHeaders(paired),
+  });
+  return readJson<CompanionDownloadRecord[]>(resp);
+}
+
+export async function fetchLibraryUpdates(
+  paired: PairedDeck,
+  gameDomain: string
+): Promise<ModUpdateInfo[]> {
+  const params = new URLSearchParams({ domain: gameDomain });
+  const resp = await fetchDeck(
+    `http://${paired.host}:${paired.port}/library/updates?${params}`,
+    { headers: authHeaders(paired) }
+  );
+  return readJson<ModUpdateInfo[]>(resp);
+}
+
+export async function fetchCollections(
+  paired: PairedDeck,
+  gameDomain: string,
+  offset = 0
+): Promise<CollectionSummary[]> {
+  const params = new URLSearchParams({ domain: gameDomain, offset: String(offset) });
+  const resp = await fetchDeck(
+    `http://${paired.host}:${paired.port}/collections/list?${params}`,
+    { headers: authHeaders(paired) }
+  );
+  return readJson<CollectionSummary[]>(resp);
+}
+
+export async function fetchCollectionDetail(
+  paired: PairedDeck,
+  gameDomain: string,
+  slug: string
+): Promise<CompanionCollectionDetail> {
+  const params = new URLSearchParams({ domain: gameDomain, slug });
+  const resp = await fetchDeck(
+    `http://${paired.host}:${paired.port}/collections/detail?${params}`,
+    { headers: authHeaders(paired) }
+  );
+  return readJson<CompanionCollectionDetail>(resp);
+}
+
+export async function startCollectionInstall(
+  paired: PairedDeck,
+  gameDomain: string,
+  slug: string
+): Promise<CollectionInstallQueued[]> {
+  const resp = await fetchDeck(
+    `http://${paired.host}:${paired.port}/collections/install/start`,
+    {
+      method: "POST",
+      headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+      body: JSON.stringify({ game_domain: gameDomain, slug }),
+    }
+  );
+  return readJson<CollectionInstallQueued[]>(resp);
+}
+
+export async function fetchDeviceSettings(paired: PairedDeck): Promise<CompanionDeviceSettings> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/settings/device`, {
+    headers: authHeaders(paired),
+  });
+  return readJson<CompanionDeviceSettings>(resp);
+}
+
+export async function syncPresetsOnDevice(
+  paired: PairedDeck,
+  gameDomain: string
+): Promise<SyncActionResult> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/sync/presets`, {
+    method: "POST",
+    headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+    body: JSON.stringify({ game_domain: gameDomain }),
+  });
+  return readJson<SyncActionResult>(resp);
+}
+
+export async function applyLoadOrderOnDevice(
+  paired: PairedDeck,
+  gameDomain: string
+): Promise<SyncActionResult> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/sync/apply-loadorder`, {
+    method: "POST",
+    headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+    body: JSON.stringify({ game_domain: gameDomain }),
+  });
+  return readJson<SyncActionResult>(resp);
 }

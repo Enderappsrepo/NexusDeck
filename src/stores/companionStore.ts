@@ -70,3 +70,24 @@ export function useCompanionPresencePoll() {
 
 /** Selector for install gating: true while a companion owns installation. */
 export const useCompanionConnected = () => useCompanionStore((s) => s.connected);
+
+const ACTIVE_COMPANION_INSTALL = new Set([
+  "downloading",
+  "extracting",
+  "installing",
+  "ready",
+]);
+
+/** True when the phone companion is driving this download's install flow. */
+export function isCompanionManagedDownload(
+  download: { companion_managed?: boolean; mod_name?: string },
+  activeInstall: CompanionInstallSummary | null
+): boolean {
+  if (download.companion_managed) return true;
+  if (!activeInstall || !ACTIVE_COMPANION_INSTALL.has(activeInstall.status)) {
+    return false;
+  }
+  const modName = download.mod_name?.trim();
+  if (!modName) return false;
+  return activeInstall.mod_name.trim() === modName;
+}

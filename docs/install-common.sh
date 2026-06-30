@@ -102,8 +102,11 @@ download_latest_flatpak() {
   progress_info "download" "Fetching release info from ${GITHUB_REPO}…"
 
   local release_json
-  release_json="$(curl -fsSL -H "Accept: application/vnd.github+json" "$api_url")" \
-    || progress_fail "download" "Could not fetch release info. Set NEXUSDECK_FLATPAK_PATH to install from a local file."
+  release_json="$(curl -fsSL \
+    -H "Accept: application/vnd.github+json" \
+    -H "User-Agent: NexusDeck-Installer" \
+    "$api_url")" \
+    || progress_fail "download" "Could not fetch release info from GitHub. Check your internet connection, or set NEXUSDECK_FLATPAK_PATH to install from a local .flatpak file."
 
   local asset_url asset_name
   asset_url="$(python3 - <<'PY' "$release_json"
@@ -128,7 +131,12 @@ PY
   local tmp_file
   tmp_file="$(mktemp "${TMPDIR:-/tmp}/nexusdeck-XXXXXX.flatpak")"
   progress_info "download" "Downloading ${asset_name}…"
-  curl -fL --progress-bar "$asset_url" -o "$tmp_file"
+  if ! curl -fL --progress-bar \
+    -H "User-Agent: NexusDeck-Installer" \
+    "$asset_url" -o "$tmp_file"; then
+    rm -f "$tmp_file"
+    progress_fail "download" "Download failed for ${asset_name}. Try again, use a local .flatpak file, or run: curl -fsSL https://github.com/${GITHUB_REPO}/releases/latest/download/i.sh | bash"
+  fi
   [[ -s "$tmp_file" ]] || progress_fail "download" "Download failed or empty file: ${asset_name}"
   progress_ok "download" "Downloaded ${asset_name}"
   printf '%s\n' "$tmp_file"

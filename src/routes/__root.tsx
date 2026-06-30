@@ -12,6 +12,8 @@ import { InstallSuccessDialog } from "@/components/install/InstallSuccessDialog"
 import {
   useAuthStore,
   useCompanionPresencePoll,
+  useCompanionStore,
+  isCompanionManagedDownload,
   useDownloadsStore,
   useGamesStore,
   useInstallQueueStore,
@@ -96,6 +98,8 @@ function RootLayout() {
   const completeActive = useInstallQueueStore((s) => s.completeActive);
   const failActive = useInstallQueueStore((s) => s.failActive);
   const cancelActive = useInstallQueueStore((s) => s.cancelActive);
+  const removeJob = useInstallQueueStore((s) => s.removeJob);
+  const getActiveJob = useInstallQueueStore((s) => s.getActiveJob);
   const installJobs = useInstallQueueStore((s) => s.jobs);
   const syncCollectionDownload = useCollectionInstallStore((s) => s.syncFromDownload);
   const syncCollectionInstall = useCollectionInstallStore((s) => s.syncFromInstallJob);
@@ -133,6 +137,7 @@ function RootLayout() {
   const registerPendingInstall = useInstallQueueStore((s) => s.registerPendingInstall);
   const prioritizeDownload = useInstallQueueStore((s) => s.prioritizeDownload);
   const pendingByDownloadId = useInstallQueueStore((s) => s.pendingByDownloadId);
+  const activeInstall = useCompanionStore((s) => s.activeInstall);
 
   const completeUpdateDownload = useCallback(
     async (download: DownloadProgress) => {
@@ -159,6 +164,10 @@ function RootLayout() {
 
   const handleDownloadComplete = useCallback(
     async (download: DownloadProgress) => {
+      if (isCompanionManagedDownload(download, activeInstall)) {
+        return;
+      }
+
       if (download.update_target_mod_id) {
         await completeUpdateDownload(download);
         return;
@@ -194,6 +203,7 @@ function RootLayout() {
       }
     },
     [
+      activeInstall,
       pendingByDownloadId,
       downloadSettings.auto_install_after_download,
       completeUpdateDownload,
@@ -205,13 +215,16 @@ function RootLayout() {
 
   const handleInstallNowFromDownload = useCallback(
     async (download: DownloadProgress, front = false) => {
+      if (isCompanionManagedDownload(download, activeInstall)) {
+        return;
+      }
       if (download.update_target_mod_id) {
         await completeUpdateDownload(download);
         return;
       }
       await enqueueFromDownload(download, "manual", profiles, { front });
     },
-    [profiles, completeUpdateDownload, enqueueFromDownload]
+    [profiles, activeInstall, completeUpdateDownload, enqueueFromDownload]
   );
 
   useFocusNavigation(containerRef);
@@ -269,6 +282,9 @@ function RootLayout() {
 
     recoveryHandledRef.current = true;
     const download = completed[0];
+    if (isCompanionManagedDownload(download, activeInstall)) {
+      return;
+    }
     const pending = pendingByDownloadId[download.id];
     const autoInstall =
       download.auto_install ||
@@ -296,6 +312,7 @@ function RootLayout() {
     active,
     installPrompt,
     activeJob,
+    activeInstall,
     pendingByDownloadId,
     downloadSettings.auto_install_after_download,
     profiles,
@@ -379,6 +396,19 @@ function RootLayout() {
   }, [setProgress, setError, navigate, handleDownloadComplete, profiles, registerPendingInstall]);
 
   useEffect(() => {
+    if (!activeInstall) return;
+    if (!["downloading", "extracting", "installing", "ready"].includes(activeInstall.status)) {
+      return;
+    }
+    dismissInstallPrompt();
+    const job = getActiveJob();
+    if (job) {
+      // Drop the local wizard only — the companion session owns deploy on the backend.
+      removeJob(job.id);
+    }
+  }, [activeInstall, dismissInstallPrompt, getActiveJob, removeJob]);
+
+  useEffect(() => {
     const onInstall = (e: Event) => {
       const { downloadId, front } = (e as CustomEvent).detail as {
         downloadId: string;
@@ -386,13 +416,14 @@ function RootLayout() {
       };
       const download = active[downloadId];
       if (download?.status === "complete") {
+        if (isCompanionManagedDownload(download, activeInstall)) return;
         if (front) prioritizeDownload(downloadId);
         void handleInstallNowFromDownload(download, front);
       }
     };
     window.addEventListener("nexusdeck-install-download", onInstall);
     return () => window.removeEventListener("nexusdeck-install-download", onInstall);
-  }, [active, handleInstallNowFromDownload, prioritizeDownload]);
+  }, [active, activeInstall, handleInstallNowFromDownload, prioritizeDownload]);
 
   useEffect(() => {
     if (!collectionActive) return;
