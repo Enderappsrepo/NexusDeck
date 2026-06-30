@@ -258,6 +258,7 @@ impl GamePlugin for CreationEnginePlugin {
                 description: format!(
                     "Script extender or loader files detected at the archive root. Files install to the {game_name} folder (loaders at the root, Data/ into Data/)."
                 ),
+                copy_rules: None,
             }
         } else if archive_has_data_folder(entries) {
             DeployPlan {
@@ -268,6 +269,7 @@ impl GamePlugin for CreationEnginePlugin {
                 description: format!(
                     "Standard {game_name} mod layout detected. Files will be copied into your game's Data folder."
                 ),
+                copy_rules: None,
             }
         } else if has_loose_fallout4_data_folders(&rel_paths) {
             DeployPlan {
@@ -278,6 +280,7 @@ impl GamePlugin for CreationEnginePlugin {
                 description:
                     "Asset files detected (meshes, textures, etc.). They will be installed into your Data folder."
                         .to_string(),
+                copy_rules: None,
             }
         } else if rel_paths.iter().any(|p| {
             let lower = p.to_lowercase();
@@ -291,6 +294,7 @@ impl GamePlugin for CreationEnginePlugin {
                 description:
                     "Plugin files detected (.esp/.esm). They will be installed into your Data folder."
                         .to_string(),
+                copy_rules: None,
             }
         } else {
             DeployPlan {
@@ -301,6 +305,7 @@ impl GamePlugin for CreationEnginePlugin {
                 description: format!(
                     "This archive doesn't match a usual {game_name} layout. Review the file list before installing."
                 ),
+                copy_rules: None,
             }
         }
     }

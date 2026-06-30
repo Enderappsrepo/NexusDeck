@@ -79,6 +79,9 @@ pub struct InstallPreview {
     pub install_wizard: Option<crate::services::install_options::InstallWizard>,
     #[serde(default)]
     pub option_file_counts: std::collections::HashMap<String, u32>,
+    /// When true, the UI may install immediately without review (clear layout, no FOMOD, no conflicts).
+    #[serde(default)]
+    pub quick_install: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -472,6 +475,7 @@ pub async fn preview_mod_install(
             install_wizard_required: true,
             install_wizard: None,
             option_file_counts: std::collections::HashMap::new(),
+            quick_install: false,
         });
     }
 
@@ -578,11 +582,13 @@ pub async fn preview_mod_install(
     );
 
     let game_path = PathBuf::from(&profile.game_path);
-    let plan = games::build_plan_for_strategy(
+    let plan = games::build_plan_for_strategy_with_context(
         &profile.game_domain,
         game_path.as_path(),
         &entries,
         &strategy,
+        Some(archive.as_path()),
+        extract_dir.as_deref(),
     )?;
 
     let deploy_files = compute_deploy_paths(&plan, &entries, game_path.as_path());
@@ -607,8 +613,20 @@ pub async fn preview_mod_install(
     );
     let conflicts = preview_conflicts(&profile.id, &planned, &mod_name)?;
     let archive_folders = archive_top_level_folders(&entries);
+    let quick_install = crate::services::vortex_override::quick_install_eligible(
+        &plan,
+        false,
+        option_groups.len(),
+        install_wizard
+            .as_ref()
+            .map(|w| !w.steps.is_empty())
+            .unwrap_or(false),
+        conflicts.len(),
+    );
 
-    let complete_message = if conflicts.is_empty() {
+    let complete_message = if quick_install {
+        "Ready — installing automatically".to_string()
+    } else if conflicts.is_empty() {
         "Ready to install".to_string()
     } else {
         format!("{} potential conflict(s) found", conflicts.len())
@@ -636,6 +654,7 @@ pub async fn preview_mod_install(
         install_wizard_required: false,
         install_wizard,
         option_file_counts,
+        quick_install,
     })
 }
 
@@ -1092,11 +1111,13 @@ pub async fn install_mod_from_archive_impl(
         )?;
     }
 
-    let plan = games::build_plan_for_strategy(
+    let plan = games::build_plan_for_strategy_with_context(
         &profile.game_domain,
         PathBuf::from(&profile.game_path).as_path(),
         &entries,
         &options.strategy,
+        Some(archive.as_path()),
+        Some(temp_extract.as_path()),
     )?;
 
     crate::services::install_options::prune_extract_dir(&temp_extract, &all_entries, &disk_entries)?;

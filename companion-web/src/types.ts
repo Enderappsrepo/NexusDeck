@@ -14,6 +14,25 @@ export interface ModSummary {
   mod_downloads?: number;
 }
 
+export interface ModSearchFilters {
+  category?: string | null;
+  tags: string[];
+  min_endorsements?: number | null;
+  hide_adult: boolean;
+  updated_since_days?: number | null;
+  author?: string | null;
+}
+
+export interface ModSearchResult {
+  mods: ModSummary[];
+  total_count: number;
+}
+
+export interface ModCategory {
+  category_id: number;
+  name: string;
+}
+
 export interface ModFileInfo {
   file_id: number;
   name: string;
@@ -246,6 +265,17 @@ export interface ModUpdateInfo {
   latest_version: string;
   latest_file_id: number;
   changelog_available: boolean;
+}
+
+export interface UpdateJob {
+  download_id: string;
+  installed_mod_id: string;
+}
+
+export interface UpdateBatchResult {
+  queued: string[];
+  skipped: string[];
+  errors: string[];
 }
 
 export interface CollectionSummary {

@@ -14,6 +14,43 @@ function normalizePath(pathname: string): string {
   return pathname.replace(/\/+$/, "") || "/";
 }
 
+/** Parent route for known nested paths; avoids brittle history.back() in SPAs. */
+function explicitBackTarget(pathname: string):
+  | { to: "/games" }
+  | { to: "/games/$domain"; params: { domain: string } }
+  | { to: "/games/$domain/mods"; params: { domain: string }; search: { modId: undefined } }
+  | { to: "/games/$domain/collections"; params: { domain: string } }
+  | { to: "/games/$domain/mods/$modId"; params: { domain: string; modId: string } }
+  | { to: "/" }
+  | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] !== "games" || parts.length < 2) {
+    return pathname === "/" ? null : { to: "/" };
+  }
+
+  const domain = parts[1];
+  if (parts.length === 2) {
+    return { to: "/games" };
+  }
+  if (parts[2] === "mods" && parts.length === 4) {
+    return {
+      to: "/games/$domain/mods",
+      params: { domain },
+      search: { modId: undefined },
+    };
+  }
+  if (parts[2] === "collections" && parts.length === 4) {
+    return { to: "/games/$domain/collections", params: { domain } };
+  }
+  if (parts[2] === "preview" && parts.length === 4) {
+    return {
+      to: "/games/$domain/mods/$modId",
+      params: { domain, modId: parts[3] },
+    };
+  }
+  return { to: "/games/$domain", params: { domain } };
+}
+
 export function useShowBackButton(): boolean {
   const pathname = useRouterState({ select: (s) => normalizePath(s.location.pathname) });
   return !TOP_LEVEL_PATHS.has(pathname);
@@ -32,34 +69,14 @@ export function useAppBack() {
     if (now - lastBackAt < BACK_LOCK_MS) return;
     lastBackAt = now;
 
-    if (window.history.length > 1) {
-      router.history.back();
+    const target = explicitBackTarget(pathname);
+    if (target) {
+      navigate(target);
       return;
     }
 
-    const parts = pathname.split("/").filter(Boolean);
-    if (parts[0] === "games" && parts.length >= 2) {
-      const domain = parts[1];
-      if (parts.length === 2) {
-        navigate({ to: "/games" });
-        return;
-      }
-      if (parts[2] === "mods" && parts.length === 4) {
-        navigate({ to: "/games/$domain/mods", params: { domain }, search: { modId: undefined } });
-        return;
-      }
-      if (parts[2] === "collections" && parts.length === 4) {
-        navigate({ to: "/games/$domain/collections", params: { domain } });
-        return;
-      }
-      if (parts[2] === "preview") {
-        navigate({
-          to: "/games/$domain/mods/$modId",
-          params: { domain, modId: parts[3] },
-        });
-        return;
-      }
-      navigate({ to: "/games/$domain", params: { domain } });
+    if (window.history.length > 1) {
+      router.history.back();
       return;
     }
 

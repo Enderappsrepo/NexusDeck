@@ -1,4 +1,4 @@
-const CACHE = "nexusdeck-companion-v4";
+const CACHE = "nexusdeck-companion-v5";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

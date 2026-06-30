@@ -4,7 +4,7 @@ The companion PWA talks to NexusDeck over HTTP on port **8731** (same Wi‑Fi, *
 
 ## Versioning
 
-`GET /ping` returns `companion_api` (currently **3**). Older app builds may not expose v3 routes; the companion shows an update prompt when endpoints return 404.
+`GET /ping` returns `companion_api` (currently **5**). Older app builds may not expose newer routes; the companion shows an update prompt when endpoints return 404.
 
 ## Authentication
 
@@ -18,15 +18,40 @@ The companion PWA talks to NexusDeck over HTTP on port **8731** (same Wi‑Fi, *
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/games/list` | Profiles available for remote install |
-| GET | `/search/mods?domain=&q=` | Nexus search |
+| GET | `/categories/list?domain=` | Mod categories for filter UI (v4+) |
+| GET | `/search/mods?domain=&q=` | Nexus search with optional filters (v4+) |
 | GET | `/browse/trending?domain=` | Trending mods |
 | GET | `/browse/latest?domain=&offset=` | Recently updated |
 | GET | `/browse/discovery?domain=` | Full discovery shelves |
+| GET | `/browse/shelf?domain=&sort=&offset=&updated_since_days=` | Paginated shelf browse (v5+) |
 | GET | `/mods/detail?domain=&mod_id=` | Mod detail |
 | GET | `/mods/files?domain=&mod_id=` | Downloadable files |
 | POST | `/install/session/start` | Start remote install session |
 | GET | `/install/session/:id` | Poll session (download → prepare → ready) |
 | POST | `/install/session/:id/confirm` | Confirm FOMOD/deploy |
+
+### Search filters (v4+)
+
+`GET /search/mods` accepts:
+
+| Param | Description |
+|-------|-------------|
+| `domain` | Game domain (required) |
+| `q` | Text search (optional) |
+| `sort` | `downloads` (default), `endorsements`, `created` |
+| `offset`, `count` | Pagination (default count 20) |
+| `category` | Category name |
+| `tags` | Comma-separated tag names (AND) |
+| `min_endorsements` | Minimum endorsement count |
+| `hide_adult` | `true` or `1` |
+| `updated_since_days` | Only mods updated within N days |
+| `author` | Exact author name |
+
+Response shape (v4+):
+
+```json
+{ "mods": [ /* ModSummary[] */ ], "total_count": 1234 }
+```
 
 ## Library (v2+)
 
@@ -36,6 +61,10 @@ The companion PWA talks to NexusDeck over HTTP on port **8731** (same Wi‑Fi, *
 | POST | `/library/mod/toggle` | Body: `{ game_domain, mod_id, enabled }` — syncs plugins.txt |
 | POST | `/library/mod/uninstall` | Body: `{ mod_id }` |
 | POST | `/library/mod/reorder` | Body: `{ game_domain, mod_id, direction }` — `"up"` or `"down"` |
+| POST | `/library/mod/position` | Body: `{ game_domain, mod_id, position }` — 0-based index (v5+) |
+| POST | `/library/mod/update` | Body: `{ game_domain, mod_id }` — start mod update download (v5+) |
+| POST | `/library/updates/all` | Body: `{ game_domain }` — queue all available updates (v5+) |
+| POST | `/library/rescan` | Body: `{ game_domain }` — rescan library from disk (v5+) |
 
 ## Load order & LOOT (v3)
 
@@ -50,6 +79,8 @@ The companion PWA talks to NexusDeck over HTTP on port **8731** (same Wi‑Fi, *
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/downloads?domain=` | Active/recent downloads for profile |
+| POST | `/downloads/cancel` | Body: `{ download_id }` (v5+) |
+| POST | `/downloads/retry` | Body: `{ download_id }` (v5+) |
 | GET | `/library/updates?domain=` | Mods with newer Nexus file versions |
 
 ## Collections (v3)
@@ -58,7 +89,7 @@ The companion PWA talks to NexusDeck over HTTP on port **8731** (same Wi‑Fi, *
 |--------|------|-------------|
 | GET | `/collections/list?domain=&offset=` | Nexus collections list |
 | GET | `/collections/detail?domain=&slug=` | Collection + install diff summary |
-| POST | `/collections/install/start` | Body: `{ game_domain, slug }` — queue missing mods |
+| POST | `/collections/install/start` | Body: `{ game_domain, slug, include_optional?, include_outdated? }` — queue mods |
 
 ## Device settings & sync (v3)
 

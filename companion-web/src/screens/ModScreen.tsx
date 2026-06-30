@@ -10,7 +10,7 @@ import { ConflictPreview } from "../components/ConflictPreview";
 import { InstallOptions, defaultSelectionsFromPrepare } from "../components/InstallOptions";
 import { coverUrl, formatUpdated, nexusModUrl, stripHtml } from "../lib/modUi";
 import { groupModFiles } from "../lib/modFiles";
-import type { CompanionGame, ModDetail, ModFileInfo, ModSummary } from "../types";
+import type { CompanionGame, ModDetail, ModFileInfo, ModSummary, ModUpdateInfo } from "../types";
 
 export function ModScreen({
   modDetail,
@@ -27,8 +27,13 @@ export function ModScreen({
   activeGame,
   installBusy,
   isInstalled,
+  updateInfo,
   onBack,
+  onFilterTag,
+  onUpdate,
   onInstall,
+  onQueue,
+  inQueue,
 }: {
   modDetail: ModDetail | null;
   modFiles: ModFileInfo[];
@@ -44,8 +49,13 @@ export function ModScreen({
   activeGame?: CompanionGame;
   installBusy: boolean;
   isInstalled: boolean;
+  updateInfo?: ModUpdateInfo | null;
   onBack: () => void;
+  onFilterTag?: (tag: string) => void;
+  onUpdate?: (update: ModUpdateInfo) => void;
   onInstall: () => void;
+  onQueue?: () => void;
+  inQueue?: boolean;
 }) {
   const heroImg = modDetail ? coverUrl(modDetail) : coverUrl(selectedMod);
   const { mainFiles, otherFiles } = groupModFiles(modFiles);
@@ -55,7 +65,7 @@ export function ModScreen({
     <>
       <div className="cc-detail-hero">
         {heroImg ? (
-          <img src={heroImg} alt="" className="cc-detail-hero-img" />
+          <img src={heroImg} alt={modDetail?.name ?? selectedMod.name} className="cc-detail-hero-img" />
         ) : (
           <div className="cc-tile-fallback cc-detail-hero-img" />
         )}
@@ -72,6 +82,20 @@ export function ModScreen({
                 {modDetail.category && <span className="cc-detail-eyebrow">{modDetail.category}</span>}
                 <h2 className="cc-detail-title">{modDetail.name}</h2>
                 <p className="cc-detail-author">by {modDetail.author}</p>
+                {modDetail.tags && modDetail.tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {modDetail.tags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        className="cc-chip text-[10px]"
+                        onClick={() => onFilterTag?.(tag)}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </>
             )
           )}
@@ -164,23 +188,66 @@ export function ModScreen({
           >
             Open on Nexus Mods ↗
           </a>
-        </div>
-      )}
 
-      {modDetail && !modBusy && (
-        <div className="cc-detail-cta" data-detail-cta>
-          <button
-            type="button"
-            className="cc-btn w-full"
-            disabled={!activeGame?.can_install || !selectedFileId || installBusy}
-            onClick={onInstall}
-          >
-            {installBusy
-              ? "Sending…"
-              : !activeGame?.can_install
-                ? "Add this game on your device first"
-                : "Send to device"}
-          </button>
+          <div className="cc-detail-action">
+            {updateInfo && onUpdate ? (
+              <>
+                <p className="cc-detail-action-label">Update available</p>
+                <p className="cc-detail-action-meta">
+                  v{updateInfo.installed_version ?? "?"} → v{updateInfo.latest_version}
+                </p>
+                <button
+                  type="button"
+                  className="cc-detail-action-btn"
+                  disabled={installBusy}
+                  onClick={() => onUpdate(updateInfo)}
+                >
+                  {installBusy ? "Sending…" : "Update on device"}
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="cc-detail-action-label">
+                  {isInstalled ? "Reinstall" : "Install remotely"}
+                </p>
+                {selectedFile ? (
+                  <p className="cc-detail-action-meta">
+                    {selectedFile.name} · v{selectedFile.version} ·{" "}
+                    {Math.max(1, Math.round(selectedFile.size_kb / 1024))} MB
+                  </p>
+                ) : (
+                  <p className="cc-detail-action-meta">Select a file above to continue.</p>
+                )}
+                {!activeGame?.can_install && (
+                  <p className="cc-detail-action-hint">Add this game on your device in NexusDeck first.</p>
+                )}
+                <div className="flex flex-col gap-2">
+                  {onQueue && (
+                    <button
+                      type="button"
+                      className="cc-btn-secondary w-full"
+                      disabled={!activeGame?.can_install || !selectedFileId || installBusy}
+                      onClick={onQueue}
+                    >
+                      {inQueue ? "In queue" : "Add to queue"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="cc-detail-action-btn"
+                    disabled={!activeGame?.can_install || !selectedFileId || installBusy}
+                    onClick={onInstall}
+                  >
+                    {installBusy
+                      ? "Sending…"
+                      : isInstalled
+                        ? "Reinstall now"
+                        : "Send to device now"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </>

@@ -272,6 +272,65 @@ export function ModInstallDialog({
     return "review" as const;
   };
 
+  const quickInstallEnabled = () =>
+    typeof localStorage === "undefined" ||
+    localStorage.getItem("nexusdeck_quick_install") !== "false";
+
+  const installFromPreview = async (
+    previewResult: InstallPreview,
+    resolved: string,
+    presetStrategy: string,
+    selectionsToUse: SelectedInstallOption[],
+    extractDir: string | null
+  ) => {
+    setPhase("installing");
+    setInstalling(true);
+    setPreview(previewResult);
+    setStrategy(presetStrategy);
+    setSelections(selectionsToUse);
+    if (extractDir) setPreparedExtractDir(extractDir);
+    try {
+      const installResult = await api.installModFromArchive({
+        profileId: profile.id,
+        modName,
+        nexusModId: modId,
+        nexusFileId: file.file_id,
+        archivePath: resolved,
+        options: {
+          strategy: presetStrategy,
+          enable_mod: true,
+          overwrite_files: false,
+          selected_options: selectionsToUse,
+          prepared_extract_dir: extractDir,
+          dry_run: false,
+        },
+        fileVersion: file.version ?? null,
+        replaceModId: replaceModId ?? null,
+      });
+      if (installResult.log_path) setInstallLogPath(installResult.log_path);
+      if (localStorage.getItem("nexusdeck_auto_sort_after_install") === "true") {
+        await api.autoSortLoadOrder(profile.id).catch(() => {});
+      }
+      onInstalled?.();
+      window.dispatchEvent(
+        new CustomEvent("nexusdeck-mod-installed", { detail: { modName } })
+      );
+      onOpenChange(false);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (isInstallCancelled(message)) {
+        onOpenChange(false);
+        return;
+      }
+      setError(message);
+      setPhase("error");
+      onInstallFailed?.(message);
+    } finally {
+      setInstalling(false);
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!open) return;
 
@@ -306,6 +365,18 @@ export function ModInstallDialog({
         setArchivePath(resolved);
         const result = await loadPreview(presetStrategy, resolved, undefined, null);
         if (!result) return;
+
+        if (result.quick_install && quickInstallEnabled() && !installPreset?.autoConfirm) {
+          await installFromPreview(
+            result,
+            resolved,
+            presetStrategy,
+            result.default_selections,
+            null
+          );
+          return;
+        }
+
         const nextPhase = resolveInitialPhase(result);
 
         if (installPreset?.autoConfirm) {
@@ -560,6 +631,14 @@ export function ModInstallDialog({
         setPhase("wizard");
       } else if (previewResult.option_groups.length > 0) {
         setPhase("options");
+      } else if (previewResult.quick_install && quickInstallEnabled()) {
+        await installFromPreview(
+          previewResult,
+          archivePath,
+          strategy,
+          result.default_selections,
+          result.prepared_extract_dir
+        );
       } else {
         setPhase("review");
       }

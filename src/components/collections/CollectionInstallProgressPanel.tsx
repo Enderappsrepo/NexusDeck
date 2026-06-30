@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle2, Loader2, RefreshCw, X, XCircle } from "lucide-react";
+import { CheckCircle2, Clock, Loader2, Play, RefreshCw, X, XCircle } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 const STATUS_ICON = {
   pending: Loader2,
   downloading: Loader2,
+  ready: Clock,
   installing: Loader2,
   done: CheckCircle2,
   failed: XCircle,
@@ -22,16 +23,22 @@ export function CollectionInstallProgressPanel() {
   const active = useCollectionInstallStore((s) => s.active);
   const dismiss = useCollectionInstallStore((s) => s.dismiss);
   const bindDownload = useCollectionInstallStore((s) => s.bindDownload);
-  const doneCount = useCollectionInstallStore((s) => s.doneCount());
-  const totalCount = useCollectionInstallStore((s) => s.totalCount());
+  const doneCount = useCollectionInstallStore((s) =>
+    s.active ? s.active.mods.filter((m) => m.status === "done" || m.status === "skipped").length : 0
+  );
+  const totalCount = useCollectionInstallStore((s) => s.active?.mods.length ?? 0);
   const setProgress = useDownloadsStore((s) => s.setProgress);
   const registerPendingInstall = useInstallQueueStore((s) => s.registerPendingInstall);
+  const processing = useInstallQueueStore((s) => s.processing);
+  const startProcessing = useInstallQueueStore((s) => s.startProcessing);
   const [retryingId, setRetryingId] = useState<number | null>(null);
 
   if (!active) return null;
 
   const allDone = doneCount === totalCount && totalCount > 0;
   const failed = active.mods.some((m) => m.status === "failed");
+  const readyCount = active.mods.filter((m) => m.status === "ready").length;
+  const canStartInstall = !processing && readyCount > 0;
   const pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
 
   const retryMod = async (modId: number) => {
@@ -80,11 +87,22 @@ export function CollectionInstallProgressPanel() {
                 ? failed
                   ? "Finished with errors"
                   : "All mods installed"
-                : `${doneCount} of ${totalCount} mods complete`}
+                : canStartInstall
+                  ? `${readyCount} ready to install · ${doneCount} of ${totalCount} complete`
+                  : processing
+                    ? `Installing · ${doneCount} of ${totalCount} complete`
+                    : `${doneCount} of ${totalCount} mods complete`}
             </p>
             <Progress value={pct} className="mt-2 h-1.5" />
           </div>
-          {(allDone || failed) && (
+          <div className="flex shrink-0 items-center gap-2">
+            {canStartInstall && (
+              <Button size="sm" onClick={startProcessing} data-focusable="true">
+                <Play className="h-4 w-4" />
+                Start installing
+              </Button>
+            )}
+            {(allDone || failed) && (
             <Button
               variant="ghost"
               size="icon"
@@ -94,7 +112,8 @@ export function CollectionInstallProgressPanel() {
             >
               <X className="h-4 w-4" />
             </Button>
-          )}
+            )}
+          </div>
         </div>
 
         <ul
@@ -147,7 +166,9 @@ export function CollectionInstallProgressPanel() {
                       ? "Downloading"
                       : mod.status === "installing"
                         ? "Installing"
-                        : mod.status}
+                        : mod.status === "ready"
+                          ? "Ready"
+                          : mod.status}
                   </span>
                 </div>
               </li>

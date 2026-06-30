@@ -5,6 +5,7 @@ import type { InstallJob } from "@/stores/installQueueStore";
 export type CollectionModStatus =
   | "pending"
   | "downloading"
+  | "ready"
   | "installing"
   | "done"
   | "failed"
@@ -91,7 +92,7 @@ export const useCollectionInstallStore = create<CollectionInstallState>((set, ge
       if (error || download.status === "failed") {
         status = "failed";
       } else if (download.status === "complete") {
-        status = "installing";
+        status = "ready";
       } else if (
         download.status === "downloading" ||
         download.status === "queued" ||
@@ -100,13 +101,18 @@ export const useCollectionInstallStore = create<CollectionInstallState>((set, ge
         status = "downloading";
       }
 
+      const nextError = error ?? (download.status === "failed" ? "Download failed" : mod.error);
+      if (mod.downloadId === download.id && mod.status === status && mod.error === nextError) {
+        return s;
+      }
+
       const mods = s.active.mods.map((m) =>
         m.modId === mod.modId
           ? {
               ...m,
               downloadId: download.id,
               status,
-              error: error ?? (download.status === "failed" ? "Download failed" : m.error),
+              error: nextError,
             }
           : m
       );
@@ -126,14 +132,21 @@ export const useCollectionInstallStore = create<CollectionInstallState>((set, ge
             ? "failed"
             : job.status === "active"
               ? "installing"
-              : mod.status;
+              : job.status === "queued"
+                ? "ready"
+                : mod.status;
+
+      const nextError = job.error ?? mod.error;
+      if (mod.status === status && mod.error === nextError) {
+        return s;
+      }
 
       const mods = s.active.mods.map((m) =>
         m.modId === mod.modId
           ? {
               ...m,
               status,
-              error: job.error ?? m.error,
+              error: nextError,
             }
           : m
       );

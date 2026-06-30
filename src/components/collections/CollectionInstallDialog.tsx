@@ -110,8 +110,8 @@ export function CollectionInstallDialog({
   return (
     <AppDialog open={open} onOpenChange={onOpenChange} title={`Install ${collection.name}`}>
       <p className="mb-4 text-sm text-[var(--color-muted)]">
-        Download and auto-install mods from this collection. Progress appears in a panel at the
-        bottom of the screen.
+        Download mods from this collection, then press Start installing in the progress
+        panel to install them one at a time.
       </p>
 
       {optionalMods.length > 0 && (
@@ -150,7 +150,7 @@ export function CollectionInstallDialog({
         </Button>
         <Button onClick={installAll} disabled={installing} data-focusable="true">
           <Package className="h-4 w-4" />
-          {installing ? "Starting..." : `Install ${targetMods.length} mod${targetMods.length === 1 ? "" : "s"}`}
+          {installing ? "Queueing…" : `Queue ${targetMods.length} mod${targetMods.length === 1 ? "" : "s"}`}
         </Button>
       </div>
     </AppDialog>

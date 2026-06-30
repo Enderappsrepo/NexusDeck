@@ -11,6 +11,7 @@ import {
   ImageIcon,
   MonitorSmartphone,
   Package,
+  ListPlus,
   Star,
   User,
 } from "lucide-react";
@@ -24,7 +25,9 @@ import { ModFileSections, groupModFiles } from "@/components/mod/ModFileSections
 import { ModDetailActionBar } from "@/components/mod/ModDetailActionBar";
 import { DependencyPanel } from "@/components/deps/DependencyPanel";
 import { useIsNarrow } from "@/hooks/useMediaQuery";
+import { useAppBack } from "@/hooks/useAppBack";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useCompanionConnected } from "@/stores/companionStore";
 import { resolveCompactNav } from "@/lib/platform";
 import type { DownloadProgress, InstalledMod, ModDetail, ModFileInfo, Profile } from "@/lib/nexus/types";
 import { formatBytes, formatDate, formatNumber, formatRelativeDate, cn } from "@/lib/utils";
@@ -133,20 +136,20 @@ function ModDetailDeckLayout(props: ModDetailViewProps) {
   const tabOptions = TAB_OPTIONS.map((t) =>
     t.value === "files" ? { ...t, label: `Files (${files.length})` } : t
   );
+  const goBack = useAppBack();
 
   return (
     <div className="mod-detail-deck mx-auto max-w-6xl pb-36" data-mod-detail-deck>
       <nav className="mb-3">
-        <Link
-          to="/games/$domain/mods"
-          params={{ domain }}
-          search={{ modId: undefined }}
+        <button
+          type="button"
+          onClick={goBack}
           className="focusable inline-flex min-h-[48px] items-center gap-2 text-base text-[var(--color-muted)] hover:text-[var(--color-foreground)]"
           data-focusable="true"
         >
           <ChevronLeft className="h-5 w-5" />
           Back to browse
-        </Link>
+        </button>
       </nav>
 
       <ModDetailHero
@@ -351,19 +354,20 @@ function ModDetailDesktopLayout(props: ModDetailViewProps) {
     return `${stripped.slice(0, 277)}…`;
   }, [formattedDescription]);
 
+  const goBack = useAppBack();
+
   return (
     <div className="mx-auto max-w-6xl pb-16">
       <nav className="mb-4 flex flex-wrap items-center gap-2 text-sm text-[var(--color-muted)]">
-        <Link
-          to="/games/$domain/mods"
-          params={{ domain }}
-          search={{ modId: undefined }}
+        <button
+          type="button"
+          onClick={goBack}
           className="focusable inline-flex items-center gap-1.5 hover:text-[var(--color-foreground)]"
           data-focusable="true"
         >
           <ChevronLeft className="h-4 w-4" />
           Browse
-        </Link>
+        </button>
         <span aria-hidden>/</span>
         <span className="truncate">{detail.category}</span>
       </nav>
@@ -494,6 +498,8 @@ function ModDetailDesktopLayout(props: ModDetailViewProps) {
           onDownload={onDownload}
           onBrowserDownload={onBrowserDownload}
           onInstall={onInstall}
+          onQueueInstall={onQueueInstall}
+          queueing={queueing}
           onSendToDeck={onSendToDeck}
           onEndorse={onEndorse}
           onTrack={onTrack}
@@ -836,6 +842,8 @@ function ModDetailSidebar({
   onDownload,
   onBrowserDownload,
   onInstall,
+  onQueueInstall,
+  queueing,
   sendToDeck,
   sendingToDeck,
   onSendToDeck,
@@ -859,6 +867,8 @@ function ModDetailSidebar({
   onDownload: (file: ModFileInfo) => void;
   onBrowserDownload: (file: ModFileInfo) => void;
   onInstall: (file: ModFileInfo) => void;
+  onQueueInstall?: (file: ModFileInfo) => void;
+  queueing?: boolean;
   onSendToDeck?: (file: ModFileInfo) => void;
   onEndorse: () => void;
   onTrack: () => void;
@@ -866,6 +876,8 @@ function ModDetailSidebar({
   onFilterTag: (tag: string) => void;
   onFilterAuthor?: (author: string) => void;
 }) {
+  const companionConnected = useCompanionConnected();
+
   return (
     <aside className="space-y-4 lg:sticky lg:top-6">
       {primaryFile && (
@@ -914,6 +926,19 @@ function ModDetailSidebar({
                 <Package className="h-4 w-4" />
                 Install
               </Button>
+              {!companionConnected && onQueueInstall && (
+                <Button
+                  variant="outline"
+                  className="w-full min-h-[48px]"
+                  loading={queueing}
+                  disabled={queueing || downloading}
+                  onClick={() => onQueueInstall(primaryFile)}
+                  data-focusable="true"
+                >
+                  <ListPlus className="h-4 w-4" />
+                  Queue
+                </Button>
+              )}
               {sendToDeck && onSendToDeck && (
                 <Button
                   variant="outline"

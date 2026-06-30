@@ -16,6 +16,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { DeckActionBar } from "@/components/layout/DeckActionBar";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
+import { InstallQueueNavButton } from "@/components/install/InstallQueueNavButton";
 import { useIsNarrow } from "@/hooks/useMediaQuery";
 import { resolveCompactNav } from "@/lib/platform";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -80,6 +81,7 @@ export function AppShell({
           )}
         </div>
         <div className="flex items-center gap-3">
+          {!hideNav && <InstallQueueNavButton />}
           {user?.is_premium && (
             <span
               className="hidden items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-[#5a3a06] shadow-[0_0_16px_rgba(245,158,11,0.4)] sm:flex"

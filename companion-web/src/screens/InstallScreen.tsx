@@ -17,8 +17,12 @@ export function InstallScreen({
   installProgressPct: _installProgressPct,
   conflictAck,
   setConflictAck,
+  overwriteFiles,
+  setOverwriteFiles,
   onConfirm,
+  onCancel,
   onDone,
+  queueRemaining = 0,
 }: {
   session: InstallSessionStatus;
   selections: SelectedInstallOption[];
@@ -31,8 +35,12 @@ export function InstallScreen({
   installProgressPct: number;
   conflictAck: boolean;
   setConflictAck: (v: boolean) => void;
+  overwriteFiles: boolean;
+  setOverwriteFiles: (v: boolean) => void;
   onConfirm: () => void;
+  onCancel: () => void;
   onDone: () => void;
+  queueRemaining?: number;
 }) {
   const conflicts = session.prepare?.conflicts ?? [];
   const needsConflictAck = conflicts.length > 0 && !conflictAck;
@@ -97,6 +105,16 @@ export function InstallScreen({
               <span>I understand these file conflicts and want to continue.</span>
             </label>
           )}
+          {conflicts.length > 0 && (
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={overwriteFiles}
+                onChange={(e) => setOverwriteFiles(e.target.checked)}
+              />
+              <span>Overwrite existing files from other mods.</span>
+            </label>
+          )}
 
           {session.prepare.strategies.length > 0 && (
             <div className="cc-panel space-y-3">
@@ -155,9 +173,15 @@ export function InstallScreen({
         </>
       )}
 
+      {isActive && (
+        <button type="button" className="cc-btn-secondary w-full" onClick={onCancel}>
+          Cancel install
+        </button>
+      )}
+
       {session.status === "done" && (
         <button type="button" className="cc-btn w-full" onClick={onDone}>
-          Back to catalog
+          {queueRemaining > 0 ? `Next in queue (${queueRemaining} left)` : "Back to catalog"}
         </button>
       )}
 

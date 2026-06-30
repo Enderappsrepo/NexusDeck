@@ -3,6 +3,22 @@ import { create } from "zustand";
 import { api } from "@/lib/commands";
 import type { CompanionInstallSummary } from "@/lib/nexus/types";
 
+import type { CompanionInstallSummary } from "@/lib/nexus/types";
+
+function sameInstallSummary(
+  a: CompanionInstallSummary | null,
+  b: CompanionInstallSummary | null
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.mod_name === b.mod_name &&
+    a.status === b.status &&
+    a.message === b.message &&
+    a.progress_pct === b.progress_pct
+  );
+}
+
 interface CompanionState {
   /** A paired companion (phone) is actively connected to this device. */
   connected: boolean;
@@ -27,12 +43,21 @@ export const useCompanionStore = create<CompanionState>((set, get) => ({
   dismissed: false,
   setPresence: ({ connected, host, activeInstall }) => {
     const wasConnected = get().connected;
+    const prev = get();
+    const nextDismissed = connected && !wasConnected ? false : prev.dismissed;
+    if (
+      prev.connected === connected &&
+      prev.host === host &&
+      sameInstallSummary(prev.activeInstall, activeInstall) &&
+      prev.dismissed === nextDismissed
+    ) {
+      return;
+    }
     set({
       connected,
       host,
       activeInstall,
-      // Re-show the overlay whenever a fresh connection is established.
-      dismissed: connected && !wasConnected ? false : get().dismissed,
+      dismissed: nextDismissed,
     });
   },
   dismiss: () => set({ dismissed: true }),

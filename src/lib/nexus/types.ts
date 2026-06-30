@@ -10,6 +10,7 @@ export interface DeployPlan {
   target: string;
   requires_confirmation: boolean;
   description: string;
+  copy_rules?: Array<{ source: string; destination: string }> | null;
 }
 
 export interface ArchiveEntry {
@@ -122,6 +123,8 @@ export interface InstallPreview {
   install_wizard_required?: boolean;
   install_wizard?: InstallWizard | null;
   option_file_counts?: Record<string, number>;
+  /** Clear layout, no FOMOD/options/conflicts — install without review. */
+  quick_install?: boolean;
 }
 
 export interface InstallPrepareResult {

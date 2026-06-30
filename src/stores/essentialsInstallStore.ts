@@ -112,13 +112,18 @@ export const useEssentialsInstallStore = create<EssentialsInstallState>((set, ge
         status = "downloading";
       }
 
+      const nextError = error ?? (download.status === "failed" ? "Download failed" : mod.error);
+      if (mod.downloadId === download.id && mod.status === status && mod.error === nextError) {
+        return s;
+      }
+
       const mods = s.active.mods.map((m) =>
         m.id === mod.id
           ? {
               ...m,
               downloadId: download.id,
               status,
-              error: error ?? (download.status === "failed" ? "Download failed" : m.error),
+              error: nextError,
             }
           : m
       );
@@ -140,8 +145,13 @@ export const useEssentialsInstallStore = create<EssentialsInstallState>((set, ge
               ? "installing"
               : mod.status;
 
+      const nextError = job.error ?? mod.error;
+      if (mod.status === status && mod.error === nextError) {
+        return s;
+      }
+
       const mods = s.active.mods.map((m) =>
-        m.id === mod.id ? { ...m, status, error: job.error ?? m.error } : m
+        m.id === mod.id ? { ...m, status, error: nextError } : m
       );
       return { active: { ...s.active, mods } };
     }),

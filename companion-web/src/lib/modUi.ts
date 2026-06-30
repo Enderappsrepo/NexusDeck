@@ -41,6 +41,20 @@ export const DISCOVERY_SHELVES: {
   { key: "hot_this_week", title: "Hot this week", layout: "stack" },
 ];
 
+/** Params for GET /browse/shelf when drilling into a discovery shelf. */
+export const SHELF_DRILL_DOWN: Record<
+  string,
+  { sort: string; updated_since_days?: number }
+> = {
+  featured: { sort: "endorsements" },
+  top_endorsed: { sort: "endorsements" },
+  most_downloaded: { sort: "downloads" },
+  trending: { sort: "trending", updated_since_days: 30 },
+  newly_added: { sort: "created" },
+  recently_updated: { sort: "updated" },
+  hot_this_week: { sort: "downloads", updated_since_days: 7 },
+};
+
 export const OUTDATED_DEVICE_MSG =
   "Your NexusDeck app is out of date — update it on your PC or Deck, then open the companion at http://YOUR_DEVICE_IP:8731/app/ (not GitHub Pages).";
 

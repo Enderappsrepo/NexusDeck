@@ -1,24 +1,36 @@
+import { filtersToSearchParams } from "./lib/modFilters";
 import type {
   CollectionInstallQueued,
+  CollectionModDiffEntry,
+  CollectionModEntry,
   CollectionSummary,
   CompanionCollectionDetail,
+  CollectionDetail,
+  CollectionDiffResult,
   CompanionDeviceSettings,
   CompanionDownloadRecord,
   CompanionGame,
   CompanionInstalledMod,
   DiscoveryFeeds,
   InstallSessionStatus,
+  LoadOrderModEntry,
+  LoadOrderPluginEntry,
   LoadOrderState,
   ModDetail,
   ModFileInfo,
+  ModSearchFilters,
+  ModSearchResult,
+  ModCategory,
   ModSummary,
   ModUpdateInfo,
+  UpdateBatchResult,
+  UpdateJob,
   SelectedInstallOption,
   SyncActionResult,
   UninstallResult,
 } from "./types";
 
-export const COMPANION_API_VERSION = 3;
+export const COMPANION_API_VERSION = 5;
 
 export interface PairedDeck {
   name: string;
@@ -132,6 +144,10 @@ async function readJson<T>(resp: Response): Promise<T> {
   return body as T;
 }
 
+function ensureArray<T>(data: unknown): T[] {
+  return Array.isArray(data) ? data : [];
+}
+
 export async function pingDeck(host: string, port: number): Promise<PingInfo> {
   const resp = await fetchDeck(`http://${host}:${port}/ping`);
   const info = await readJson<PingInfo>(resp);
@@ -192,17 +208,153 @@ export async function listGames(paired: PairedDeck): Promise<CompanionGame[]> {
   return readJson<CompanionGame[]>(resp);
 }
 
+export async function searchModsFiltered(
+  paired: PairedDeck,
+  gameDomain: string,
+  options: {
+    query?: string;
+    sort?: string;
+    offset?: number;
+    count?: number;
+    filters?: ModSearchFilters;
+  } = {}
+): Promise<ModSearchResult> {
+  const {
+    query = "",
+    sort = "downloads",
+    offset = 0,
+    count = 20,
+    filters,
+  } = options;
+  const params = new URLSearchParams({
+    domain: gameDomain,
+    q: query,
+    sort,
+    offset: String(offset),
+    count: String(count),
+  });
+  if (filters) filtersToSearchParams(filters, params);
+  const resp = await fetchDeck(
+    `http://${paired.host}:${paired.port}/search/mods?${params}`,
+    { headers: authHeaders(paired) }
+  );
+  const data = await readJson<Partial<ModSearchResult>>(resp);
+  return {
+    mods: ensureArray<ModSummary>(data.mods),
+    total_count:
+      typeof data.total_count === "number" ? data.total_count : ensureArray<ModSummary>(data.mods).length,
+  };
+}
+
+/** @deprecated Use searchModsFiltered */
 export async function searchModsViaDeck(
   paired: PairedDeck,
   gameDomain: string,
   query: string
 ): Promise<ModSummary[]> {
-  const params = new URLSearchParams({ domain: gameDomain, q: query });
+  const result = await searchModsFiltered(paired, gameDomain, { query });
+  return result.mods;
+}
+
+export async function fetchModCategories(
+  paired: PairedDeck,
+  gameDomain: string
+): Promise<ModCategory[]> {
+  const params = new URLSearchParams({ domain: gameDomain });
   const resp = await fetchDeck(
-    `http://${paired.host}:${paired.port}/search/mods?${params}`,
+    `http://${paired.host}:${paired.port}/categories/list?${params}`,
+    { headers: authHeaders(paired) }
+  );
+  return readJson<ModCategory[]>(resp);
+}
+
+export async function fetchBrowseShelf(
+  paired: PairedDeck,
+  gameDomain: string,
+  options: { sort: string; offset?: number; updated_since_days?: number }
+): Promise<ModSummary[]> {
+  const params = new URLSearchParams({
+    domain: gameDomain,
+    sort: options.sort,
+    offset: String(options.offset ?? 0),
+  });
+  if (options.updated_since_days != null) {
+    params.set("updated_since_days", String(options.updated_since_days));
+  }
+  const resp = await fetchDeck(
+    `http://${paired.host}:${paired.port}/browse/shelf?${params}`,
     { headers: authHeaders(paired) }
   );
   return readJson<ModSummary[]>(resp);
+}
+
+export async function startModUpdate(
+  paired: PairedDeck,
+  gameDomain: string,
+  installedModId: string
+): Promise<UpdateJob> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/library/mod/update`, {
+    method: "POST",
+    headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+    body: JSON.stringify({ game_domain: gameDomain, mod_id: installedModId }),
+  });
+  return readJson<UpdateJob>(resp);
+}
+
+export async function updateAllMods(
+  paired: PairedDeck,
+  gameDomain: string
+): Promise<UpdateBatchResult> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/library/updates/all`, {
+    method: "POST",
+    headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+    body: JSON.stringify({ game_domain: gameDomain }),
+  });
+  return readJson<UpdateBatchResult>(resp);
+}
+
+export async function setLibraryModPosition(
+  paired: PairedDeck,
+  gameDomain: string,
+  modId: string,
+  position: number
+): Promise<CompanionInstalledMod[]> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/library/mod/position`, {
+    method: "POST",
+    headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+    body: JSON.stringify({ game_domain: gameDomain, mod_id: modId, position }),
+  });
+  return readJson<CompanionInstalledMod[]>(resp);
+}
+
+export async function rescanLibrary(
+  paired: PairedDeck,
+  gameDomain: string
+): Promise<{ mods_added: number; plugins_found: number; message: string }> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/library/rescan`, {
+    method: "POST",
+    headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+    body: JSON.stringify({ game_domain: gameDomain }),
+  });
+  return readJson(resp);
+}
+
+export async function cancelDownload(paired: PairedDeck, downloadId: string): Promise<void> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/downloads/cancel`, {
+    method: "POST",
+    headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+    body: JSON.stringify({ download_id: downloadId }),
+  });
+  await readJson<{ ok: boolean }>(resp);
+}
+
+export async function retryDownload(paired: PairedDeck, downloadId: string): Promise<void> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/downloads/retry`, {
+    method: "POST",
+    headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+    body: JSON.stringify({ download_id: downloadId }),
+  });
+  await readJson(resp);
 }
 
 export async function fetchTrending(
@@ -251,7 +403,8 @@ export async function fetchLibraryMods(
     `http://${paired.host}:${paired.port}/library/mods?${params}`,
     { headers: authHeaders(paired) }
   );
-  return readJson<CompanionInstalledMod[]>(resp);
+  const data = await readJson<CompanionInstalledMod[]>(resp);
+  return ensureArray<CompanionInstalledMod>(data);
 }
 
 export async function toggleLibraryMod(
@@ -424,6 +577,21 @@ export async function startEssentialsOnDeck(
   return readJson(resp);
 }
 
+function normalizeLoadOrderState(raw: Partial<LoadOrderState>): LoadOrderState {
+  return {
+    mods: ensureArray<LoadOrderModEntry>(raw.mods).map((mod) => ({
+      ...mod,
+      plugins: Array.isArray(mod.plugins) ? mod.plugins : [],
+    })),
+    plugins: ensureArray<LoadOrderPluginEntry>(raw.plugins),
+    plugins_txt_path: raw.plugins_txt_path ?? null,
+    plugins_txt_ready: raw.plugins_txt_ready ?? false,
+    active_plugin_count: raw.active_plugin_count ?? 0,
+    message: raw.message ?? "",
+    loot_issues: ensureArray(raw.loot_issues),
+  };
+}
+
 export async function fetchLoadOrderState(
   paired: PairedDeck,
   gameDomain: string
@@ -433,7 +601,8 @@ export async function fetchLoadOrderState(
     `http://${paired.host}:${paired.port}/loadorder/state?${params}`,
     { headers: authHeaders(paired) }
   );
-  return readJson<LoadOrderState>(resp);
+  const data = await readJson<Partial<LoadOrderState>>(resp);
+  return normalizeLoadOrderState(data);
 }
 
 export async function sortLoadOrder(paired: PairedDeck, gameDomain: string): Promise<LoadOrderState> {
@@ -442,7 +611,8 @@ export async function sortLoadOrder(paired: PairedDeck, gameDomain: string): Pro
     headers: { ...authHeaders(paired), "Content-Type": "application/json" },
     body: JSON.stringify({ game_domain: gameDomain }),
   });
-  return readJson<LoadOrderState>(resp);
+  const data = await readJson<Partial<LoadOrderState>>(resp);
+  return normalizeLoadOrderState(data);
 }
 
 export async function syncPluginsTxt(
@@ -468,7 +638,8 @@ export async function fetchDownloads(
   const resp = await fetchDeck(`http://${paired.host}:${paired.port}/downloads?${params}`, {
     headers: authHeaders(paired),
   });
-  return readJson<CompanionDownloadRecord[]>(resp);
+  const data = await readJson<CompanionDownloadRecord[]>(resp);
+  return Array.isArray(data) ? data : [];
 }
 
 export async function fetchLibraryUpdates(
@@ -480,7 +651,8 @@ export async function fetchLibraryUpdates(
     `http://${paired.host}:${paired.port}/library/updates?${params}`,
     { headers: authHeaders(paired) }
   );
-  return readJson<ModUpdateInfo[]>(resp);
+  const data = await readJson<ModUpdateInfo[]>(resp);
+  return ensureArray<ModUpdateInfo>(data);
 }
 
 export async function fetchCollections(
@@ -493,7 +665,30 @@ export async function fetchCollections(
     `http://${paired.host}:${paired.port}/collections/list?${params}`,
     { headers: authHeaders(paired) }
   );
-  return readJson<CollectionSummary[]>(resp);
+  const data = await readJson<CollectionSummary[]>(resp);
+  return ensureArray<CollectionSummary>(data);
+}
+
+function normalizeCollectionDetail(raw: Partial<CompanionCollectionDetail>): CompanionCollectionDetail {
+  const detail = raw.detail ?? ({} as Partial<CollectionDetail>);
+  const diff = raw.diff ?? ({} as Partial<CollectionDiffResult>);
+  return {
+    detail: {
+      name: detail.name ?? "Collection",
+      slug: detail.slug ?? "",
+      author: detail.author ?? "",
+      mod_count: detail.mod_count ?? 0,
+      mods: ensureArray<CollectionModEntry>(detail.mods),
+    },
+    diff: {
+      installed_count: diff.installed_count ?? 0,
+      total_count: diff.total_count ?? 0,
+      missing_count: diff.missing_count ?? 0,
+      outdated_count: diff.outdated_count ?? 0,
+      wrong_file_count: diff.wrong_file_count ?? 0,
+      mods: ensureArray<CollectionModDiffEntry>(diff.mods),
+    },
+  };
 }
 
 export async function fetchCollectionDetail(
@@ -506,30 +701,54 @@ export async function fetchCollectionDetail(
     `http://${paired.host}:${paired.port}/collections/detail?${params}`,
     { headers: authHeaders(paired) }
   );
-  return readJson<CompanionCollectionDetail>(resp);
+  const data = await readJson<Partial<CompanionCollectionDetail>>(resp);
+  return normalizeCollectionDetail(data);
 }
 
 export async function startCollectionInstall(
   paired: PairedDeck,
   gameDomain: string,
-  slug: string
+  slug: string,
+  options?: { include_optional?: boolean; include_outdated?: boolean }
 ): Promise<CollectionInstallQueued[]> {
   const resp = await fetchDeck(
     `http://${paired.host}:${paired.port}/collections/install/start`,
     {
       method: "POST",
       headers: { ...authHeaders(paired), "Content-Type": "application/json" },
-      body: JSON.stringify({ game_domain: gameDomain, slug }),
+      body: JSON.stringify({
+        game_domain: gameDomain,
+        slug,
+        include_optional: options?.include_optional ?? false,
+        include_outdated: options?.include_outdated ?? false,
+      }),
     }
   );
-  return readJson<CollectionInstallQueued[]>(resp);
+  const data = await readJson<CollectionInstallQueued[]>(resp);
+  return ensureArray<CollectionInstallQueued>(data);
+}
+
+function normalizeDeviceSettings(raw: Partial<CompanionDeviceSettings>): CompanionDeviceSettings {
+  return {
+    app_version: raw.app_version ?? "unknown",
+    nexus_configured: raw.nexus_configured ?? false,
+    receive_enabled: raw.receive_enabled ?? false,
+    auto_sort_after_install: raw.auto_sort_after_install ?? false,
+    companion_api: raw.companion_api ?? COMPANION_API_VERSION,
+    download_settings: {
+      max_concurrent: raw.download_settings?.max_concurrent ?? 2,
+      speed_limit_kbps: raw.download_settings?.speed_limit_kbps ?? 0,
+      auto_install_after_download: raw.download_settings?.auto_install_after_download,
+    },
+  };
 }
 
 export async function fetchDeviceSettings(paired: PairedDeck): Promise<CompanionDeviceSettings> {
   const resp = await fetchDeck(`http://${paired.host}:${paired.port}/settings/device`, {
     headers: authHeaders(paired),
   });
-  return readJson<CompanionDeviceSettings>(resp);
+  const data = await readJson<Partial<CompanionDeviceSettings>>(resp);
+  return normalizeDeviceSettings(data);
 }
 
 export async function syncPresetsOnDevice(

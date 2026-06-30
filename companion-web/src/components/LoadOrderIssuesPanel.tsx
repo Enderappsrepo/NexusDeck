@@ -11,15 +11,16 @@ export function LoadOrderIssuesPanel({
   issues,
   compact = false,
 }: {
-  issues: LootPluginIssue[];
+  issues?: LootPluginIssue[] | null;
   compact?: boolean;
 }) {
-  if (issues.length === 0) return null;
-  const errors = issues.filter((i) => i.severity === "error");
+  const safeIssues = Array.isArray(issues) ? issues : [];
+  if (safeIssues.length === 0) return null;
+  const errors = safeIssues.filter((i) => i.severity === "error");
   const headline =
     errors.length > 0
       ? `${errors.length} plugin issue${errors.length === 1 ? "" : "s"} need attention`
-      : `${issues.length} LOOT notice${issues.length === 1 ? "" : "s"}`;
+      : `${safeIssues.length} LOOT notice${safeIssues.length === 1 ? "" : "s"}`;
 
   return (
     <div className="cc-panel cc-issues-panel">
@@ -28,7 +29,7 @@ export function LoadOrderIssuesPanel({
         {headline}
       </p>
       <ul className={`space-y-2 text-sm ${compact ? "mt-2" : "mt-3"}`}>
-        {issues.slice(0, compact ? 3 : 8).map((issue, idx) => (
+        {safeIssues.slice(0, compact ? 3 : 8).map((issue, idx) => (
           <li
             key={`${issue.code}-${issue.plugin ?? idx}`}
             className={`cc-issue-item ${severityClass(issue.severity)}`}

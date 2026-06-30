@@ -410,6 +410,30 @@ fn respond_library_reorder(mut req: tiny_http::Request) {
     }
 }
 
+fn respond_post_json<T, F>(mut req: tiny_http::Request, handler: F)
+where
+    T: for<'de> serde::Deserialize<'de>,
+    F: FnOnce(T) -> Result<String>,
+{
+    let mut body = String::new();
+    if req.as_reader().read_to_string(&mut body).is_err() {
+        let _ = req.respond(json_response(
+            400,
+            serde_json::json!({ "error": "Couldn't read request body." }).to_string(),
+        ));
+        return;
+    }
+    match serde_json::from_str::<T>(&body) {
+        Ok(payload) => respond_json_result(req, handler(payload)),
+        Err(e) => {
+            let _ = req.respond(json_response(
+                400,
+                serde_json::json!({ "error": format!("Invalid JSON: {e}") }).to_string(),
+            ));
+        }
+    }
+}
+
 fn respond_game_domain_body<F>(mut req: tiny_http::Request, handler: F)
 where
     F: FnOnce(crate::services::remote_companion::GameDomainBody) -> crate::error::Result<String>,
@@ -583,18 +607,17 @@ fn serve_companion_app(mut req: tiny_http::Request) {
     }
 }
 
-fn handle_search_mods(domain: &str, query: &str, sort: &str, offset: u32, count: u32) -> Result<String> {
-    let ctx = receiver_context().ok_or_else(|| {
-        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
-    })?;
-    if !nexus_configured() {
-        return Err(NexusDeckError::Other(
-            "Sign in with your Nexus API key in NexusDeck Settings on this device first.".into(),
-        ));
-    }
-    let _profile = profile_for_domain(domain)?;
-    let mods = async_runtime::block_on(ctx.nexus.search_mods(domain, query, sort, offset, count))?;
-    Ok(serde_json::to_string(&mods).unwrap_or_else(|_| "[]".to_string()))
+fn handle_search_mods(
+    domain: &str,
+    query: &str,
+    sort: &str,
+    offset: u32,
+    count: u32,
+    filters: crate::services::nexus_client::ModSearchFilters,
+) -> Result<String> {
+    crate::services::remote_companion::search_mods_filtered(
+        domain, query, sort, offset, count, filters,
+    )
 }
 
 fn handle_mod_files(domain: &str, mod_id: u64) -> Result<String> {
@@ -1139,7 +1162,8 @@ fn handle_request(
             .get("count")
             .and_then(|v| v.parse().ok())
             .unwrap_or(20);
-        match handle_search_mods(&domain, &query, &sort, offset, count) {
+        let filters = crate::services::remote_companion::parse_mod_search_filters(&params);
+        match handle_search_mods(&domain, &query, &sort, offset, count, filters) {
             Ok(body) => {
                 let _ = req.respond(json_response(200, body));
             }
@@ -1150,6 +1174,20 @@ fn handle_request(
                 ));
             }
         }
+        return;
+    }
+
+    if is_get && url.starts_with("/categories/list") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let params = query_params(&url);
+        let domain = params.get("domain").cloned().unwrap_or_default();
+        respond_json_result(
+            req,
+            crate::services::remote_companion::list_mod_categories(&domain),
+        );
         return;
     }
 
@@ -1250,6 +1288,50 @@ fn handle_request(
         return;
     }
 
+    if is_post && url.starts_with("/library/mod/update") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_post_json(req, |body: crate::services::remote_companion::StartModUpdateBody| {
+            crate::services::remote_companion::start_library_mod_update(body)
+        });
+        return;
+    }
+
+    if is_post && url.starts_with("/library/mod/position") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_post_json(req, |body: crate::services::remote_companion::SetModPositionBody| {
+            crate::services::remote_companion::set_library_mod_position(body)
+        });
+        return;
+    }
+
+    if is_post && url.starts_with("/library/updates/all") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_post_json(req, |body: crate::services::remote_companion::GameDomainBody| {
+            crate::services::remote_companion::update_all_library_mods(body)
+        });
+        return;
+    }
+
+    if is_post && url.starts_with("/library/rescan") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_post_json(req, |body: crate::services::remote_companion::GameDomainBody| {
+            crate::services::remote_companion::rescan_library(body)
+        });
+        return;
+    }
+
     if is_get && url.starts_with("/loadorder/state") {
         if !authorized(&req, token) {
             unauthorized(req);
@@ -1287,6 +1369,28 @@ fn handle_request(
         let params = query_params(&url);
         let domain = params.get("domain").cloned().unwrap_or_default();
         respond_json_result(req, crate::services::remote_companion::list_companion_downloads(&domain));
+        return;
+    }
+
+    if is_post && url.starts_with("/downloads/cancel") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_post_json(req, |body: crate::services::remote_companion::DownloadIdBody| {
+            crate::services::remote_companion::cancel_companion_download(body)
+        });
+        return;
+    }
+
+    if is_post && url.starts_with("/downloads/retry") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_post_json(req, |body: crate::services::remote_companion::DownloadIdBody| {
+            crate::services::remote_companion::retry_companion_download(body)
+        });
         return;
     }
 

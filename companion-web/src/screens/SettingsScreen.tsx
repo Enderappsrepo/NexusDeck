@@ -145,12 +145,14 @@ export function SettingsScreen({
               <li>NexusDeck v{device.app_version}</li>
               <li>Companion API v{device.companion_api ?? COMPANION_API_VERSION}</li>
               <li>Nexus API key: {device.nexus_configured ? "configured" : "missing"}</li>
-              <li>
-                Downloads: {device.download_settings.max_concurrent} concurrent
-                {device.download_settings.speed_limit_kbps
-                  ? ` · ${device.download_settings.speed_limit_kbps} KB/s cap`
-                  : ""}
-              </li>
+              {device.download_settings && (
+                <li>
+                  Downloads: {device.download_settings.max_concurrent} concurrent
+                  {device.download_settings.speed_limit_kbps
+                    ? ` · ${device.download_settings.speed_limit_kbps} KB/s cap`
+                    : ""}
+                </li>
+              )}
             </ul>
           )}
           {syncNote && <p className="cc-banner-ok text-xs">{syncNote}</p>}

@@ -42,6 +42,8 @@ export interface PendingInstallMeta {
 interface InstallQueueState {
   jobs: InstallJob[];
   activeJobId: string | null;
+  /** True while the user has started processing the install queue. */
+  processing: boolean;
   pendingByDownloadId: Record<string, PendingInstallMeta>;
   installPrompt: DownloadProgress | null;
   profileError: string | null;
@@ -54,9 +56,16 @@ interface InstallQueueState {
     download: DownloadProgress,
     source: InstallJobSource,
     profiles: Profile[],
-    options?: { front?: boolean; replaceModId?: string; installPreset?: InstallPreset }
+    options?: {
+      front?: boolean;
+      replaceModId?: string;
+      installPreset?: InstallPreset;
+      /** When true, add to queue without opening the install dialog. */
+      deferStart?: boolean;
+    }
   ) => Promise<boolean>;
 
+  startProcessing: () => void;
   prioritizeDownload: (downloadId: string) => void;
   activateNext: () => void;
   completeActive: (downloadId?: string) => void;
@@ -73,6 +82,11 @@ interface InstallQueueState {
 
   getActiveJob: () => InstallJob | null;
   queuedCount: () => number;
+}
+
+/** Sources that enqueue installs without opening the dialog until the user starts the queue. */
+export function shouldDeferInstallStart(source: InstallJobSource): boolean {
+  return source === "queued" || source === "collection";
 }
 
 function syntheticFileFromDownload(download: DownloadProgress): ModFileInfo {
@@ -105,9 +119,21 @@ async function resolveFileForDownload(
   }
 }
 
+function drainProcessingIfIdle(
+  set: (partial: Partial<InstallQueueState>) => void,
+  get: () => InstallQueueState
+) {
+  const { jobs, activeJobId, processing } = get();
+  if (!processing || activeJobId) return;
+  if (!jobs.some((j) => j.status === "queued")) {
+    set({ processing: false });
+  }
+}
+
 export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
   jobs: [],
   activeJobId: null,
+  processing: false,
   pendingByDownloadId: {},
   installPrompt: null,
   profileError: null,
@@ -168,10 +194,16 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
 
     get().clearPendingInstall(download.id);
 
-    if (!get().activeJobId) {
+    if (!options?.deferStart && !get().activeJobId) {
+      set({ processing: true });
       get().activateNext();
     }
     return true;
+  },
+
+  startProcessing: () => {
+    set({ processing: true });
+    get().activateNext();
   },
 
   prioritizeDownload: (downloadId) => {
@@ -185,12 +217,15 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
       jobs.unshift(job);
       return { jobs };
     });
-    if (!get().activeJobId) get().activateNext();
+    if (!get().activeJobId) {
+      set({ processing: true });
+      get().activateNext();
+    }
   },
 
   activateNext: () => {
-    const { jobs, activeJobId } = get();
-    if (activeJobId) return;
+    const { jobs, activeJobId, processing } = get();
+    if (!processing || activeJobId) return;
     const next = jobs.find((j) => j.status === "queued");
     if (!next) return;
     set({
@@ -212,6 +247,7 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
     });
     if (downloadId) get().clearPendingInstall(downloadId);
     get().activateNext();
+    drainProcessingIfIdle(set, get);
   },
 
   failActive: (error) => {
@@ -224,6 +260,7 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
       activeJobId: null,
     });
     get().activateNext();
+    drainProcessingIfIdle(set, get);
   },
 
   cancelActive: () => {
@@ -238,6 +275,7 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
       activeJobId: null,
     });
     get().activateNext();
+    drainProcessingIfIdle(set, get);
   },
 
   retryJob: (jobId: string) => {
@@ -247,17 +285,20 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
           ? { ...j, status: "queued" as const, error: undefined }
           : j
       ),
+      processing: true,
     }));
     if (!get().activeJobId) get().activateNext();
   },
 
   removeJob: (jobId: string) => {
     const { activeJobId, jobs } = get();
+    if (!jobs.some((j) => j.id === jobId)) return;
     set({
       jobs: jobs.filter((j) => j.id !== jobId),
       activeJobId: activeJobId === jobId ? null : activeJobId,
     });
     if (activeJobId === jobId || !get().activeJobId) get().activateNext();
+    drainProcessingIfIdle(set, get);
   },
 
   clearFailedJobs: () =>
@@ -268,7 +309,8 @@ export const useInstallQueueStore = create<InstallQueueState>((set, get) => ({
 
   showInstallPrompt: (download) =>
     set({ installPrompt: download, profileError: null, profileErrorDomain: null }),
-  dismissInstallPrompt: () => set({ installPrompt: null }),
+  dismissInstallPrompt: () =>
+    set((s) => (s.installPrompt ? { installPrompt: null } : s)),
   clearProfileError: () => set({ profileError: null, profileErrorDomain: null }),
 
   getActiveJob: () => {

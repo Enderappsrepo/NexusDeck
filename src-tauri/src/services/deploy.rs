@@ -177,6 +177,50 @@ pub fn archive_is_script_extender_plugin_pack(paths: &[String]) -> bool {
     has_plugin_dll && has_mcm_or_interface
 }
 
+/// Address Library ships version-specific `.bin` databases (e.g.
+/// `version-1-10-130-0.bin`) that belong in `Data/<SE>/Plugins/`, not the game
+/// root or a bare `Data/` merge.
+pub fn is_address_library_version_bin(path: &str) -> bool {
+    let name = path
+        .replace('\\', "/")
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .to_lowercase();
+    name.starts_with("version-") && name.ends_with(".bin")
+}
+
+fn is_address_library_skip_file(path: &str) -> bool {
+    let name = path
+        .replace('\\', "/")
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .to_lowercase();
+    name.ends_with(".txt")
+        || name.ends_with(".md")
+        || name.ends_with(".url")
+        || name == "readme"
+}
+
+/// All-in-one Address Library archives often contain only loose `version-*.bin`
+/// files at the archive root (no `F4SE/Plugins/` wrapper).
+pub fn archive_is_loose_address_library(paths: &[String]) -> bool {
+    let mut has_version_bin = false;
+    for path in paths {
+        let norm = path.replace('\\', "/");
+        if norm.contains('/') {
+            return false;
+        }
+        if is_address_library_version_bin(path) {
+            has_version_bin = true;
+        } else if !is_address_library_skip_file(path) {
+            return false;
+        }
+    }
+    has_version_bin
+}
+
 pub fn has_loose_fallout4_data_folders(paths: &[String]) -> bool {
     // Standard Bethesda `Data/` subfolders. If an archive ships these loose (no
     // `Data/` wrapper), every file belongs in `Data/` — so we route to
@@ -236,7 +280,7 @@ pub fn entries_have_loose_assets(entries: &[ArchiveEntry]) -> bool {
             || lower.ends_with(".hkx")
             || lower.ends_with(".wav")
             || lower.ends_with(".xwm")
-            || lower.ends_with(".bin")
+            || (lower.ends_with(".bin") && !is_address_library_version_bin(p))
     })
 }
 
@@ -264,7 +308,7 @@ pub fn is_fallout4_data_file(path: &str) -> bool {
         || lower.ends_with(".esl")
         || lower.ends_with(".ba2")
         || lower.ends_with(".bsa")
-        || lower.ends_with(".bin")
+        || (lower.ends_with(".bin") && !is_address_library_version_bin(path))
         || lower.ends_with(".modgroups")
 }
 
@@ -332,6 +376,24 @@ pub fn compute_entry_deploy_target(
             Some(game_path.join("Data").join(rel))
         }
         "merge_loose_to_data" => Some(game_path.join("Data").join(rel)),
+        "address_library_bins" => {
+            let plugin_folder = plan
+                .source_subpath
+                .as_deref()
+                .unwrap_or("F4SE/Plugins");
+            if is_address_library_version_bin(&rel) && !rel.contains('/') {
+                let mut target = game_path.join("Data");
+                for part in plugin_folder.split('/') {
+                    target = target.join(part);
+                }
+                Some(target.join(rel.rsplit('/').next().unwrap_or(&rel)))
+            } else if has_script_extender_plugin_paths(&[rel.clone()]) {
+                Some(game_path.join("Data").join(&rel))
+            } else {
+                None
+            }
+        }
+        "custom_copy" => crate::services::vortex_override::custom_copy_target(plan, &rel),
         "staging_only" => None,
         _ => Some(game_path.join(&rel)),
     }
@@ -347,6 +409,9 @@ pub fn compute_deploy_paths(
 
     for entry in entries.iter().filter(|e| !e.is_dir) {
         let rel = strip_archive_prefix(&entry.path, prefix.as_deref());
+        if crate::services::vortex_override::is_vortex_override_metadata(&rel) {
+            continue;
+        }
         if let Some(target) = compute_entry_deploy_target(game_path, plan, &rel) {
             paths.push(target.display().to_string());
         }
@@ -664,6 +729,7 @@ mod tests {
             target: "Data".to_string(),
             description: String::new(),
             requires_confirmation: false,
+            copy_rules: None,
         }
     }
 
@@ -691,6 +757,64 @@ mod tests {
         // applies (keeps the plugin, skips the readme).
         let bare = normalized_relative_paths(&[entry("MyMod.esp"), entry("readme.txt")]);
         assert!(!has_loose_fallout4_data_folders(&bare));
+    }
+
+    #[test]
+    fn loose_address_library_detected() {
+        let bins = normalized_relative_paths(&[
+            entry("version-1-10-130-0.bin"),
+            entry("version-1-11-137-0.bin"),
+            entry("version-1-11-191-0.bin"),
+        ]);
+        assert!(archive_is_loose_address_library(&bins));
+
+        let with_readme = normalized_relative_paths(&[
+            entry("version-1-10-130-0.bin"),
+            entry("readme.txt"),
+        ]);
+        assert!(archive_is_loose_address_library(&with_readme));
+
+        let nested = normalized_relative_paths(&[entry("F4SE/Plugins/version-1-10-130-0.bin")]);
+        // Wrapper stripping leaves loose version bins — still Address Library.
+        assert!(archive_is_loose_address_library(&nested));
+
+        let mixed = normalized_relative_paths(&[
+            entry("version-1-10-130-0.bin"),
+            entry("SomeMod.esp"),
+        ]);
+        assert!(!archive_is_loose_address_library(&mixed));
+    }
+
+    #[test]
+    fn address_library_bins_deploy_to_f4se_plugins() {
+        let game = std::env::temp_dir().join(format!(
+            "nexusdeck-address-lib-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&game);
+
+        let plan = DeployPlan {
+            strategy: "address_library_bins".to_string(),
+            source_subpath: Some("F4SE/Plugins".to_string()),
+            target: game.join("Data").join("F4SE").join("Plugins").display().to_string(),
+            description: String::new(),
+            requires_confirmation: false,
+            copy_rules: None,
+        };
+        let entries = vec![entry("version-1-10-130-0.bin")];
+        let paths = compute_deploy_paths(&plan, &entries, &game);
+        assert_eq!(
+            paths,
+            vec![game
+                .join("Data")
+                .join("F4SE")
+                .join("Plugins")
+                .join("version-1-10-130-0.bin")
+                .display()
+                .to_string()]
+        );
+
+        let _ = fs::remove_dir_all(&game);
     }
 
     #[test]

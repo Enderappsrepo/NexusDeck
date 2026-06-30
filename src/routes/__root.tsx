@@ -1,5 +1,5 @@
 import { createRootRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { AppShell } from "@/components/layout/AppShell";
 import { DownloadQueuePanel } from "@/components/download/DownloadQueuePanel";
@@ -31,6 +31,7 @@ import { gamepadRouter } from "@/lib/gamepad/GamepadRouter";
 import { useLaunchStore } from "@/stores/launchStore";
 import { useCollectionInstallStore } from "@/stores/collectionInstallStore";
 import { useEssentialsInstallStore } from "@/stores/essentialsInstallStore";
+import { shouldDeferInstallStart } from "@/stores/installQueueStore";
 import { api } from "@/lib/commands";
 import { ensureGamepadPolyfill } from "@/lib/gamepadPolyfill";
 import { applyPerfAttribute } from "@/lib/platform";
@@ -91,7 +92,12 @@ function RootLayout() {
   const launchFromStore = useLaunchStore((s) => s.launch);
 
   const installPrompt = useInstallQueueStore((s) => s.installPrompt);
-  const activeJob = useInstallQueueStore((s) => s.getActiveJob());
+  const activeJobId = useInstallQueueStore((s) => s.activeJobId);
+  const installJobs = useInstallQueueStore((s) => s.jobs);
+  const activeJob = useMemo(
+    () => (activeJobId ? installJobs.find((j) => j.id === activeJobId) ?? null : null),
+    [activeJobId, installJobs]
+  );
   const showInstallPrompt = useInstallQueueStore((s) => s.showInstallPrompt);
   const dismissInstallPrompt = useInstallQueueStore((s) => s.dismissInstallPrompt);
   const enqueueFromDownload = useInstallQueueStore((s) => s.enqueueFromDownload);
@@ -99,14 +105,12 @@ function RootLayout() {
   const failActive = useInstallQueueStore((s) => s.failActive);
   const cancelActive = useInstallQueueStore((s) => s.cancelActive);
   const removeJob = useInstallQueueStore((s) => s.removeJob);
-  const getActiveJob = useInstallQueueStore((s) => s.getActiveJob);
-  const installJobs = useInstallQueueStore((s) => s.jobs);
   const syncCollectionDownload = useCollectionInstallStore((s) => s.syncFromDownload);
   const syncCollectionInstall = useCollectionInstallStore((s) => s.syncFromInstallJob);
-  const collectionActive = useCollectionInstallStore((s) => s.active);
+  const collectionActiveSlug = useCollectionInstallStore((s) => s.active?.slug ?? null);
   const syncEssentialsDownload = useEssentialsInstallStore((s) => s.syncFromDownload);
   const syncEssentialsInstall = useEssentialsInstallStore((s) => s.syncFromInstallJob);
-  const essentialsActive = useEssentialsInstallStore((s) => s.active);
+  const essentialsActiveId = useEssentialsInstallStore((s) => s.active?.manifestId ?? null);
   const downloadErrors = useDownloadsStore((s) => s.errors);
 
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
@@ -197,6 +201,7 @@ function RootLayout() {
         await enqueueFromDownload(download, source, profiles, {
           replaceModId: pending?.replaceModId,
           installPreset,
+          deferStart: shouldDeferInstallStart(source),
         });
       } else {
         showInstallPrompt(download);
@@ -301,6 +306,7 @@ function RootLayout() {
       void enqueueFromDownload(download, pending?.source ?? "manual", profiles, {
         replaceModId: pending?.replaceModId,
         installPreset: pending?.installPreset,
+        deferStart: shouldDeferInstallStart(pending?.source ?? "manual"),
       });
     } else {
       showInstallPrompt(download);
@@ -345,6 +351,50 @@ function RootLayout() {
     }).then((u) => unsubs.push(u));
     listen<{ id: string; error: string }>("download-error", (e) => {
       setError(e.payload.id, e.payload.error);
+    }).then((u) => unsubs.push(u));
+    listen<{
+      slug: string;
+      name: string;
+      game_domain: string;
+      profile_id: string;
+      mods: Array<{
+        mod_id: number;
+        name: string;
+        file_id?: number | null;
+        optional: boolean;
+        download_id: string;
+      }>;
+    }>("collection-install-started", (e) => {
+      const payload = e.payload;
+      const profile =
+        profiles.find((p) => p.id === payload.profile_id) ??
+        profiles.find((p) => p.game_domain === payload.game_domain);
+      if (!profile) return;
+
+      useCollectionInstallStore.getState().startBatch({
+        slug: payload.slug,
+        name: payload.name,
+        gameDomain: payload.game_domain,
+        profile,
+        mods: payload.mods.map((m) => ({
+          modId: m.mod_id,
+          name: m.name,
+          fileId: m.file_id,
+          optional: m.optional,
+          status: "downloading" as const,
+          downloadId: m.download_id,
+        })),
+      });
+
+      for (const mod of payload.mods) {
+        registerPendingInstall(mod.download_id, {
+          source: "collection",
+          collectionSlug: payload.slug,
+          collectionName: payload.name,
+          modId: mod.mod_id,
+          modName: mod.name,
+        });
+      }
     }).then((u) => unsubs.push(u));
     listen<string>("nxm-url", (e) => {
       api.handleNxmUrl(e.payload).then(async (data) => {
@@ -401,12 +451,14 @@ function RootLayout() {
       return;
     }
     dismissInstallPrompt();
-    const job = getActiveJob();
+    const job = activeJobId
+      ? useInstallQueueStore.getState().jobs.find((j) => j.id === activeJobId)
+      : null;
     if (job) {
       // Drop the local wizard only — the companion session owns deploy on the backend.
       removeJob(job.id);
     }
-  }, [activeInstall, dismissInstallPrompt, getActiveJob, removeJob]);
+  }, [activeInstall, activeJobId, dismissInstallPrompt, removeJob]);
 
   useEffect(() => {
     const onInstall = (e: Event) => {
@@ -426,32 +478,32 @@ function RootLayout() {
   }, [active, activeInstall, handleInstallNowFromDownload, prioritizeDownload]);
 
   useEffect(() => {
-    if (!collectionActive) return;
+    if (!collectionActiveSlug) return;
     for (const download of Object.values(active)) {
       syncCollectionDownload(download, downloadErrors[download.id]);
     }
-  }, [active, collectionActive, downloadErrors, syncCollectionDownload]);
+  }, [active, collectionActiveSlug, downloadErrors, syncCollectionDownload]);
 
   useEffect(() => {
-    if (!collectionActive) return;
+    if (!collectionActiveSlug) return;
     for (const job of installJobs) {
       syncCollectionInstall(job);
     }
-  }, [installJobs, collectionActive, syncCollectionInstall]);
+  }, [installJobs, collectionActiveSlug, syncCollectionInstall]);
 
   useEffect(() => {
-    if (!essentialsActive) return;
+    if (!essentialsActiveId) return;
     for (const download of Object.values(active)) {
       syncEssentialsDownload(download, downloadErrors[download.id]);
     }
-  }, [active, essentialsActive, downloadErrors, syncEssentialsDownload]);
+  }, [active, essentialsActiveId, downloadErrors, syncEssentialsDownload]);
 
   useEffect(() => {
-    if (!essentialsActive) return;
+    if (!essentialsActiveId) return;
     for (const job of installJobs) {
       syncEssentialsInstall(job);
     }
-  }, [installJobs, essentialsActive, syncEssentialsInstall]);
+  }, [installJobs, essentialsActiveId, syncEssentialsInstall]);
 
   const promptProfile = installPrompt
     ? resolveProfile(profiles, installPrompt)

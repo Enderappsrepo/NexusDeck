@@ -12,9 +12,9 @@ use crate::games::script_extender_meta::ScriptExtenderMeta;
 use crate::services::archive::{merge_directory, ArchiveEntry};
 use crate::services::deploy::{
     archive_has_data_folder, archive_is_script_extender_plugin_pack,
-    has_loose_fallout4_data_folders, has_script_extender_plugin_paths,
-    has_script_extender_root_files, merge_game_data_directory, normalized_relative_paths,
-    resolve_extract_root,
+    archive_is_loose_address_library, has_loose_fallout4_data_folders,
+    has_script_extender_plugin_paths, has_script_extender_root_files,
+    merge_game_data_directory, normalized_relative_paths, resolve_extract_root,
 };
 use crate::services::MergeOptions;
 use crate::services::paths::default_staging_path;
@@ -103,6 +103,7 @@ impl GamePlugin for SkyrimSpecialEditionPlugin {
                 description:
                     "Standard Skyrim SE mod layout detected. Files will be copied into your game's Data folder."
                         .to_string(),
+                copy_rules: None,
             }
         } else if has_loose_fallout4_data_folders(&rel_paths) {
             DeployPlan {
@@ -113,6 +114,7 @@ impl GamePlugin for SkyrimSpecialEditionPlugin {
                 description:
                     "Asset files detected (meshes, textures, etc.). They will be installed into your Data folder."
                         .to_string(),
+                copy_rules: None,
             }
         } else if rel_paths.iter().any(|p| {
             let lower = p.to_lowercase();
@@ -126,6 +128,7 @@ impl GamePlugin for SkyrimSpecialEditionPlugin {
                 description:
                     "Plugin files detected (.esp/.esm). They will be installed into your Data folder."
                         .to_string(),
+                copy_rules: None,
             }
         } else if has_script_extender_root_files(&rel_paths) {
             DeployPlan {
@@ -136,6 +139,7 @@ impl GamePlugin for SkyrimSpecialEditionPlugin {
                 description:
                     "SKSE or loader files detected at archive root. These will be installed to the game folder."
                         .to_string(),
+                copy_rules: None,
             }
         } else if has_script_extender_plugin_paths(&rel_paths)
             || archive_is_script_extender_plugin_pack(&rel_paths)
@@ -148,6 +152,23 @@ impl GamePlugin for SkyrimSpecialEditionPlugin {
                 description:
                     "SKSE plugin or MCM files detected. They will be installed into your Data folder."
                         .to_string(),
+                copy_rules: None,
+            }
+        } else if archive_is_loose_address_library(&rel_paths) {
+            DeployPlan {
+                strategy: "address_library_bins".to_string(),
+                source_subpath: Some("SKSE/Plugins".to_string()),
+                target: game_root
+                    .join("Data")
+                    .join("SKSE")
+                    .join("Plugins")
+                    .display()
+                    .to_string(),
+                requires_confirmation: false,
+                description:
+                    "Address Library version database detected. Files will be installed into Data/SKSE/Plugins/."
+                        .to_string(),
+                copy_rules: None,
             }
         } else {
             DeployPlan {
@@ -158,6 +179,7 @@ impl GamePlugin for SkyrimSpecialEditionPlugin {
                 description:
                     "This archive doesn't match a usual Skyrim SE layout. Review the file list before installing."
                         .to_string(),
+                copy_rules: None,
             }
         }
     }

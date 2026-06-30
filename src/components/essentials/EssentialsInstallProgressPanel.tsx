@@ -21,8 +21,12 @@ export function EssentialsInstallProgressPanel() {
   const active = useEssentialsInstallStore((s) => s.active);
   const dismiss = useEssentialsInstallStore((s) => s.dismiss);
   const markPostBatchDone = useEssentialsInstallStore((s) => s.markPostBatchDone);
-  const doneCount = useEssentialsInstallStore((s) => s.doneCount());
-  const totalCount = useEssentialsInstallStore((s) => s.totalCount());
+  const doneCount = useEssentialsInstallStore((s) =>
+    s.active
+      ? s.active.mods.filter((m) => m.status === "done" || m.status === "skipped").length
+      : 0
+  );
+  const totalCount = useEssentialsInstallStore((s) => s.active?.mods.length ?? 0);
   const setProgress = useDownloadsStore((s) => s.setProgress);
   const registerPendingInstall = useInstallQueueStore((s) => s.registerPendingInstall);
   const finishAttempted = useRef(false);

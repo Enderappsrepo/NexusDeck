@@ -74,6 +74,7 @@ impl GamePlugin for SkyrimSeScaffold {
             target: game_root.join("Data").display().to_string(),
             requires_confirmation: false,
             description: "Scaffold deploy plan".into(),
+                copy_rules: None,
         }
     }
 

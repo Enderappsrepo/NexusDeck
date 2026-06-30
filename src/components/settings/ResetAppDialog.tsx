@@ -53,6 +53,7 @@ export function ResetAppDialog({ open, onOpenChange }: ResetAppDialogProps) {
       useInstallQueueStore.setState({
         jobs: [],
         activeJobId: null,
+        processing: false,
         pendingByDownloadId: {},
         installPrompt: null,
         profileError: null,

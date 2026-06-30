@@ -59,6 +59,9 @@ pub struct DeployPlan {
     pub target: String,
     pub requires_confirmation: bool,
     pub description: String,
+    /// Per-file copy rules from `vortex_override_instructions.json` (strategy `custom_copy`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_rules: Option<Vec<crate::services::vortex_override::CopyRule>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -299,14 +302,27 @@ pub fn build_plan_for_strategy(
     entries: &[ArchiveEntry],
     strategy: &str,
 ) -> Result<DeployPlan> {
+    build_plan_for_strategy_with_context(domain, game_path, entries, strategy, None, None)
+}
+
+pub fn build_plan_for_strategy_with_context(
+    domain: &str,
+    game_path: &Path,
+    entries: &[ArchiveEntry],
+    strategy: &str,
+    archive_path: Option<&Path>,
+    extract_dir: Option<&Path>,
+) -> Result<DeployPlan> {
     let plugin = GameRegistry::get(domain)?;
-    let mut plan = plugin.analyze_archive(game_path, entries);
+    let mut plan = resolve_deploy_plan(domain, game_path, entries, archive_path, extract_dir)
+        .unwrap_or_else(|| plugin.analyze_archive(game_path, entries));
     if strategy != "auto" {
         plan.strategy = strategy.to_string();
         plan.description = format!("Manual strategy: {strategy}");
         plan.requires_confirmation = strategy == "merge_root" || strategy == "staging_only";
         plan.target = match strategy {
-            "merge_data" | "copy_loose_to_data" | "merge_loose_to_data" => {
+            "merge_data" | "copy_loose_to_data" | "merge_loose_to_data" | "address_library_bins"
+            | "custom_copy" => {
                 game_path.join("Data").display().to_string()
             }
             "staging_only" => "staging folder".to_string(),
@@ -315,6 +331,23 @@ pub fn build_plan_for_strategy(
     }
     refine_plan_for_entries(&mut plan, entries);
     Ok(plan)
+}
+
+/// Priority: Vortex author override → game heuristics (via caller fallback).
+fn resolve_deploy_plan(
+    domain: &str,
+    game_path: &Path,
+    entries: &[ArchiveEntry],
+    archive_path: Option<&Path>,
+    extract_dir: Option<&Path>,
+) -> Option<DeployPlan> {
+    crate::services::vortex_override::try_vortex_override_plan(
+        domain,
+        game_path,
+        entries,
+        archive_path,
+        extract_dir,
+    )
 }
 
 fn refine_plan_for_entries(plan: &mut DeployPlan, entries: &[ArchiveEntry]) {

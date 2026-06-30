@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-06-30
+
+### Added
+- **Companion install queue** — queue mods from browse/mod pages or entire collections; install one at a time on the device with a queue sheet and progress bar.
+- **Companion browse filters** — category, tags, endorsements, adult content, recency, and author filters with an active-filter bar and filter sheet.
+- **Companion API v5** — paginated shelf browse, library mod reposition/update-all/rescan, and expanded search filter params.
+- **Quick install** — straightforward mods (no FOMOD, no conflicts, confident layout) install automatically without stopping on the review screen.
+- **Vortex override support** — reads `vortex_override_instructions.json` from mod archives for author-specified install paths (same format as Vortex 1.14+).
+- **Address Library auto-detection** — All-in-One `version-*.bin` packs route to `Data/F4SE/Plugins/` (Skyrim → `Data/SKSE/Plugins/`).
+- **Main-app install queue nav** — shared install queue content in the app shell with a nav button.
+
+### Changed
+- **Companion UI refresh** — updated browse, library, load order, collections, mod detail, and settings screens; service worker cache bumped to v4.
+- **Remote install sessions** — companion receives detected deploy plan and quick-install eligibility from the backend.
+
+### Fixed
+- **Address Library install path** — no longer mis-detected as game-root install with an “unusual layout” warning.
+
 ## [2.2.1] - 2026-06-29
 
 ### Added

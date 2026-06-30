@@ -55,26 +55,26 @@ export const useCompanionSettings = create<CompanionSettingsState>((set) => ({
 
   setTheme: (theme) => {
     saveTheme(theme);
-    set({ theme });
+    set((state) => (state.theme === theme ? state : { theme }));
   },
   setHaptics: (haptics) => {
     localStorage.setItem(HAPTICS_KEY, String(haptics));
-    set({ haptics });
+    set((state) => (state.haptics === haptics ? state : { haptics }));
   },
   setDefaultGameDomain: (domain) => {
     saveLastGame(domain);
-    set({ defaultGameDomain: domain });
+    set((state) => (state.defaultGameDomain === domain ? state : { defaultGameDomain: domain }));
   },
   setNotifications: (notifications) => {
     localStorage.setItem(NOTIFICATIONS_KEY, notifications);
-    set({ notifications });
+    set((state) => (state.notifications === notifications ? state : { notifications }));
   },
   setCompactUi: (compactUi) => {
     localStorage.setItem(COMPACT_KEY, String(compactUi));
-    set({ compactUi });
+    set((state) => (state.compactUi === compactUi ? state : { compactUi }));
   },
   setAutoReconnect: (autoReconnect) => {
     localStorage.setItem(AUTO_RECONNECT_KEY, String(autoReconnect));
-    set({ autoReconnect });
+    set((state) => (state.autoReconnect === autoReconnect ? state : { autoReconnect }));
   },
 }));

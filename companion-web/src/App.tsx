@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { installProgressPct as computeInstallProgressPct } from "./lib/installUi";
 import { BottomNav } from "./components/BottomNav";
 import { DownloadQueueBar, DownloadQueueSheet } from "./components/DownloadQueueBar";
+import { InstallQueueHeaderButton, InstallQueueSheet } from "./components/InstallQueueSheet";
 import {
+  cancelDownload,
   clearPaired,
   companionAppUrl,
   confirmInstallSession,
@@ -16,17 +18,20 @@ import {
   fetchModFiles,
   fetchTrending,
   getInstallSession,
-  heartbeatDeck,
   isApiNotFoundError,
   isGitHubPagesHost,
   listGames,
   loadPaired,
   pingDeck,
   reorderLibraryMod,
+  retryDownload,
   savePaired,
+  setLibraryModPosition,
   startInstallSession,
+  startModUpdate,
   toggleLibraryMod,
   uninstallLibraryMod,
+  updateAllMods,
   type PairedDeck,
   type PingInfo,
 } from "./deckApi";
@@ -38,6 +43,9 @@ import {
   type LanDevice,
 } from "./lib/lanDiscovery";
 import { pickDefaultFile } from "./lib/modFiles";
+import { DEFAULT_FILTERS, appendTagFilter, loadStoredBrowseFilters, loadStoredBrowseSort, storeBrowseFilters, storeBrowseSort, type ModBrowseSort } from "./lib/modFilters";
+import { useDeckConnection } from "./hooks/useDeckConnection";
+import { useDocumentVisible } from "./hooks/useDocumentVisible";
 import { OUTDATED_DEVICE_MSG } from "./lib/modUi";
 import { loadLastGame } from "./lib/preferences";
 import { showCompanionNotification } from "./lib/notifications";
@@ -52,6 +60,10 @@ import { LoadOrderScreen } from "./screens/LoadOrderScreen";
 import { ModScreen } from "./screens/ModScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { useCompanionSettings } from "./stores/companionSettingsStore";
+import {
+  useInstallQueueStore,
+  type CompanionInstallQueueItem,
+} from "./stores/installQueueStore";
 import type {
   CompanionDownloadRecord,
   CompanionGame,
@@ -60,6 +72,7 @@ import type {
   InstallSessionStatus,
   ModDetail,
   ModFileInfo,
+  ModSearchFilters,
   ModSummary,
   ModUpdateInfo,
   SelectedInstallOption,
@@ -79,7 +92,11 @@ type Screen =
   | "collection-detail";
 
 export default function App() {
-  const companionSettings = useCompanionSettings();
+  const defaultGameDomainSetting = useCompanionSettings((s) => s.defaultGameDomain);
+  const setDefaultGameDomain = useCompanionSettings((s) => s.setDefaultGameDomain);
+  const notifications = useCompanionSettings((s) => s.notifications);
+  const haptics = useCompanionSettings((s) => s.haptics);
+  const compactUi = useCompanionSettings((s) => s.compactUi);
   const [paired, setPaired] = useState<PairedDeck | null>(() => loadPaired());
   const [screen, setScreen] = useState<Screen>(paired ? "browse" : "connect");
   const [connectStep, setConnectStep] = useState<ConnectStep>("find");
@@ -88,6 +105,7 @@ export default function App() {
   const autoConnectTried = useRef(false);
 
   const [online, setOnline] = useState(true);
+  const documentVisible = useDocumentVisible();
   const [host, setHost] = useState(paired?.host ?? "");
   const [port, setPort] = useState(String(paired?.port ?? 8731));
   const [code, setCode] = useState("");
@@ -97,13 +115,24 @@ export default function App() {
   const [foundDevices, setFoundDevices] = useState<LanDevice[]>([]);
   const [scanProgress, setScanProgress] = useState<{ done: number; total: number } | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [queueOpen, setQueueOpen] = useState(false);
+  const [downloadQueueOpen, setDownloadQueueOpen] = useState(false);
+  const [installQueueOpen, setInstallQueueOpen] = useState(false);
+  const [installQueueStarting, setInstallQueueStarting] = useState(false);
 
   const [games, setGames] = useState<CompanionGame[]>([]);
   const [gameDomain, setGameDomain] = useState(() => loadLastGame());
   const [query, setQuery] = useState("");
   const [discovery, setDiscovery] = useState<DiscoveryFeeds>(EMPTY_DISCOVERY);
   const [searchResults, setSearchResults] = useState<ModSummary[]>([]);
+  const [searchTotalCount, setSearchTotalCount] = useState(0);
+  const [browseFilters, setBrowseFilters] = useState<ModSearchFilters>(() =>
+    loadStoredBrowseFilters(loadLastGame())
+  );
+  const [browseSort, setBrowseSortState] = useState<ModBrowseSort>(() => loadStoredBrowseSort(loadLastGame()));
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [browseSearchTrigger, setBrowseSearchTrigger] = useState(0);
+  const [modReturnScreen, setModReturnScreen] = useState<Screen>("browse");
+  const [overwriteFiles, setOverwriteFiles] = useState(false);
   const [browseBusy, setBrowseBusy] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
 
@@ -130,11 +159,36 @@ export default function App() {
   const [conflictAck, setConflictAck] = useState(false);
   const [installBusy, setInstallBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const installQueueItems = useInstallQueueStore((s) => s.items);
+  const installQueuePending = useInstallQueueStore(
+    (s) => s.items.filter((i) => i.status === "queued").length
+  );
 
   const onGitHubPages = isGitHubPagesHost();
   const deviceCompanionUrl = paired ? companionAppUrl(paired.host, paired.port) : null;
   const receiverSelf = getReceiverSelfHost();
   const activeGame = games.find((g) => g.domain === gameDomain);
+
+  const { online: deckOnline, connectionState, reconnectNow } = useDeckConnection({
+    paired,
+    onPairedChange: setPaired,
+    onAuthLost: () => {
+      setScreen("connect");
+      setConnectError("Session expired — pair again on your device.");
+    },
+  });
+
+  useEffect(() => {
+    setOnline(deckOnline);
+  }, [deckOnline]);
+
+  const setBrowseSort = useCallback(
+    (sort: ModBrowseSort) => {
+      setBrowseSortState(sort);
+      storeBrowseSort(gameDomain, sort);
+    },
+    [gameDomain]
+  );
 
   const connectToDevice = useCallback(async (nextHost: string, nextPort: number) => {
     setConnectBusy(true);
@@ -181,24 +235,6 @@ export default function App() {
   useEffect(() => listenForInstallPrompt((event) => setInstallPrompt(event)), []);
 
   useEffect(() => {
-    if (!paired) {
-      setOnline(true);
-      return;
-    }
-    let cancelled = false;
-    const beat = async () => {
-      const ok = await heartbeatDeck(paired);
-      if (!cancelled) setOnline(ok);
-    };
-    void beat();
-    const id = window.setInterval(() => void beat(), 12_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [paired]);
-
-  useEffect(() => {
     if (paired || autoConnectTried.current) return;
     autoConnectTried.current = true;
     const target = readConnectParamsFromUrl();
@@ -212,7 +248,10 @@ export default function App() {
     try {
       setDiscovery(await fetchDiscovery(deck, domain));
       setSearchResults([]);
+      setSearchTotalCount(0);
       setQuery("");
+      setBrowseFilters(loadStoredBrowseFilters(domain));
+      setBrowseSortState(loadStoredBrowseSort(domain));
     } catch (e) {
       if (isApiNotFoundError(e)) {
         try {
@@ -241,7 +280,11 @@ export default function App() {
       ]);
       setLibraryMods(mods.sort((a, b) => a.sort_order - b.sort_order));
       setUpdates(upd);
-      setLootErrorCount(lo?.loot_issues.filter((i) => i.severity === "error").length ?? 0);
+      setLootErrorCount(
+        Array.isArray(lo?.loot_issues)
+          ? lo.loot_issues.filter((i) => i.severity === "error").length
+          : 0
+      );
     } catch (e) {
       setLibraryError(isApiNotFoundError(e) ? OUTDATED_DEVICE_MSG : e instanceof Error ? e.message : String(e));
       setLibraryMods([]);
@@ -261,7 +304,7 @@ export default function App() {
         const list = await listGames(deck);
         setGames(list);
         if (!list.length) return;
-        const saved = companionSettings.defaultGameDomain;
+        const saved = defaultGameDomainSetting;
         const pick =
           (saved && list.some((g) => g.domain === saved) && saved) ||
           list.find((g) => g.can_install)?.domain ||
@@ -271,12 +314,32 @@ export default function App() {
         if (deviceInfo?.games?.length) setGames(deviceInfo.games);
       }
     },
-    [companionSettings.defaultGameDomain, deviceInfo?.games]
+    [defaultGameDomainSetting, deviceInfo?.games]
   );
 
   useEffect(() => {
-    if (gameDomain) companionSettings.setDefaultGameDomain(gameDomain);
-  }, [gameDomain, companionSettings]);
+    if (gameDomain) setDefaultGameDomain(gameDomain);
+  }, [gameDomain, setDefaultGameDomain]);
+
+  const updateBrowseFilters = useCallback(
+    (next: ModSearchFilters | ((prev: ModSearchFilters) => ModSearchFilters)) => {
+      setBrowseFilters((prev) => {
+        const resolved = typeof next === "function" ? next(prev) : next;
+        storeBrowseFilters(gameDomain, resolved);
+        return resolved;
+      });
+    },
+    [gameDomain]
+  );
+
+  const handleFilterByTag = useCallback(
+    (tag: string) => {
+      updateBrowseFilters((prev) => appendTagFilter(prev, tag));
+      setBrowseSearchTrigger((n) => n + 1);
+      setScreen("browse");
+    },
+    [updateBrowseFilters]
+  );
 
   useEffect(() => {
     if (!paired) return;
@@ -294,7 +357,7 @@ export default function App() {
   }, [paired, gameDomain, screen, loadLibrary]);
 
   useEffect(() => {
-    if (!paired || !gameDomain) return;
+    if (!paired || !gameDomain || !documentVisible) return;
     let cancelled = false;
     const poll = async () => {
       try {
@@ -310,7 +373,7 @@ export default function App() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [paired, gameDomain]);
+  }, [paired, gameDomain, documentVisible]);
 
   useEffect(() => {
     if (!paired || !session?.session_id) return;
@@ -325,7 +388,7 @@ export default function App() {
             next.progress.progress_pct !== prev.progress?.progress_pct
           ) {
             showCompanionNotification(
-              companionSettings.notifications,
+              notifications,
               "download_progress",
               "Downloading mod",
               next.message
@@ -338,20 +401,25 @@ export default function App() {
         }
         if (next.status === "done") {
           showCompanionNotification(
-            companionSettings.notifications,
+            notifications,
             "install_complete",
             "Install complete",
             next.message
           );
-          if (companionSettings.haptics) hapticSuccess();
+          if (haptics) hapticSuccess();
+          if (paired && gameDomain) void loadLibrary(paired, gameDomain);
+        }
+        if (next.status === "error" && useInstallQueueStore.getState().processing) {
+          useInstallQueueStore.getState().failActive(next.error ?? "Install failed");
         }
       });
     }, 800);
     return () => window.clearInterval(timer);
-  }, [paired, session?.session_id, session?.status, selections.length, companionSettings]);
+  }, [paired, gameDomain, session?.session_id, session?.status, selections.length, notifications, haptics, loadLibrary]);
 
-  const openMod = async (mod: ModSummary) => {
+  const openMod = async (mod: ModSummary, from: Screen = screen) => {
     if (!paired) return;
+    setModReturnScreen(from === "mod" || from === "install" ? "browse" : from);
     setSelectedMod(mod);
     setScreen("mod");
     setModBusy(true);
@@ -371,6 +439,88 @@ export default function App() {
       setModBusy(false);
     }
   };
+
+  const beginInstallFromQueueItem = useCallback(
+    async (item: CompanionInstallQueueItem) => {
+      if (installLock.current || !paired || !activeGame?.can_install) return false;
+      installLock.current = true;
+      setInstallBusy(true);
+      setSession(null);
+      setSelections([]);
+      setStrategy("auto");
+      setConflictAck(false);
+      setOverwriteFiles(false);
+      setSelectedMod({ mod_id: item.modId, name: item.modName, author: "" });
+      setModReturnScreen("browse");
+      try {
+        const started = await startInstallSession(paired, {
+          game_domain: item.gameDomain,
+          nexus_mod_id: item.modId,
+          nexus_file_id: item.fileId,
+          mod_name: item.modName,
+          file_name: item.fileName,
+          expected_size_kb: item.expectedSizeKb,
+          file_version: item.fileVersion,
+        });
+        setSession(started);
+        setScreen("install");
+        if (haptics) hapticSuccess();
+        return true;
+      } catch (e) {
+        useInstallQueueStore.getState().failActive(e instanceof Error ? e.message : String(e));
+        setBrowseError(e instanceof Error ? e.message : String(e));
+        return false;
+      } finally {
+        setInstallBusy(false);
+        installLock.current = false;
+      }
+    },
+    [paired, activeGame?.can_install, haptics]
+  );
+
+  const advanceInstallQueue = useCallback(async () => {
+    const store = useInstallQueueStore.getState();
+    if (store.activeItemId) store.completeActive();
+    const next = store.activateNext();
+    if (next) {
+      await beginInstallFromQueueItem(next);
+      return true;
+    }
+    return false;
+  }, [beginInstallFromQueueItem]);
+
+  const startInstallQueue = useCallback(async () => {
+    setInstallQueueOpen(false);
+    setInstallQueueStarting(true);
+    try {
+      const next = useInstallQueueStore.getState().startProcessing();
+      if (next) await beginInstallFromQueueItem(next);
+    } finally {
+      setInstallQueueStarting(false);
+    }
+  }, [beginInstallFromQueueItem]);
+
+  const queueCurrentMod = useCallback(() => {
+    if (!selectedMod || !selectedFileId) return;
+    const file = modFiles.find((f) => f.file_id === selectedFileId);
+    if (!file) return;
+    const added = useInstallQueueStore.getState().enqueue({
+      gameDomain,
+      modId: selectedMod.mod_id,
+      modName: selectedMod.name,
+      fileId: file.file_id,
+      fileName: file.file_name || file.name,
+      expectedSizeKb: file.size_kb,
+      fileVersion: file.version || null,
+      source: "manual",
+    });
+    if (added) {
+      setNote(`Queued "${selectedMod.name}". Open Queue to install when ready.`);
+      if (haptics) hapticSuccess();
+    } else {
+      setNote(`"${selectedMod.name}" is already in the queue.`);
+    }
+  }, [selectedMod, selectedFileId, modFiles, gameDomain, haptics]);
 
   const beginInstall = async () => {
     if (installLock.current || !paired || !selectedMod || !selectedFileId || !activeGame?.can_install) return;
@@ -394,7 +544,7 @@ export default function App() {
       });
       setSession(started);
       setScreen("install");
-      if (companionSettings.haptics) hapticSuccess();
+      if (haptics) hapticSuccess();
     } catch (e) {
       setBrowseError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -413,6 +563,7 @@ export default function App() {
           selected_options: selections,
           enable_mod: true,
           strategy,
+          overwrite_files: overwriteFiles,
         })
       );
     } catch (e) {
@@ -431,7 +582,7 @@ export default function App() {
     try {
       await toggleLibraryMod(paired, gameDomain, mod.id, !mod.enabled);
       setLibraryMods((prev) => prev.map((m) => (m.id === mod.id ? { ...m, enabled: !m.enabled } : m)));
-      if (companionSettings.haptics) hapticSuccess();
+      if (haptics) hapticSuccess();
     } catch (e) {
       setLibraryError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -446,7 +597,7 @@ export default function App() {
       await uninstallLibraryMod(paired, mod.id);
       setLibraryMods((prev) => prev.filter((m) => m.id !== mod.id));
       setNote(`Uninstalled "${mod.name}".`);
-      if (companionSettings.haptics) hapticSuccess();
+      if (haptics) hapticSuccess();
     } catch (e) {
       setLibraryError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -460,13 +611,83 @@ export default function App() {
     try {
       const next = await reorderLibraryMod(paired, gameDomain, mod.id, direction);
       setLibraryMods(next.sort((a, b) => a.sort_order - b.sort_order));
-      if (companionSettings.haptics) hapticSuccess();
+      if (haptics) hapticSuccess();
     } catch (e) {
       setLibraryError(e instanceof Error ? e.message : String(e));
     } finally {
       setLibraryActionId(null);
     }
   };
+
+  const handleMoveModToPosition = async (mod: CompanionInstalledMod, position: number) => {
+    if (!paired) return;
+    setLibraryActionId(mod.id);
+    try {
+      const next = await setLibraryModPosition(paired, gameDomain, mod.id, position);
+      setLibraryMods(next.sort((a, b) => a.sort_order - b.sort_order));
+      if (haptics) hapticSuccess();
+    } catch (e) {
+      setLibraryError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLibraryActionId(null);
+    }
+  };
+
+  const handleUpdateMod = async (update: ModUpdateInfo) => {
+    if (!paired) return;
+    setLibraryActionId(update.installed_mod_id);
+    try {
+      await startModUpdate(paired, gameDomain, update.installed_mod_id);
+      setNote(`Updating "${update.name}" on your device…`);
+      if (haptics) hapticSuccess();
+    } catch (e) {
+      setLibraryError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLibraryActionId(null);
+    }
+  };
+
+  const handleUpdateAll = async () => {
+    if (!paired || !updates.length) return;
+    setLibraryActionId("all");
+    try {
+      const result = await updateAllMods(paired, gameDomain);
+      setNote(`Queued ${result.queued.length} update(s).`);
+      if (result.errors.length) {
+        setLibraryError(result.errors.join(" · "));
+      }
+      if (haptics) hapticSuccess();
+    } catch (e) {
+      setLibraryError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLibraryActionId(null);
+    }
+  };
+
+  const handleCancelDownload = async (downloadId: string) => {
+    if (!paired) return;
+    try {
+      await cancelDownload(paired, downloadId);
+      setDownloads(await fetchDownloads(paired, gameDomain));
+    } catch (e) {
+      setBrowseError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleRetryDownload = async (downloadId: string) => {
+    if (!paired) return;
+    try {
+      await retryDownload(paired, downloadId);
+      setDownloads(await fetchDownloads(paired, gameDomain));
+    } catch (e) {
+      setBrowseError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const refreshLibraryData = useCallback(async () => {
+    if (!paired || !gameDomain) return;
+    await loadLibrary(paired, gameDomain);
+  }, [paired, gameDomain, loadLibrary]);
 
   const disconnect = () => {
     clearPaired();
@@ -498,24 +719,46 @@ export default function App() {
         <div className="flex items-center justify-between gap-2">
           <p className="cc-brand">NexusDeck · Companion</p>
           {paired && (
-            <span className={`cc-conn ${online ? "cc-conn-ok" : "cc-conn-bad"}`}>
-              <span className="cc-conn-dot" />
-              {online ? "Connected" : "Reconnecting…"}
-            </span>
+            <div className="flex shrink-0 items-center gap-2">
+              <InstallQueueHeaderButton onOpen={() => setInstallQueueOpen(true)} />
+              <button
+                type="button"
+                className={`cc-conn ${online ? "cc-conn-ok" : "cc-conn-bad"}`}
+                onClick={() => {
+                  if (!online) reconnectNow();
+                }}
+              >
+                <span className="cc-conn-dot" />
+                {online ? "Connected" : connectionState === "reconnecting" ? "Reconnecting…" : "Tap to reconnect"}
+              </button>
+            </div>
           )}
         </div>
         <h1 className="cc-title">{paired ? paired.name : "Mod Catalog"}</h1>
         <p className="cc-sub">
           {paired
-            ? "Browse Nexus and send installs straight to your device."
+            ? "Browse Nexus, queue mods, and install them one at a time on your device."
             : "Pair with your Deck or PC to browse Nexus mods."}
         </p>
       </header>
 
       {paired && (
         <>
-          <DownloadQueueBar downloads={downloads} onOpen={() => setQueueOpen(true)} />
-          <DownloadQueueSheet downloads={downloads} open={queueOpen} onClose={() => setQueueOpen(false)} />
+          <DownloadQueueBar downloads={downloads} onOpen={() => setDownloadQueueOpen(true)} />
+          <DownloadQueueSheet
+            downloads={downloads}
+            open={downloadQueueOpen}
+            onClose={() => setDownloadQueueOpen(false)}
+            onCancel={(id) => void handleCancelDownload(id)}
+            onRetry={(id) => void handleRetryDownload(id)}
+            onOpenMod={(modId, name) => void openMod({ mod_id: modId, name, author: "" }, "browse")}
+          />
+          <InstallQueueSheet
+            open={installQueueOpen}
+            onClose={() => setInstallQueueOpen(false)}
+            onStartInstalling={() => void startInstallQueue()}
+            starting={installQueueStarting}
+          />
           <BottomNav
             active={mainTab}
             onChange={(tab) => setScreen(tab)}
@@ -599,12 +842,21 @@ export default function App() {
           discovery={discovery}
           searchResults={searchResults}
           setSearchResults={setSearchResults}
+          searchTotalCount={searchTotalCount}
+          setSearchTotalCount={setSearchTotalCount}
           query={query}
           setQuery={setQuery}
+          filters={browseFilters}
+          setFilters={updateBrowseFilters}
+          sort={browseSort}
+          setSort={setBrowseSort}
+          filterSheetOpen={filterSheetOpen}
+          setFilterSheetOpen={setFilterSheetOpen}
+          browseSearchTrigger={browseSearchTrigger}
           browseBusy={browseBusy}
           setBrowseBusy={setBrowseBusy}
           setBrowseError={setBrowseError}
-          onOpenMod={(m) => void openMod(m)}
+          onOpenMod={(m) => void openMod(m, "browse")}
           onOpenCollections={() => setScreen("collections")}
           refreshBrowse={refreshBrowse}
         />
@@ -630,8 +882,10 @@ export default function App() {
           onBack={() => setScreen("collections")}
           onNotify={(msg) => {
             setNote(msg);
-            showCompanionNotification(companionSettings.notifications, "collection_complete", "Collection", msg);
+            showCompanionNotification(notifications, "collection_complete", "Collection", msg);
           }}
+          onOpenMod={(modId, name) => void openMod({ mod_id: modId, name, author: "" }, "collection-detail")}
+          onOpenInstallQueue={() => setInstallQueueOpen(true)}
         />
       )}
 
@@ -646,13 +900,17 @@ export default function App() {
           libraryActionId={libraryActionId}
           updates={updates}
           lootErrorCount={lootErrorCount}
-          compactUi={companionSettings.compactUi}
+          compactUi={compactUi}
+          onRefresh={refreshLibraryData}
           onOpenMod={(mod) =>
-            void openMod({ mod_id: mod.nexus_mod_id, name: mod.name, author: "" })
+            void openMod({ mod_id: mod.nexus_mod_id, name: mod.name, author: "" }, "library")
           }
           onToggle={(mod) => void handleToggleMod(mod)}
           onUninstall={(mod) => void handleUninstallMod(mod)}
           onReorder={(mod, dir) => void handleReorderMod(mod, dir)}
+          onMoveToPosition={(mod, pos) => void handleMoveModToPosition(mod, pos)}
+          onUpdateMod={(u) => void handleUpdateMod(u)}
+          onUpdateAll={() => void handleUpdateAll()}
           onGoLoadOrder={() => setScreen("loadorder")}
         />
       )}
@@ -663,6 +921,14 @@ export default function App() {
           games={games}
           gameDomain={gameDomain}
           setGameDomain={setGameDomain}
+          onReorder={(modId, direction) => {
+            const mod = libraryMods.find((m) => m.id === modId);
+            if (mod) void handleReorderMod(mod, direction);
+          }}
+          onMoveToPosition={(modId, position) => {
+            const mod = libraryMods.find((m) => m.id === modId);
+            if (mod) void handleMoveModToPosition(mod, position);
+          }}
         />
       )}
 
@@ -691,8 +957,24 @@ export default function App() {
           activeGame={activeGame}
           installBusy={installBusy}
           isInstalled={libraryMods.some((m) => m.nexus_mod_id === selectedMod.mod_id)}
-          onBack={() => setScreen("browse")}
+          updateInfo={updates.find((u) => u.nexus_mod_id === selectedMod.mod_id) ?? null}
+          onBack={() => setScreen(modReturnScreen)}
+          onFilterTag={handleFilterByTag}
+          onUpdate={(u) => void handleUpdateMod(u)}
           onInstall={() => void beginInstall()}
+          onQueue={queueCurrentMod}
+          inQueue={
+            !!selectedMod &&
+            !!selectedFileId &&
+            installQueueItems.some(
+              (i) =>
+                i.gameDomain === gameDomain &&
+                i.modId === selectedMod.mod_id &&
+                i.fileId === selectedFileId &&
+                i.status !== "done" &&
+                i.status !== "failed"
+            )
+          }
         />
       )}
 
@@ -709,8 +991,24 @@ export default function App() {
           installProgressPct={installProgressPct}
           conflictAck={conflictAck}
           setConflictAck={setConflictAck}
+          overwriteFiles={overwriteFiles}
+          setOverwriteFiles={setOverwriteFiles}
           onConfirm={() => void confirmInstall()}
-          onDone={() => setScreen("browse")}
+          onCancel={() => {
+            if (useInstallQueueStore.getState().processing) {
+              useInstallQueueStore.getState().cancelActive();
+            }
+            setSession(null);
+            setScreen(modReturnScreen);
+          }}
+          onDone={() => {
+            void (async () => {
+              await refreshLibraryData();
+              const continued = await advanceInstallQueue();
+              if (!continued) setScreen(modReturnScreen);
+            })();
+          }}
+          queueRemaining={installQueuePending}
         />
       )}
     </div>

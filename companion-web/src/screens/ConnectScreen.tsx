@@ -46,6 +46,16 @@ export function ConnectScreen({
 }) {
   return (
     <div className="cc-body">
+      {!paired && (
+        <div className="cc-panel mb-4 space-y-2 border-[var(--cc-gold)]/30">
+          <p className="text-sm font-semibold text-[var(--cc-gold)]">Use your device URL</p>
+          <p className="text-xs leading-relaxed text-[var(--cc-muted)]">
+            The companion must open from your NexusDeck device on the same Wi‑Fi, e.g.{" "}
+            <span className="font-mono text-[var(--cc-text)]">http://192.168.1.50:8731/app/</span>
+            — not from GitHub Pages.
+          </p>
+        </div>
+      )}
       {!paired ? (
         <>
           {receiverSelf && connectStep === "find" && (

@@ -1,23 +1,23 @@
 //! HTTP companion API: browse, install sessions (download → FOMOD → deploy).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::{async_runtime, AppHandle, Manager};
+use tauri::{async_runtime, AppHandle, Emitter, Manager};
 
 use crate::commands::deploy::{self, InstallOptions, InstallPrepareResult};
 use crate::db::{self, Profile};
 use crate::error::{NexusDeckError, Result};
 use crate::services::credentials;
 use crate::services::mod_uninstall;
-use crate::services::nexus_client::{ModSearchFilters, ModSummary};
+use crate::services::nexus_client::{ModSearchFilters, ModSearchResult, ModSummary};
 use crate::services::remote_sync::{receiver_context, RemoteNexusInstallMeta};
 
 /// Bump when companion HTTP API adds routes (browse/discovery, library, etc.).
-pub const COMPANION_API_VERSION: u32 = 3;
+pub const COMPANION_API_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CompanionGame {
@@ -87,7 +87,8 @@ pub struct DetectedDeployPlan {
 /// Friendly install location for a resolved strategy id.
 fn friendly_target(strategy: &str) -> &'static str {
     match strategy {
-        "merge_data" | "merge_loose_to_data" | "copy_loose_to_data" => "Data folder",
+        "merge_data" | "merge_loose_to_data" | "copy_loose_to_data" | "address_library_bins"
+        | "custom_copy" => "Data folder",
         "merge_root" => "Game folder (root)",
         "staging_only" => "Staging only — game files untouched",
         _ => "Game folder",
@@ -427,6 +428,93 @@ fn fetch_discovery_feed(
         &filters,
     ))?;
     Ok(result.mods)
+}
+
+/// Parse companion `/search/mods` filter query params into Nexus search filters.
+pub fn parse_mod_search_filters(params: &HashMap<String, String>) -> ModSearchFilters {
+    let mut filters = ModSearchFilters::default();
+
+    if let Some(category) = params.get("category") {
+        let category = category.trim();
+        if !category.is_empty() {
+            filters.category = Some(category.to_string());
+        }
+    }
+
+    if let Some(tags) = params.get("tags") {
+        let mut seen = HashSet::new();
+        filters.tags = tags
+            .split(',')
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty() && seen.insert(t.to_lowercase()))
+            .map(str::to_string)
+            .collect();
+    }
+
+    if let Some(min) = params.get("min_endorsements").and_then(|v| v.parse().ok()) {
+        filters.min_endorsements = Some(min);
+    }
+
+    if let Some(hide) = params.get("hide_adult") {
+        filters.hide_adult = hide == "1" || hide.eq_ignore_ascii_case("true");
+    }
+
+    if let Some(days) = params
+        .get("updated_since_days")
+        .and_then(|v| v.parse().ok())
+    {
+        filters.updated_since_days = Some(days);
+    }
+
+    if let Some(author) = params.get("author") {
+        let author = author.trim();
+        if !author.is_empty() {
+            filters.author = Some(author.to_string());
+        }
+    }
+
+    filters
+}
+
+pub fn search_mods_filtered(
+    domain: &str,
+    query: &str,
+    sort: &str,
+    offset: u32,
+    count: u32,
+    filters: ModSearchFilters,
+) -> Result<String> {
+    require_nexus()?;
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let _profile = profile_for_domain(domain)?;
+    let result = async_runtime::block_on(ctx.nexus.search_mods_with_filters(
+        domain,
+        query,
+        sort,
+        offset,
+        count,
+        &filters,
+    ))?;
+    Ok(serde_json::to_string(&result).unwrap_or_else(|_| {
+        serde_json::to_string(&ModSearchResult {
+            mods: Vec::new(),
+            total_count: 0,
+        })
+        .unwrap_or_else(|_| "{\"mods\":[],\"total_count\":0}".into())
+    }))
+}
+
+pub fn list_mod_categories(domain: &str) -> Result<String> {
+    require_nexus()?;
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let _profile = profile_for_domain(domain)?;
+    let categories =
+        async_runtime::block_on(ctx.nexus.list_mod_categories(domain))?;
+    Ok(serde_json::to_string(&categories).unwrap_or_else(|_| "[]".to_string()))
 }
 
 pub fn browse_shelf(
@@ -1170,6 +1258,108 @@ pub fn list_library_updates(domain: &str) -> Result<String> {
     Ok(serde_json::to_string(&updates).unwrap_or_else(|_| "[]".to_string()))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct StartModUpdateBody {
+    pub game_domain: String,
+    pub mod_id: String,
+}
+
+pub fn start_library_mod_update(body: StartModUpdateBody) -> Result<String> {
+    require_nexus()?;
+    let profile = profile_for_domain(&body.game_domain)?;
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let job = async_runtime::block_on(crate::services::update_checker::start_mod_update(
+        ctx.app.clone(),
+        ctx.nexus.clone(),
+        ctx.downloads.clone(),
+        &profile.id,
+        &body.mod_id,
+    ))?;
+    ctx.downloads.mark_auto_install(&job.download_id);
+    Ok(serde_json::to_string(&job).unwrap_or_else(|_| "{}".to_string()))
+}
+
+pub fn update_all_library_mods(body: GameDomainBody) -> Result<String> {
+    require_nexus()?;
+    let profile = profile_for_domain(&body.game_domain)?;
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let result = async_runtime::block_on(crate::services::update_checker::update_all_mods(
+        ctx.app.clone(),
+        ctx.nexus.clone(),
+        ctx.downloads.clone(),
+        &profile.id,
+    ))?;
+    for id in &result.queued {
+        ctx.downloads.mark_auto_install(id);
+    }
+    Ok(serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DownloadIdBody {
+    pub download_id: String,
+}
+
+pub fn cancel_companion_download(body: DownloadIdBody) -> Result<String> {
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    ctx.downloads.cancel_download(&body.download_id)?;
+    Ok(serde_json::json!({ "ok": true }).to_string())
+}
+
+pub fn retry_companion_download(body: DownloadIdBody) -> Result<String> {
+    let ctx = receiver_context().ok_or_else(|| {
+        NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
+    })?;
+    let progress = async_runtime::block_on(ctx.downloads.retry_download(
+        ctx.app.clone(),
+        ctx.nexus.clone(),
+        &body.download_id,
+    ))?;
+    Ok(serde_json::to_string(&progress).unwrap_or_else(|_| "{}".to_string()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetModPositionBody {
+    pub game_domain: String,
+    pub mod_id: String,
+    pub position: u32,
+}
+
+pub fn set_library_mod_position(body: SetModPositionBody) -> Result<String> {
+    let profile = profile_for_domain(&body.game_domain)?;
+    let mods = db::list_installed_mods(&profile.id)?;
+    let pos = body.position as usize;
+    if pos >= mods.len() {
+        return Err(NexusDeckError::Other(format!(
+            "Position {pos} is out of range ({} mods).",
+            mods.len()
+        )));
+    }
+    let mut ids: Vec<String> = mods.iter().map(|m| m.id.clone()).collect();
+    let idx = ids
+        .iter()
+        .position(|id| id == &body.mod_id)
+        .ok_or_else(|| NexusDeckError::NotFound("Mod not found in library.".into()))?;
+    let id = ids.remove(idx);
+    ids.insert(pos, id);
+    let updated = db::set_mod_sort_orders(&profile.id, &ids)?;
+    let _ = crate::services::plugins_txt::sync_plugins_txt(&profile);
+    let mods: Vec<CompanionInstalledMod> = updated.into_iter().map(to_companion_mod).collect();
+    Ok(serde_json::to_string(&mods).unwrap_or_else(|_| "[]".to_string()))
+}
+
+pub fn rescan_library(body: GameDomainBody) -> Result<String> {
+    let profile = profile_for_domain(&body.game_domain)?;
+    let result = crate::services::library_rescan::rescan_library_from_disk(&profile.id)?;
+    Ok(serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string()))
+}
+
 pub fn list_collections_for_game(domain: &str, offset: u32) -> Result<String> {
     require_nexus()?;
     let ctx = receiver_context().ok_or_else(|| {
@@ -1221,6 +1411,10 @@ pub fn collection_detail_with_diff(domain: &str, slug: &str) -> Result<String> {
 pub struct StartCollectionInstallBody {
     pub game_domain: String,
     pub slug: String,
+    #[serde(default)]
+    pub include_optional: bool,
+    #[serde(default)]
+    pub include_outdated: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1228,6 +1422,24 @@ pub struct CollectionInstallQueued {
     pub mod_id: u64,
     pub mod_name: String,
     pub download_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CollectionInstallStartedEvent {
+    slug: String,
+    name: String,
+    game_domain: String,
+    profile_id: String,
+    mods: Vec<CollectionInstallStartedMod>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CollectionInstallStartedMod {
+    mod_id: u64,
+    name: String,
+    file_id: Option<u64>,
+    optional: bool,
+    download_id: String,
 }
 
 pub fn start_collection_install(body: StartCollectionInstallBody) -> Result<String> {
@@ -1254,11 +1466,21 @@ pub fn start_collection_install(body: StartCollectionInstallBody) -> Result<Stri
         .collect();
     let diff = crate::services::profile_insights::diff_collection(&profile.id, &inputs)?;
     let mut queued = Vec::new();
+    let mut started_mods = Vec::new();
     for entry in diff.mods {
         if entry.status == "installed" {
             continue;
         }
-        if entry.optional && entry.status != "missing" {
+        if entry.optional && !body.include_optional {
+            continue;
+        }
+        if (entry.status == "outdated" || entry.status == "wrong_file") && !body.include_outdated {
+            continue;
+        }
+        if entry.status != "missing"
+            && entry.status != "outdated"
+            && entry.status != "wrong_file"
+        {
             continue;
         }
         let progress = async_runtime::block_on(
@@ -1275,9 +1497,28 @@ pub fn start_collection_install(body: StartCollectionInstallBody) -> Result<Stri
         ctx.downloads.mark_auto_install(&progress.id);
         queued.push(CollectionInstallQueued {
             mod_id: entry.mod_id,
-            mod_name: entry.name,
+            mod_name: entry.name.clone(),
+            download_id: progress.id.clone(),
+        });
+        started_mods.push(CollectionInstallStartedMod {
+            mod_id: entry.mod_id,
+            name: entry.name,
+            file_id: entry.collection_file_id,
+            optional: entry.optional,
             download_id: progress.id,
         });
+    }
+    if !started_mods.is_empty() {
+        let _ = ctx.app.emit(
+            "collection-install-started",
+            CollectionInstallStartedEvent {
+                slug: body.slug.clone(),
+                name: detail.name.clone(),
+                game_domain: body.game_domain.clone(),
+                profile_id: profile.id.clone(),
+                mods: started_mods,
+            },
+        );
     }
     Ok(serde_json::to_string(&queued).unwrap_or_else(|_| "[]".to_string()))
 }
@@ -1375,5 +1616,40 @@ fn mime_for(path: &Path) -> &'static str {
         "font/woff2"
     } else {
         "text/html; charset=utf-8"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_mod_search_filters_reads_all_params() {
+        let mut params = HashMap::new();
+        params.insert("category".into(), "Weapons".into());
+        params.insert("tags".into(), "Gameplay, Settlements ,gameplay".into());
+        params.insert("min_endorsements".into(), "1000".into());
+        params.insert("hide_adult".into(), "true".into());
+        params.insert("updated_since_days".into(), "30".into());
+        params.insert("author".into(), "SomeAuthor".into());
+
+        let filters = parse_mod_search_filters(&params);
+        assert_eq!(filters.category.as_deref(), Some("Weapons"));
+        assert_eq!(filters.tags, vec!["Gameplay", "Settlements"]);
+        assert_eq!(filters.min_endorsements, Some(1000));
+        assert!(filters.hide_adult);
+        assert_eq!(filters.updated_since_days, Some(30));
+        assert_eq!(filters.author.as_deref(), Some("SomeAuthor"));
+    }
+
+    #[test]
+    fn parse_mod_search_filters_defaults_when_empty() {
+        let filters = parse_mod_search_filters(&HashMap::new());
+        assert!(filters.category.is_none());
+        assert!(filters.tags.is_empty());
+        assert!(filters.min_endorsements.is_none());
+        assert!(!filters.hide_adult);
+        assert!(filters.updated_since_days.is_none());
+        assert!(filters.author.is_none());
     }
 }

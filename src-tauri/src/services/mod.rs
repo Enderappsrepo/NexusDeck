@@ -17,6 +17,7 @@ pub mod archive;
 pub mod sevenzip;
 pub mod conflict;
 pub mod deploy;
+pub mod vortex_override;
 pub mod mod_state;
 pub mod compare;
 pub mod dependency_resolver;

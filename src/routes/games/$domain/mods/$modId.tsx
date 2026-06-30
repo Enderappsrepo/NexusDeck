@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -16,6 +16,7 @@ import { ApiErrorBanner } from "@/components/ui/ApiErrorBanner";
 import { ListRowSkeleton } from "@/components/ui/LoadingSkeleton";
 import { useGamepadTabs } from "@/hooks/useGamepadTabs";
 import { useGamepadContextAction } from "@/hooks/useGamepadRouter";
+import { useAppBack } from "@/hooks/useAppBack";
 import { GP } from "@/lib/gamepad/buttons";
 import { getPairedDeck, sendNexusModToPairedDeck } from "@/lib/remote/sendToDeck";
 import { useAuthStore, useDownloadsStore, useGamesStore, useInstallQueueStore } from "@/stores";
@@ -59,6 +60,7 @@ function ModDetailPage() {
 
   const deckDetected = useSettingsStore((s) => s.deckDetected);
   const pairedDeck = !deckDetected ? getPairedDeck() : null;
+  const goBack = useAppBack();
 
   const isPremium = user?.is_premium ?? false;
 
@@ -278,16 +280,15 @@ function ModDetailPage() {
   if (error || !detail) {
     return (
       <div className="mx-auto max-w-4xl">
-        <Link
-          to="/games/$domain/mods"
-          params={{ domain }}
-          search={{ modId: undefined }}
+        <button
+          type="button"
+          onClick={goBack}
           className="focusable mb-6 inline-flex items-center gap-2 text-[var(--color-muted)] hover:text-white"
           data-focusable="true"
         >
           <ArrowLeft className="h-5 w-5" />
           Back to mods
-        </Link>
+        </button>
         <ApiErrorBanner
           context="mod-detail"
           error={error ?? "Mod not found"}

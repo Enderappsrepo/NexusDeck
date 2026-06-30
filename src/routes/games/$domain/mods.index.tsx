@@ -316,6 +316,7 @@ function ModBrowserPage() {
       navigate({
         to: "/games/$domain/mods/$modId",
         params: { domain, modId: String(search.modId) },
+        replace: true,
       });
     }
   }, [search.modId, domain, navigate]);
