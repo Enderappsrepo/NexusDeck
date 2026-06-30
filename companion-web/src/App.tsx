@@ -11,12 +11,14 @@ import {
   fetchModFiles,
   fetchTrending,
   getInstallSession,
+  heartbeatDeck,
   isApiNotFoundError,
   isGitHubPagesHost,
   listGames,
   loadPaired,
   pairWithDeck,
   pingDeck,
+  reorderLibraryMod,
   savePaired,
   searchModsViaDeck,
   startInstallSession,
@@ -25,6 +27,21 @@ import {
   type PairedDeck,
   type PingInfo,
 } from "./deckApi";
+import {
+  ArrowLeftIcon,
+  BrowseIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ChevronUpIcon,
+  CheckIcon,
+  DeviceIcon,
+  DownloadsIcon,
+  FolderIcon,
+  InstallIcon,
+  LibraryIcon,
+  SearchIcon,
+  StarIcon,
+} from "./components/icons";
 import { CompanionEssentialsCard } from "./components/CompanionEssentialsCard";
 import { InstallOptions, defaultSelectionsFromPrepare } from "./components/InstallOptions";
 import { usePullToRefresh } from "./hooks/usePullToRefresh";
@@ -79,6 +96,28 @@ function coverUrl(mod: { picture_url?: string | null; hero_image_url?: string | 
   return mod.hero_image_url || mod.picture_url || null;
 }
 
+function StatRow({ mod, className = "" }: { mod: ModSummary; className?: string }) {
+  const endorse = mod.endorsements ?? 0;
+  const downloads = mod.mod_downloads ?? 0;
+  if (endorse <= 0 && downloads <= 0) return null;
+  return (
+    <span className={`cc-stat-row ${className}`.trim()}>
+      {endorse > 0 && (
+        <span className="cc-stat">
+          <StarIcon className="cc-stat-ico" />
+          {formatCount(endorse)}
+        </span>
+      )}
+      {downloads > 0 && (
+        <span className="cc-stat">
+          <DownloadsIcon className="cc-stat-ico" />
+          {formatCount(downloads)}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function CcTile({
   mod,
   className = "",
@@ -101,8 +140,66 @@ function CcTile({
         <div className="cc-tile-caption">
           <p className="cc-tile-title">{mod.name}</p>
           <p className="cc-tile-meta">{mod.author}</p>
+          <StatRow mod={mod} className="mt-1.5" />
         </div>
       </div>
+    </button>
+  );
+}
+
+/** Large cinematic featured card for the top of Browse. */
+function CcHeroCard({
+  mod,
+  onOpen,
+}: {
+  mod: ModSummary;
+  onOpen: (mod: ModSummary) => void;
+}) {
+  const img = coverUrl(mod);
+  return (
+    <button type="button" className="cc-hero-card" onClick={() => onOpen(mod)}>
+      <div className="cc-hero-card-media">
+        {img ? (
+          <img src={img} alt="" className="cc-tile-img" loading="lazy" />
+        ) : (
+          <div className="cc-tile-fallback" />
+        )}
+        <div className="cc-hero-card-scrim" />
+        <span className="cc-hero-card-badge">Featured</span>
+        <div className="cc-hero-card-body">
+          <p className="cc-hero-card-title">{mod.name}</p>
+          <p className="cc-tile-meta">{mod.author}</p>
+          <StatRow mod={mod} className="mt-2" />
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/** Compact horizontal list row (thumbnail + meta) for long feeds. */
+function CcListRow({
+  mod,
+  onOpen,
+}: {
+  mod: ModSummary;
+  onOpen: (mod: ModSummary) => void;
+}) {
+  const img = coverUrl(mod);
+  return (
+    <button type="button" className="cc-list-row" onClick={() => onOpen(mod)}>
+      <div className="cc-list-thumb">
+        {img ? (
+          <img src={img} alt="" className="cc-tile-img" loading="lazy" />
+        ) : (
+          <div className="cc-tile-fallback" />
+        )}
+      </div>
+      <div className="cc-list-body">
+        <p className="cc-list-title">{mod.name}</p>
+        <p className="cc-list-author">{mod.author}</p>
+        <StatRow mod={mod} className="mt-1" />
+      </div>
+      <ChevronRightIcon className="cc-list-chevron" />
     </button>
   );
 }
@@ -137,6 +234,7 @@ export default function App() {
   const installLock = useRef(false);
   const autoConnectTried = useRef(false);
 
+  const [online, setOnline] = useState(true);
   const [host, setHost] = useState(paired?.host ?? "");
   const [port, setPort] = useState(String(paired?.port ?? 8731));
   const [code, setCode] = useState("");
@@ -171,6 +269,7 @@ export default function App() {
   const [session, setSession] = useState<InstallSessionStatus | null>(null);
   const [selections, setSelections] = useState<SelectedInstallOption[]>([]);
   const [strategy, setStrategy] = useState("auto");
+  const [showStrategyOverride, setShowStrategyOverride] = useState(false);
   const [installBusy, setInstallBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -181,6 +280,7 @@ export default function App() {
 
   const activeGame = games.find((g) => g.domain === gameDomain);
   const { mainFiles, otherFiles } = useMemo(() => groupModFiles(modFiles), [modFiles]);
+  const selectedFile = modFiles.find((f) => f.file_id === selectedFileId);
   const onGitHubPages = isGitHubPagesHost();
   const deviceCompanionUrl = paired ? companionAppUrl(paired.host, paired.port) : companionLink;
   const receiverSelf = getReceiverSelfHost();
@@ -230,6 +330,26 @@ export default function App() {
   useEffect(() => {
     return listenForInstallPrompt((event) => setInstallPrompt(event));
   }, []);
+
+  // Keepalive: tell the device we're still here, and surface a reconnect state
+  // if it goes unreachable so the connection issues are visible (not silent).
+  useEffect(() => {
+    if (!paired) {
+      setOnline(true);
+      return;
+    }
+    let cancelled = false;
+    const beat = async () => {
+      const ok = await heartbeatDeck(paired);
+      if (!cancelled) setOnline(ok);
+    };
+    void beat();
+    const id = window.setInterval(() => void beat(), 12_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [paired]);
 
   useEffect(() => {
     if (paired || autoConnectTried.current) return;
@@ -398,6 +518,7 @@ export default function App() {
     setSession(null);
     setSelections([]);
     setStrategy("auto");
+    setShowStrategyOverride(false);
     try {
       const started = await startInstallSession(paired, {
         game_domain: gameDomain,
@@ -489,6 +610,21 @@ export default function App() {
     }
   };
 
+  const handleReorderMod = async (mod: CompanionInstalledMod, direction: "up" | "down") => {
+    if (!paired) return;
+    setLibraryActionId(mod.id);
+    setLibraryError(null);
+    try {
+      const next = await reorderLibraryMod(paired, gameDomain, mod.id, direction);
+      setLibraryMods(next.sort((a, b) => a.sort_order - b.sort_order));
+      hapticSuccess();
+    } catch (e) {
+      setLibraryError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLibraryActionId(null);
+    }
+  };
+
   const openInstalledMod = (mod: CompanionInstalledMod) => {
     void openMod({
       mod_id: mod.nexus_mod_id,
@@ -500,7 +636,15 @@ export default function App() {
   return (
     <div className="shell">
       <header className="cc-header">
-        <p className="cc-brand">NexusDeck · Companion</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="cc-brand">NexusDeck · Companion</p>
+          {paired && (
+            <span className={`cc-conn ${online ? "cc-conn-ok" : "cc-conn-bad"}`}>
+              <span className="cc-conn-dot" />
+              {online ? "Connected" : "Reconnecting…"}
+            </span>
+          )}
+        </div>
         <h1 className="cc-title">
           {paired ? paired.name : "Mod Catalog"}
         </h1>
@@ -520,6 +664,7 @@ export default function App() {
             }
             onClick={() => setScreen("browse")}
           >
+            <BrowseIcon />
             Browse
           </button>
           <button
@@ -527,7 +672,8 @@ export default function App() {
             className={screen === "library" ? "cc-tab cc-tab-active" : "cc-tab"}
             onClick={() => setScreen("library")}
           >
-            Library
+            <LibraryIcon />
+            Manage
           </button>
           <button
             type="button"
@@ -535,6 +681,7 @@ export default function App() {
             onClick={() => session && setScreen("install")}
             disabled={!session}
           >
+            <InstallIcon />
             Install
           </button>
           <button
@@ -542,6 +689,7 @@ export default function App() {
             className={screen === "connect" ? "cc-tab cc-tab-active" : "cc-tab"}
             onClick={() => setScreen("connect")}
           >
+            <DeviceIcon />
             Device
           </button>
         </nav>
@@ -828,12 +976,14 @@ export default function App() {
           />
 
           <div className="cc-search">
-            <input
-              className="cc-input flex-1"
-              placeholder="Search catalog…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
+            <div className="cc-search-field">
+              <SearchIcon className="cc-search-ico" />
+              <input
+                className="cc-search-input"
+                placeholder="Search catalog…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
                 if (e.key === "Enter" && paired && gameDomain && query.trim()) {
                   void (async () => {
                     setBrowseBusy(true);
@@ -849,7 +999,8 @@ export default function App() {
                   })();
                 }
               }}
-            />
+              />
+            </div>
             <button
               type="button"
               className="cc-btn shrink-0 px-4"
@@ -882,10 +1033,17 @@ export default function App() {
 
           {showSearch ? (
             <section>
-              <p className="cc-section-label px-4">Results</p>
-              <div className="cc-stack">
+              <p className="cc-section-label px-4">
+                Results <span className="cc-count">{searchResults.length}</span>
+              </p>
+              {!browseBusy && searchResults.length === 0 && (
+                <p className="px-4 text-sm text-[var(--cc-muted)]">
+                  No matches for “{query.trim()}”. Try a different search.
+                </p>
+              )}
+              <div className="cc-list">
                 {searchResults.map((mod) => (
-                  <CcTile key={mod.mod_id} mod={mod} onOpen={(m) => void openMod(m)} />
+                  <CcListRow key={mod.mod_id} mod={mod} onOpen={(m) => void openMod(m)} />
                 ))}
               </div>
             </section>
@@ -904,14 +1062,13 @@ export default function App() {
 
                 if (shelf.layout === "hero") {
                   return (
-                    <section key={shelf.key}>
+                    <section key={shelf.key} className="cc-section">
                       <p className="cc-section-label px-4">{shelf.title}</p>
-                      <div className="cc-shelf-track cc-shelf-track-hero">
-                        {mods.map((mod) => (
-                          <CcTile
+                      <div className="cc-hero-track">
+                        {mods.slice(0, 6).map((mod) => (
+                          <CcHeroCard
                             key={mod.mod_id}
                             mod={mod}
-                            className="cc-shelf-tile cc-shelf-tile-hero"
                             onOpen={(m) => void openMod(m)}
                           />
                         ))}
@@ -922,7 +1079,7 @@ export default function App() {
 
                 if (shelf.layout === "shelf") {
                   return (
-                    <section key={shelf.key}>
+                    <section key={shelf.key} className="cc-section">
                       <p className="cc-section-label px-4">{shelf.title}</p>
                       <div className="cc-shelf-track">
                         {mods.map((mod) => (
@@ -939,11 +1096,11 @@ export default function App() {
                 }
 
                 return (
-                  <section key={shelf.key}>
+                  <section key={shelf.key} className="cc-section">
                     <p className="cc-section-label px-4">{shelf.title}</p>
-                    <div className="cc-stack">
-                      {mods.map((mod) => (
-                        <CcTile key={mod.mod_id} mod={mod} onOpen={(m) => void openMod(m)} />
+                    <div className="cc-list">
+                      {mods.slice(0, 6).map((mod) => (
+                        <CcListRow key={mod.mod_id} mod={mod} onOpen={(m) => void openMod(m)} />
                       ))}
                     </div>
                   </section>
@@ -981,9 +1138,47 @@ export default function App() {
             </p>
           )}
 
+          {libraryMods.length > 0 && (
+            <div className="flex items-center justify-between px-4">
+              <p className="cc-section-label !mb-0">
+                Installed mods · {libraryMods.length}
+              </p>
+              <p className="text-[10px] uppercase tracking-wider text-[var(--cc-muted)]">
+                {libraryMods.filter((m) => m.enabled).length} enabled
+              </p>
+            </div>
+          )}
+          {libraryMods.length > 1 && (
+            <p className="px-4 text-[11px] text-[var(--cc-muted)]">
+              Load order: top loads first; lower mods override the ones above. Use the
+              arrows to reorder.
+            </p>
+          )}
+
           <div className="cc-library-list">
-            {libraryMods.map((mod) => (
+            {libraryMods.map((mod, index) => (
               <div key={mod.id} className="cc-library-row">
+                <div className="cc-reorder">
+                  <button
+                    type="button"
+                    className="cc-reorder-btn"
+                    aria-label="Move up"
+                    disabled={index === 0 || libraryActionId === mod.id}
+                    onClick={() => void handleReorderMod(mod, "up")}
+                  >
+                    <ChevronUpIcon />
+                  </button>
+                  <span className="cc-reorder-index">{index + 1}</span>
+                  <button
+                    type="button"
+                    className="cc-reorder-btn"
+                    aria-label="Move down"
+                    disabled={index === libraryMods.length - 1 || libraryActionId === mod.id}
+                    onClick={() => void handleReorderMod(mod, "down")}
+                  >
+                    <ChevronDownIcon />
+                  </button>
+                </div>
                 <button
                   type="button"
                   className="cc-library-main"
@@ -1020,24 +1215,33 @@ export default function App() {
 
       {paired && screen === "mod" && selectedMod && (
         <>
-          <div className="cc-hero">
+          <div className="cc-detail-hero">
             {heroImg ? (
-              <img src={heroImg} alt="" className="cc-hero-img" />
+              <img src={heroImg} alt="" className="cc-detail-hero-img" />
             ) : (
-              <div className="cc-tile-fallback cc-hero-img" />
+              <div className="cc-tile-fallback cc-detail-hero-img" />
             )}
-            <div className="cc-hero-scrim" />
-            <div className="cc-hero-body">
-              <button type="button" className="cc-btn-ghost mb-3" onClick={() => setScreen("browse")}>
-                ← Catalog
-              </button>
+            <div className="cc-detail-hero-scrim" />
+            <button
+              type="button"
+              className="cc-detail-back"
+              aria-label="Back to catalog"
+              onClick={() => setScreen("browse")}
+            >
+              <ArrowLeftIcon className="h-5 w-5" />
+            </button>
+            <div className="cc-detail-hero-body">
               {modBusy ? (
-                <p className="text-sm text-[var(--cc-muted)]">Loading…</p>
+                <p className="text-sm text-white/80">Loading…</p>
               ) : (
                 modDetail && (
                   <>
-                    <h2 className="cc-hero-title">{modDetail.name}</h2>
-                    <p className="cc-hero-author">{modDetail.author}</p>
+                    {modDetail.category && (
+                      <span className="cc-detail-eyebrow">{modDetail.category}</span>
+                    )}
+                    <h2 className="cc-detail-title">{modDetail.name}</h2>
+                    <p className="cc-detail-author">by {modDetail.author}</p>
+                    <StatRow mod={modDetail} className="mt-2 cc-stat-row-light" />
                   </>
                 )
               )}
@@ -1045,49 +1249,45 @@ export default function App() {
           </div>
 
           {modDetail && !modBusy && (
-            <div className="cc-body space-y-4">
-              <div className="cc-mod-stats">
-                <div className="cc-mod-stat">
-                  <span className="cc-mod-stat-value">{formatCount(modDetail.endorsements)}</span>
-                  <span className="cc-mod-stat-label">Endorsements</span>
-                </div>
-                <div className="cc-mod-stat">
-                  <span className="cc-mod-stat-value">{formatCount(modDetail.mod_downloads)}</span>
-                  <span className="cc-mod-stat-label">Downloads</span>
-                </div>
-                {modDetail.version && (
-                  <div className="cc-mod-stat">
-                    <span className="cc-mod-stat-value">{modDetail.version}</span>
-                    <span className="cc-mod-stat-label">Version</span>
-                  </div>
-                )}
-                {formatUpdated(modDetail.updated_timestamp) && (
-                  <div className="cc-mod-stat">
-                    <span className="cc-mod-stat-value">{formatUpdated(modDetail.updated_timestamp)}</span>
-                    <span className="cc-mod-stat-label">Updated</span>
-                  </div>
-                )}
-              </div>
-
-              {(modDetail.category || (modDetail.tags && modDetail.tags.length > 0)) && (
-                <div className="cc-mod-meta">
-                  {modDetail.category && (
-                    <span className="cc-mod-chip cc-mod-chip-category">{modDetail.category}</span>
-                  )}
-                  {modDetail.tags?.slice(0, 8).map((tag) => (
-                    <span key={tag} className="cc-mod-chip">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
+            <div className="cc-detail-body">
+              {libraryMods.some((m) => m.nexus_mod_id === modDetail.mod_id) && (
+                <p className="cc-mod-installed-badge inline-flex items-center gap-1.5">
+                  <CheckIcon className="h-4 w-4 shrink-0" />
+                  Installed on your device
+                </p>
               )}
 
-              {libraryMods.some((m) => m.nexus_mod_id === modDetail.mod_id) && (
-                <p className="cc-mod-installed-badge">Installed on your device</p>
+              {(modDetail.version ||
+                formatUpdated(modDetail.updated_timestamp) ||
+                selectedFile) && (
+                <div className="cc-fact-row">
+                  {modDetail.version && (
+                    <div className="cc-fact">
+                      <span className="cc-fact-label">Version</span>
+                      <span className="cc-fact-value">{modDetail.version}</span>
+                    </div>
+                  )}
+                  {formatUpdated(modDetail.updated_timestamp) && (
+                    <div className="cc-fact">
+                      <span className="cc-fact-label">Updated</span>
+                      <span className="cc-fact-value">
+                        {formatUpdated(modDetail.updated_timestamp)}
+                      </span>
+                    </div>
+                  )}
+                  {selectedFile && (
+                    <div className="cc-fact">
+                      <span className="cc-fact-label">Size</span>
+                      <span className="cc-fact-value">
+                        {Math.max(1, Math.round(selectedFile.size_kb / 1024))} MB
+                      </span>
+                    </div>
+                  )}
+                </div>
               )}
 
               {modDetail.summary && (
-                <p className="text-sm leading-relaxed text-[var(--cc-text)]">{modDetail.summary}</p>
+                <p className="cc-detail-summary">{modDetail.summary}</p>
               )}
               {modDetail.description_html && (() => {
                 const plain = stripHtml(modDetail.description_html);
@@ -1111,19 +1311,18 @@ export default function App() {
                 );
               })()}
 
-              <a
-                href={nexusModUrl(gameDomain, modDetail.mod_id)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="cc-nexus-link"
-              >
-                Open on Nexus Mods ↗
-              </a>
+              {modDetail.tags && modDetail.tags.length > 0 && (
+                <div className="cc-mod-meta">
+                  {modDetail.tags.slice(0, 10).map((tag) => (
+                    <span key={tag} className="cc-mod-chip">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               <div className="cc-panel space-y-3">
-                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--cc-gold)]">
-                  Download
-                </p>
+                <p className="cc-panel-label">Choose a file</p>
                 {(mainFiles.length ? mainFiles : groupModFiles(modFiles).all).map((file) => (
                   <label
                     key={file.file_id}
@@ -1178,13 +1377,30 @@ export default function App() {
                 )}
               </div>
 
+              <a
+                href={nexusModUrl(gameDomain, modDetail.mod_id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="cc-nexus-link"
+              >
+                Open on Nexus Mods ↗
+              </a>
+            </div>
+          )}
+
+          {modDetail && !modBusy && (
+            <div className="cc-detail-cta" data-detail-cta>
               <button
                 type="button"
                 className="cc-btn w-full"
                 disabled={!activeGame?.can_install || !selectedFileId || installBusy}
                 onClick={() => void beginInstall()}
               >
-                {installBusy ? "Sending…" : "Send to device"}
+                {installBusy
+                  ? "Sending…"
+                  : !activeGame?.can_install
+                    ? "Add this game on your device first"
+                    : "Send to device"}
               </button>
             </div>
           )}
@@ -1228,25 +1444,80 @@ export default function App() {
               {session.prepare.strategies.length > 0 && (
                 <div className="cc-panel space-y-3">
                   <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--cc-gold)]">
-                    Deployment method
+                    Where this installs
                   </p>
-                  {session.prepare.strategies.map((s) => (
-                    <label
-                      key={s.id}
-                      className={`cc-file ${strategy === s.id ? "cc-file-active" : ""}`}
-                    >
-                      <input
-                        type="radio"
-                        name="strategy"
-                        checked={strategy === s.id}
-                        onChange={() => setStrategy(s.id)}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block font-medium">{s.label}</span>
-                        <span className="text-[11px] text-[var(--cc-muted)]">{s.description}</span>
+
+                  {session.prepare.detected && strategy === "auto" ? (
+                    <div className="cc-detected">
+                      <span className="cc-detected-icon">
+                        <CheckIcon className="h-4 w-4" />
                       </span>
-                    </label>
-                  ))}
+                      <div className="min-w-0 flex-1">
+                        <p className="cc-detected-target">
+                          <FolderIcon className="h-3.5 w-3.5 shrink-0" />
+                          {session.prepare.detected.target}
+                        </p>
+                        <p className="cc-detected-desc">{session.prepare.detected.description}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-[var(--cc-text)]">
+                      {strategy === "auto"
+                        ? "NexusDeck will auto-detect the best location from the archive layout."
+                        : `Override: ${
+                            session.prepare.strategies.find((s) => s.id === strategy)?.label ??
+                            strategy
+                          }`}
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    className="cc-btn-ghost inline-flex items-center gap-1 text-xs"
+                    onClick={() => setShowStrategyOverride((v) => !v)}
+                  >
+                    {showStrategyOverride ? (
+                      <ChevronUpIcon className="h-4 w-4" />
+                    ) : (
+                      <ChevronDownIcon className="h-4 w-4" />
+                    )}
+                    {showStrategyOverride ? "Hide options" : "Change install location"}
+                  </button>
+
+                  {showStrategyOverride && (
+                    <div className="space-y-2 border-t border-[var(--cc-border-subtle)] pt-3">
+                      {session.prepare.strategies.map((s) => {
+                        const recommended = s.id === "auto";
+                        const detected = session.prepare?.detected;
+                        return (
+                          <label
+                            key={s.id}
+                            className={`cc-file ${strategy === s.id ? "cc-file-active" : ""}`}
+                          >
+                            <input
+                              type="radio"
+                              name="strategy"
+                              checked={strategy === s.id}
+                              onChange={() => setStrategy(s.id)}
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="flex items-center gap-2 font-medium">
+                                {s.label}
+                                {recommended && (
+                                  <span className="cc-recommended-tag">Recommended</span>
+                                )}
+                              </span>
+                              <span className="text-[11px] text-[var(--cc-muted)]">
+                                {recommended && detected
+                                  ? `Auto-detected → ${detected.target}`
+                                  : s.description}
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 

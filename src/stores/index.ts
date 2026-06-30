@@ -7,3 +7,8 @@ export { useCollectionInstallStore } from "./collectionInstallStore";
 export { useSettingsStore } from "./settingsStore";
 export { useModsStore } from "./modsStore";
 export { useLaunchStore } from "./launchStore";
+export {
+  useCompanionStore,
+  useCompanionConnected,
+  useCompanionPresencePoll,
+} from "./companionStore";

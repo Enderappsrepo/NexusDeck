@@ -83,12 +83,21 @@ export interface StrategyOption {
   description: string;
 }
 
+/** What "Automatic" resolved to for this archive (where files will land). */
+export interface DetectedDeployPlan {
+  strategy: string;
+  label: string;
+  description: string;
+  target: string;
+}
+
 export interface CompanionPreparePayload {
   option_groups: InstallOptionGroup[];
   default_selections: SelectedInstallOption[];
   install_wizard: InstallWizard | null;
   install_wizard_required: boolean;
   strategies: StrategyOption[];
+  detected?: DetectedDeployPlan | null;
 }
 
 export interface InstallDownloadProgress {

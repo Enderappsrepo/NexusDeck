@@ -50,8 +50,28 @@ const session = {
       { id: "merge_loose_to_data", label: "Loose files → Data", description: "Copy all files into Data/." },
       { id: "copy_loose_to_data", label: "Plugins only → Data", description: "Copy just .esp/.ba2 into Data/." },
     ],
+    detected: {
+      strategy: "merge_data",
+      label: "Data folder merge",
+      description: "Standard mod layout detected. Files will be copied into your game's Data folder.",
+      target: "Data folder",
+    },
   },
 };
+
+let library = [
+  { id: "lm1", nexus_mod_id: 1, name: "Unofficial Fallout 4 Patch", version: "2.2", enabled: true, sort_order: 0, installed_at: Date.now() },
+  { id: "lm2", nexus_mod_id: 4, name: "Mod Configuration Menu", version: "1.11", enabled: true, sort_order: 1, installed_at: Date.now() },
+  { id: "lm3", nexus_mod_id: 7, name: "Vivid Fallout", version: "1.6", enabled: false, sort_order: 2, installed_at: Date.now() },
+];
+
+function reorderLibrary(modId: string, direction: string) {
+  const i = library.findIndex((m) => m.id === modId);
+  const j = direction === "up" ? i - 1 : i + 1;
+  if (i < 0 || j < 0 || j >= library.length) return;
+  [library[i], library[j]] = [library[j], library[i]];
+  library = library.map((m, idx) => ({ ...m, sort_order: idx }));
+}
 
 export function installFetchMock() {
   const json = (data: unknown) =>
@@ -60,7 +80,7 @@ export function installFetchMock() {
       headers: { "Content-Type": "application/json" },
     });
 
-  window.fetch = (async (input: RequestInfo | URL) => {
+  window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(typeof input === "string" ? input : (input as Request).url ?? input);
     if (url.includes("/ping"))
       return json({ name: "Steam Deck", version: "1.1.29", paired: true, companion_api: 2, games });
@@ -70,12 +90,13 @@ export function installFetchMock() {
     if (url.includes("/browse/trending")) return json(mods);
     if (url.includes("/browse/latest")) return json(mods);
     if (url.includes("/search/mods")) return json(mods.slice(0, 4));
-    if (url.includes("/library/mods"))
-      return json([
-        { id: "lm1", nexus_mod_id: 1, name: "Unofficial Fallout 4 Patch", version: "2.2", enabled: true, sort_order: 0, installed_at: Date.now() },
-        { id: "lm2", nexus_mod_id: 4, name: "Mod Configuration Menu", version: "1.11", enabled: true, sort_order: 1, installed_at: Date.now() },
-        { id: "lm3", nexus_mod_id: 7, name: "Vivid Fallout", version: "1.6", enabled: false, sort_order: 2, installed_at: Date.now() },
-      ]);
+    if (url.includes("/library/mod/reorder")) {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      reorderLibrary(body.mod_id, body.direction);
+      return json(library);
+    }
+    if (url.includes("/library/mod/toggle")) return json({ ok: true });
+    if (url.includes("/library/mods")) return json(library);
     if (url.includes("/mods/detail"))
       return json({ ...m(2, "Sim Settlements 2", "kinggath"), description_html: "<p>Build settlements that build themselves — a full questline overhaul.</p>", category: "Gameplay", version: "2.0", tags: ["Gameplay", "Settlements"] });
     if (url.includes("/mods/files"))

@@ -1055,12 +1055,23 @@ export interface AppUpdateInfo {
   release_notes: string | null;
 }
 
+export interface CompanionInstallSummary {
+  mod_name: string;
+  status: string;
+  message: string;
+  progress_pct: number;
+}
+
 export interface RemoteReceiverStatus {
   running: boolean;
   pair_code: string;
   http_port: number;
   paired: boolean;
   companion_urls?: string[];
+  companion_connected?: boolean;
+  companion_host?: string | null;
+  companion_last_seen_secs?: number | null;
+  active_install?: CompanionInstallSummary | null;
 }
 
 export interface DiscoveredDeck {

@@ -11,11 +11,13 @@ import { ModInstallDialog } from "@/components/mod/ModInstallDialog";
 import { InstallSuccessDialog } from "@/components/install/InstallSuccessDialog";
 import {
   useAuthStore,
+  useCompanionPresencePoll,
   useDownloadsStore,
   useGamesStore,
   useInstallQueueStore,
   useSettingsStore,
 } from "@/stores";
+import { CompanionConnectedOverlay } from "@/components/companion/CompanionConnectedOverlay";
 import { ControllerHintBar } from "@/components/controller/ControllerHintBar";
 import { CommandPalette } from "@/components/controller/CommandPalette";
 import { useFocusNavigation } from "@/hooks/useFocusNavigation";
@@ -215,6 +217,7 @@ function RootLayout() {
   useFocusNavigation(containerRef);
   useGamepadBack();
   usePowerLifecycle();
+  useCompanionPresencePoll();
 
   useEffect(() => {
     gamepadRouter.setRouteContext(resolveContextFromPath(pathname));
@@ -454,6 +457,7 @@ function RootLayout() {
         {!isOnboarding && <CollectionInstallProgressPanel />}
         {!isOnboarding && <EssentialsInstallProgressPanel />}
         {!isOnboarding && <ControllerHintBar />}
+        {!isOnboarding && <CompanionConnectedOverlay />}
         <CommandPalette />
 
         {!isOnboarding && (

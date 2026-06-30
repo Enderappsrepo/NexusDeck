@@ -55,6 +55,62 @@ pub struct CompanionPreparePayload {
     pub install_wizard: Option<crate::services::install_options::InstallWizard>,
     pub install_wizard_required: bool,
     pub strategies: Vec<deploy::StrategyOption>,
+    /// What "Automatic" resolved to for this archive, so the phone can show
+    /// where files will actually land instead of a bare strategy list.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detected: Option<DetectedDeployPlan>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DetectedDeployPlan {
+    /// Strategy id the auto-detector chose (merge_data, merge_root, …).
+    pub strategy: String,
+    /// Friendly strategy name (matches the `strategies` list label).
+    pub label: String,
+    /// Plain-language explanation of why this layout was chosen.
+    pub description: String,
+    /// Friendly install location ("Data folder", "Game folder", …).
+    pub target: String,
+}
+
+/// Friendly install location for a resolved strategy id.
+fn friendly_target(strategy: &str) -> &'static str {
+    match strategy {
+        "merge_data" | "merge_loose_to_data" | "copy_loose_to_data" => "Data folder",
+        "merge_root" => "Game folder (root)",
+        "staging_only" => "Staging only — game files untouched",
+        _ => "Game folder",
+    }
+}
+
+/// Run the auto-detector over the already-extracted files so the companion can
+/// preview where the mod will install before the user confirms.
+fn detect_plan_for_session(
+    domain: &str,
+    game_path: &str,
+    prepared_extract_dir: &str,
+    strategies: &[deploy::StrategyOption],
+) -> Option<DetectedDeployPlan> {
+    let entries =
+        crate::services::archive::list_extracted_entries(Path::new(prepared_extract_dir)).ok()?;
+    let plan = crate::games::build_plan_for_strategy(
+        domain,
+        Path::new(game_path),
+        &entries,
+        "auto",
+    )
+    .ok()?;
+    let label = strategies
+        .iter()
+        .find(|s| s.id == plan.strategy)
+        .map(|s| s.label.clone())
+        .unwrap_or_else(|| plan.strategy.clone());
+    Some(DetectedDeployPlan {
+        target: friendly_target(&plan.strategy).to_string(),
+        label,
+        strategy: plan.strategy,
+        description: plan.description,
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -341,20 +397,43 @@ pub struct CompanionInstalledMod {
     pub installed_at: i64,
 }
 
+fn to_companion_mod(m: db::InstalledMod) -> CompanionInstalledMod {
+    CompanionInstalledMod {
+        id: m.id,
+        nexus_mod_id: m.nexus_mod_id,
+        name: m.name,
+        version: m.version,
+        enabled: m.enabled,
+        sort_order: m.sort_order,
+        installed_at: m.installed_at,
+    }
+}
+
 pub fn list_library_mods(domain: &str) -> Result<String> {
     let profile = profile_for_domain(domain)?;
     let mods: Vec<CompanionInstalledMod> = db::list_installed_mods(&profile.id)?
         .into_iter()
-        .map(|m| CompanionInstalledMod {
-            id: m.id,
-            nexus_mod_id: m.nexus_mod_id,
-            name: m.name,
-            version: m.version,
-            enabled: m.enabled,
-            sort_order: m.sort_order,
-            installed_at: m.installed_at,
-        })
+        .map(to_companion_mod)
         .collect();
+    Ok(serde_json::to_string(&mods).unwrap_or_else(|_| "[]".to_string()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReorderModBody {
+    pub game_domain: String,
+    pub mod_id: String,
+    /// "up" or "down".
+    pub direction: String,
+}
+
+/// Move a mod up/down in load order, then return the refreshed library list so
+/// the phone can re-render without a second round-trip.
+pub fn reorder_library_mod(body: ReorderModBody) -> Result<String> {
+    let profile = profile_for_domain(&body.game_domain)?;
+    let updated = db::reorder_mod(&profile.id, &body.mod_id, &body.direction)?;
+    let _ = crate::services::plugins_txt::sync_plugins_txt(&profile);
+    let mods: Vec<CompanionInstalledMod> =
+        updated.into_iter().map(to_companion_mod).collect();
     Ok(serde_json::to_string(&mods).unwrap_or_else(|_| "[]".to_string()))
 }
 
@@ -576,12 +655,20 @@ async fn run_install_session(
     .await?;
 
     let wizard_required = prepare.install_wizard.is_some();
+    let strategies = deploy::get_install_strategies()?;
+    let detected = detect_plan_for_session(
+        &meta.game_domain,
+        &profile.game_path,
+        &prepare.prepared_extract_dir,
+        &strategies,
+    );
     let payload = CompanionPreparePayload {
         option_groups: prepare.option_groups.clone(),
         default_selections: prepare.default_selections.clone(),
         install_wizard: prepare.install_wizard.clone(),
         install_wizard_required: wizard_required,
-        strategies: deploy::get_install_strategies()?,
+        strategies,
+        detected,
     };
 
     {
@@ -708,6 +795,33 @@ pub fn get_install_session(session_id: &str) -> Result<InstallSessionStatus> {
     Ok(build_session_status(session_id, s))
 }
 
+/// Compact view of an in-flight companion install, for the device's
+/// "connected to companion" overlay. Returns the first non-terminal session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompanionInstallSummary {
+    pub mod_name: String,
+    pub status: String,
+    pub message: String,
+    pub progress_pct: u8,
+}
+
+pub fn latest_install_summary() -> Option<CompanionInstallSummary> {
+    let map = sessions().lock().unwrap();
+    map.values()
+        .find(|s| {
+            matches!(
+                s.status.as_str(),
+                "downloading" | "extracting" | "installing" | "ready"
+            )
+        })
+        .map(|s| CompanionInstallSummary {
+            mod_name: s.meta.mod_name.clone(),
+            status: s.status.clone(),
+            message: s.message.clone(),
+            progress_pct: s.progress_pct,
+        })
+}
+
 #[derive(Debug, Deserialize, Default)]
 pub struct ConfirmInstallSessionBody {
     pub strategy: Option<String>,
@@ -768,29 +882,45 @@ pub fn confirm_install_session(
         NexusDeckError::Other("Remote receiver isn't fully initialized.".into())
     })?;
 
-    let mod_name = meta.mod_name.clone();
-    async_runtime::block_on(deploy::install_mod_from_archive_impl(
-        ctx.app.clone(),
-        profile.id,
-        meta.mod_name,
-        meta.nexus_mod_id,
-        meta.nexus_file_id,
-        archive_path.display().to_string(),
-        options,
-        None,
-        None,
-        meta.file_version,
-        None,
-        ctx.installs.clone(),
-    ))?;
+    // Deploy on the async runtime instead of blocking this HTTP handler thread.
+    // The companion server is single-threaded, so a synchronous multi-thousand-
+    // file deploy would freeze every other request (status polls, pings) until
+    // it finished. Spawn it and let the phone poll the session to "done"/"error".
+    let sid = session_id.to_string();
+    async_runtime::spawn(async move {
+        let mod_name = meta.mod_name.clone();
+        let result = deploy::install_mod_from_archive_impl(
+            ctx.app.clone(),
+            profile.id,
+            meta.mod_name,
+            meta.nexus_mod_id,
+            meta.nexus_file_id,
+            archive_path.display().to_string(),
+            options,
+            None,
+            None,
+            meta.file_version,
+            None,
+            ctx.installs.clone(),
+        )
+        .await;
 
-    {
         let mut map = sessions().lock().unwrap();
-        if let Some(s) = map.get_mut(session_id) {
-            s.status = "done".into();
-            s.message = format!("Installed \"{mod_name}\".");
+        if let Some(s) = map.get_mut(&sid) {
+            match result {
+                Ok(_) => {
+                    s.status = "done".into();
+                    s.message = format!("Installed \"{mod_name}\".");
+                    s.error = None;
+                }
+                Err(e) => {
+                    s.status = "error".into();
+                    s.message = e.to_string();
+                    s.error = Some(e.to_string());
+                }
+            }
         }
-    }
+    });
 
     get_install_session(session_id)
 }

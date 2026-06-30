@@ -120,6 +120,21 @@ export async function probeDeck(
   }
 }
 
+/** Authenticated keepalive — lets the device know this companion is still live.
+ *  Returns false (never throws) so a dropped connection is easy to detect. */
+export async function heartbeatDeck(paired: PairedDeck): Promise<boolean> {
+  try {
+    const resp = await fetchDeck(
+      `http://${paired.host}:${paired.port}/heartbeat`,
+      { headers: authHeaders(paired) },
+      6000
+    );
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function pairWithDeck(host: string, port: number, code: string): Promise<string> {
   const resp = await fetchDeck(`http://${host}:${port}/pair`, {
     method: "POST",
@@ -223,6 +238,21 @@ export async function uninstallLibraryMod(
     body: JSON.stringify({ mod_id: modId }),
   });
   return readJson<UninstallResult>(resp);
+}
+
+/** Move a mod up/down in load order; returns the refreshed library list. */
+export async function reorderLibraryMod(
+  paired: PairedDeck,
+  gameDomain: string,
+  modId: string,
+  direction: "up" | "down"
+): Promise<CompanionInstalledMod[]> {
+  const resp = await fetchDeck(`http://${paired.host}:${paired.port}/library/mod/reorder`, {
+    method: "POST",
+    headers: { ...authHeaders(paired), "Content-Type": "application/json" },
+    body: JSON.stringify({ game_domain: gameDomain, mod_id: modId, direction }),
+  });
+  return readJson<CompanionInstalledMod[]>(resp);
 }
 
 export function isApiNotFoundError(err: unknown): boolean {

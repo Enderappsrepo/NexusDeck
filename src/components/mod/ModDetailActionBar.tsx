@@ -1,6 +1,8 @@
-import { Download, ListPlus, MonitorSmartphone, Package } from "lucide-react";
+import { Download, ListPlus, MonitorSmartphone, Package, Smartphone } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+
+import { useCompanionConnected, useCompanionStore } from "@/stores/companionStore";
 
 import type { ModFileInfo } from "@/lib/nexus/types";
 
@@ -64,9 +66,40 @@ export function ModDetailActionBar({
 
 }: ModDetailActionBarProps) {
 
+  const companionConnected = useCompanionConnected();
+  const reopenCompanion = useCompanionStore((s) => s.reopen);
+
   if (!primaryFile) return null;
 
-
+  // A connected companion owns installation — surface that instead of the
+  // device install buttons (soft gate; tapping reopens the companion view).
+  if (companionConnected) {
+    return (
+      <div
+        className="mod-detail-action-bar fixed inset-x-0 z-[54] border-t border-[var(--color-border)] bg-[var(--color-card)]/96 px-4 py-3 backdrop-blur-md"
+        data-mod-detail-actions
+        role="toolbar"
+        aria-label="Install from companion"
+      >
+        <div className="mx-auto flex max-w-6xl flex-col gap-2">
+          <p className="truncate text-center text-sm font-medium text-[var(--color-muted)]">
+            {primaryFile.name} · v{primaryFile.version} ·{" "}
+            {formatBytes(primaryFile.size_kb * 1024)}
+          </p>
+          <Button
+            size="lg"
+            variant="secondary"
+            className="min-h-[56px] w-full text-base"
+            onClick={reopenCompanion}
+            data-focusable="true"
+          >
+            <Smartphone className="h-5 w-5" />
+            Install from your phone
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
 

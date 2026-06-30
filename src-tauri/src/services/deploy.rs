@@ -92,23 +92,47 @@ pub fn has_f4se_root_files(paths: &[String]) -> bool {
     has_script_extender_root_files(paths)
 }
 
-/// Loader/DLL files that belong at the game root (F4SE, SKSE, SFSE, etc.).
+/// File name (path stripped) of a script-extender loader or common proxy/loader
+/// DLL that belongs at the GAME ROOT (F4SE/SKSE/SFSE loaders, ENB/proxy DLLs).
+pub fn is_script_extender_loader_name(name: &str) -> bool {
+    let name = name.rsplit('/').next().unwrap_or(name);
+    name == "f4se_loader.exe"
+        || name.starts_with("f4se_")
+        || name == "f4se_loader.dll"
+        || name == "skse64_loader.exe"
+        || name.starts_with("skse64_")
+        || name == "skse_loader.exe"
+        || name.starts_with("skse_")
+        || name == "sfse_loader.exe"
+        || name.starts_with("sfse_")
+        || name == "d3d11.dll"
+        || name == "xinput1_3.dll"
+        || name == "winhttp.dll"
+}
+
+/// Loader/DLL files that belong at the game root (F4SE, SKSE, SFSE, etc.),
+/// matched by file name at any depth.
 pub fn has_script_extender_root_files(paths: &[String]) -> bool {
     paths.iter().any(|p| {
         let lower = p.replace('\\', "/").to_lowercase();
-        let name = lower.rsplit('/').next().unwrap_or(&lower);
-        name == "f4se_loader.exe"
-            || name.starts_with("f4se_")
-            || name == "f4se_loader.dll"
-            || name == "skse64_loader.exe"
-            || name.starts_with("skse64_")
-            || name == "skse_loader.exe"
-            || name.starts_with("skse_")
-            || name == "sfse_loader.exe"
-            || name.starts_with("sfse_")
-            || name == "d3d11.dll"
-            || name == "xinput1_3.dll"
-            || name == "winhttp.dll"
+        is_script_extender_loader_name(&lower)
+    })
+}
+
+/// True when SE loader / proxy DLLs sit at the ARCHIVE ROOT (top level once the
+/// content-prefix wrapper is stripped). Such archives must deploy with their
+/// structure preserved into the game root — loaders land at the root and any
+/// bundled `Data/` subfolder lands in `Data/`. Routing these through
+/// `merge_data` (which keeps only the Data subfolder) silently dropped the
+/// loader .exe/.dll — the classic "F4SE/SKSE installed but the game still
+/// launches vanilla" bug.
+pub fn has_top_level_script_extender_files(paths: &[String]) -> bool {
+    paths.iter().any(|p| {
+        let lower = p.replace('\\', "/").to_lowercase();
+        if lower.contains('/') {
+            return false;
+        }
+        is_script_extender_loader_name(&lower)
     })
 }
 
@@ -694,6 +718,46 @@ mod tests {
             entry("skse64_2_02_06.dll"),
         ]);
         assert!(has_script_extender_root_files(&root));
+    }
+
+    #[test]
+    fn top_level_script_extender_detected_alongside_data() {
+        // F4SE/SKSE ships loaders at the archive ROOT plus a Data/ folder. These
+        // must deploy with structure preserved into the game root (merge_root),
+        // NOT merge_data — which keeps only Data/ and drops the loader .exe/.dll.
+        let f4se = normalized_relative_paths(&[
+            entry("f4se_loader.exe"),
+            entry("f4se_1_10_163.dll"),
+            entry("f4se_steam_loader.dll"),
+            entry("Data/F4SE/Plugins/f4se_whatever.dll"),
+            entry("Data/Scripts/foo.pex"),
+        ]);
+        assert!(has_top_level_script_extender_files(&f4se));
+        assert!(archive_has_data_folder(&[
+            entry("f4se_loader.exe"),
+            entry("Data/Scripts/foo.pex"),
+        ]));
+
+        // A single-folder wrapper around the same layout still resolves to a
+        // top-level loader once the content prefix is stripped.
+        let wrapped = normalized_relative_paths(&[
+            entry("F4SE 0.6.23/f4se_loader.exe"),
+            entry("F4SE 0.6.23/f4se_1_10_163.dll"),
+            entry("F4SE 0.6.23/Data/Scripts/foo.pex"),
+        ]);
+        assert!(has_top_level_script_extender_files(&wrapped));
+    }
+
+    #[test]
+    fn nested_loader_name_is_not_top_level() {
+        // A DLL that merely shares a loader name but lives deep inside Data/ must
+        // NOT force a root install — only genuine archive-root loaders do.
+        let nested = normalized_relative_paths(&[
+            entry("Data/Meshes/foo.nif"),
+            entry("Data/F4SE/Plugins/winhttp.dll"),
+        ]);
+        assert!(!has_top_level_script_extender_files(&nested));
+        assert!(has_script_extender_root_files(&nested));
     }
 
     #[test]

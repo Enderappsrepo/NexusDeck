@@ -9,8 +9,8 @@ use crate::services::archive::{merge_directory, ArchiveEntry};
 use crate::services::deploy::{
     archive_has_data_folder, archive_is_script_extender_plugin_pack,
     has_loose_fallout4_data_folders, has_nested_data_folder, has_script_extender_plugin_paths,
-    has_script_extender_root_files, merge_game_data_directory, normalized_relative_paths,
-    resolve_extract_root,
+    has_script_extender_root_files, has_top_level_script_extender_files,
+    merge_game_data_directory, normalized_relative_paths, resolve_extract_root,
 };
 use crate::services::MergeOptions;
 use crate::services::paths::default_staging_path;
@@ -87,7 +87,21 @@ impl GamePlugin for Fallout4Plugin {
         let rel_paths: Vec<String> = normalized_relative_paths(entries);
         let data_target = game_root.join("Data").display().to_string();
 
-        if archive_has_data_folder(entries) || has_nested_data_folder(entries) {
+        if has_top_level_script_extender_files(&rel_paths) {
+            // F4SE / ENB / proxy-DLL archives carry loader files at the root and
+            // often bundle a Data/ folder too. Preserve the whole structure into
+            // the game root so the loader .exe/.dll land at the root and Data/
+            // lands in Data/ (merge_data would copy only Data/ and drop the loader).
+            DeployPlan {
+                strategy: "merge_root".to_string(),
+                source_subpath: None,
+                target: game_root.display().to_string(),
+                requires_confirmation: false,
+                description:
+                    "Script extender or loader files detected at the archive root. Files install to the game folder (loaders at the root, Data/ into Data/)."
+                        .to_string(),
+            }
+        } else if archive_has_data_folder(entries) || has_nested_data_folder(entries) {
             DeployPlan {
                 strategy: "merge_data".to_string(),
                 source_subpath: Some("Data".to_string()),

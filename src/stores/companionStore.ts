@@ -1,0 +1,72 @@
+import { useEffect } from "react";
+import { create } from "zustand";
+import { api } from "@/lib/commands";
+import type { CompanionInstallSummary } from "@/lib/nexus/types";
+
+interface CompanionState {
+  /** A paired companion (phone) is actively connected to this device. */
+  connected: boolean;
+  host: string | null;
+  /** What the companion is installing right now, if anything. */
+  activeInstall: CompanionInstallSummary | null;
+  /** User dismissed the connected overlay (kept as a reopenable indicator). */
+  dismissed: boolean;
+  setPresence: (next: {
+    connected: boolean;
+    host: string | null;
+    activeInstall: CompanionInstallSummary | null;
+  }) => void;
+  dismiss: () => void;
+  reopen: () => void;
+}
+
+export const useCompanionStore = create<CompanionState>((set, get) => ({
+  connected: false,
+  host: null,
+  activeInstall: null,
+  dismissed: false,
+  setPresence: ({ connected, host, activeInstall }) => {
+    const wasConnected = get().connected;
+    set({
+      connected,
+      host,
+      activeInstall,
+      // Re-show the overlay whenever a fresh connection is established.
+      dismissed: connected && !wasConnected ? false : get().dismissed,
+    });
+  },
+  dismiss: () => set({ dismissed: true }),
+  reopen: () => set({ dismissed: false }),
+}));
+
+/** Poll the receiver so the app knows when a companion is actively connected. */
+export function useCompanionPresencePoll() {
+  const setPresence = useCompanionStore((s) => s.setPresence);
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const status = await api.getRemoteReceiverStatus();
+        if (cancelled) return;
+        setPresence({
+          connected: !!status.companion_connected,
+          host: status.companion_host ?? null,
+          activeInstall: status.active_install ?? null,
+        });
+      } catch {
+        if (!cancelled) {
+          setPresence({ connected: false, host: null, activeInstall: null });
+        }
+      }
+    };
+    void poll();
+    const id = window.setInterval(() => void poll(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [setPresence]);
+}
+
+/** Selector for install gating: true while a companion owns installation. */
+export const useCompanionConnected = () => useCompanionStore((s) => s.connected);

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-06-29
+
+### Added
+- **Companion discovery shelves** — featured, most endorsed, most downloaded, trending, newly added, recently updated, and hot-this-week feeds load automatically when you pick a game (no search required).
+- **Companion library tab** — view installed mods, enable/disable, reorder load order, and uninstall remotely from your phone.
+- **Companion heartbeat** — phone sends keepalive pings so the device knows the connection is live; offline state is shown when the link drops.
+- **Companion connected overlay** — NexusDeck shows when a phone is paired, with active install progress and quick launch/manage shortcuts.
+- **Install-from-phone gating** — while a companion is connected, device install buttons prompt you to install from the phone instead.
+
+### Fixed
+- **F4SE/SKSE loader installs** — archives with loader files at the archive root (plus a bundled `Data/` folder) now deploy with `merge_root` so loader `.exe`/`.dll` files are not dropped when only `Data/` was copied.
+
 ## [2.0.0] - 2026-06-29
 
 ### Added

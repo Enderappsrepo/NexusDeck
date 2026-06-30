@@ -26,6 +26,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CardSkeleton, ModGridSkeleton, ModListSkeleton } from "@/components/ui/LoadingSkeleton";
 import { useIsNarrow } from "@/hooks/useMediaQuery";
 import { useModsStore, useGamesStore, useAuthStore, useDownloadsStore, useSettingsStore } from "@/stores";
+import { useCompanionConnected, useCompanionStore } from "@/stores/companionStore";
 import { api } from "@/lib/commands";
 import { DEFAULT_FILTERS } from "@/lib/nexus/filters";
 import { cn, gameGradient } from "@/lib/utils";
@@ -147,6 +148,8 @@ function ModBrowserPage() {
   const setProgress = useDownloadsStore((s) => s.setProgress);
   const downloadSettings = useSettingsStore((s) => s.downloadSettings);
   const enqueueFromDownload = useInstallQueueStore((s) => s.enqueueFromDownload);
+  const companionConnected = useCompanionConnected();
+  const reopenCompanion = useCompanionStore((s) => s.reopen);
   const profile = getProfile(domain);
   const [importOpen, setImportOpen] = useState(false);
   const [filtersDialogOpen, setFiltersDialogOpen] = useState(false);
@@ -388,6 +391,11 @@ function ModBrowserPage() {
   // direct API download isn't available (e.g. free accounts).
   const installMod = (mod: ModSummary) => {
     if (!profile) return;
+    // Installs go through the phone while a companion is connected.
+    if (companionConnected) {
+      reopenCompanion();
+      return;
+    }
     void (async () => {
       try {
         const result = await quickDownloadMod({

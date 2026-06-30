@@ -3,7 +3,7 @@ import type {
   InstallOptionGroup,
   InstallWizard,
   SelectedInstallOption,
-} from "./types";
+} from "../types";
 
 function flagsFromSelections(
   groups: InstallOptionGroup[],
@@ -156,7 +156,7 @@ export function InstallOptions({
 }
 
 export function defaultSelectionsFromPrepare(
-  prepare: NonNullable<import("./types").CompanionPreparePayload>
+  prepare: NonNullable<import("../types").CompanionPreparePayload>
 ): SelectedInstallOption[] {
   return prepare.default_selections;
 }

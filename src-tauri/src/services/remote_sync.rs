@@ -31,6 +31,28 @@ const DISCOVERY_PORT: u16 = 8732;
 const HTTP_PORT: u16 = 8731;
 /// Probe payload a sender broadcasts; the receiver replies with its info JSON.
 const DISCOVERY_MAGIC: &str = "NEXUSDECK_DISCOVER_V1";
+/// A paired companion counts as "connected" while it has talked to us within
+/// this window. The companion heartbeats every ~12s, so this tolerates a couple
+/// of missed beats (sleep, brief Wi-Fi blip) before we consider it gone.
+const COMPANION_CONNECT_WINDOW_SECS: u64 = 30;
+
+/// Last-activity tracking for a paired companion, so the device can show a
+/// "connected to companion" state that reflects a LIVE connection rather than
+/// just "a token was issued once".
+#[derive(Default)]
+struct CompanionActivity {
+    last_seen: Option<Instant>,
+    host: Option<String>,
+}
+
+fn touch_companion_activity(activity: &Arc<Mutex<CompanionActivity>>, req: &tiny_http::Request) {
+    if let Ok(mut act) = activity.lock() {
+        act.last_seen = Some(Instant::now());
+        if let Some(addr) = req.remote_addr() {
+            act.host = Some(addr.ip().to_string());
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveredDeck {
@@ -48,6 +70,18 @@ pub struct ReceiverStatus {
     pub paired: bool,
     #[serde(default)]
     pub companion_urls: Vec<String>,
+    /// True while a paired companion has talked to us recently (live connection).
+    #[serde(default)]
+    pub companion_connected: bool,
+    /// IP of the connected companion (when connected).
+    #[serde(default)]
+    pub companion_host: Option<String>,
+    /// Seconds since the companion last talked to us (None = never).
+    #[serde(default)]
+    pub companion_last_seen_secs: Option<u64>,
+    /// What the companion is installing right now, for the device overlay.
+    #[serde(default)]
+    pub active_install: Option<crate::services::remote_companion::CompanionInstallSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +150,7 @@ struct Receiver {
     pair_code: String,
     token: Arc<Mutex<Option<String>>>,
     http_port: u16,
+    activity: Arc<Mutex<CompanionActivity>>,
     http_thread: std::thread::JoinHandle<()>,
     udp_thread: std::thread::JoinHandle<()>,
 }
@@ -177,6 +212,10 @@ fn idle_status() -> ReceiverStatus {
         http_port: HTTP_PORT,
         paired: false,
         companion_urls: Vec::new(),
+        companion_connected: false,
+        companion_host: None,
+        companion_last_seen_secs: None,
+        active_install: None,
     }
 }
 
@@ -339,6 +378,28 @@ fn respond_library_uninstall(mut req: tiny_http::Request) {
     match serde_json::from_str::<crate::services::remote_companion::UninstallModBody>(&body) {
         Ok(payload) => {
             respond_json_result(req, crate::services::remote_companion::uninstall_library_mod(payload));
+        }
+        Err(e) => {
+            let _ = req.respond(json_response(
+                400,
+                serde_json::json!({ "error": format!("Invalid JSON: {e}") }).to_string(),
+            ));
+        }
+    }
+}
+
+fn respond_library_reorder(mut req: tiny_http::Request) {
+    let mut body = String::new();
+    if req.as_reader().read_to_string(&mut body).is_err() {
+        let _ = req.respond(json_response(
+            400,
+            serde_json::json!({ "error": "Couldn't read request body." }).to_string(),
+        ));
+        return;
+    }
+    match serde_json::from_str::<crate::services::remote_companion::ReorderModBody>(&body) {
+        Ok(payload) => {
+            respond_json_result(req, crate::services::remote_companion::reorder_library_mod(payload));
         }
         Err(e) => {
             let _ = req.respond(json_response(
@@ -766,12 +827,15 @@ pub fn start_receiver(device_name: &str) -> Result<ReceiverStatus> {
         device_name.trim().to_string()
     };
 
+    let activity = Arc::new(Mutex::new(CompanionActivity::default()));
+
     let http_running = running.clone();
     let http_token = token.clone();
     let http_code = code.clone();
     let http_name = name.clone();
+    let http_activity = activity.clone();
     let http_thread = std::thread::spawn(move || {
-        http_loop(server, http_running, http_token, http_code, http_name);
+        http_loop(server, http_running, http_token, http_code, http_name, http_activity);
     });
 
     let udp_running = running.clone();
@@ -783,6 +847,7 @@ pub fn start_receiver(device_name: &str) -> Result<ReceiverStatus> {
         pair_code: code,
         token,
         http_port: HTTP_PORT,
+        activity,
         http_thread,
         udp_thread,
     };
@@ -810,12 +875,30 @@ pub fn receiver_status() -> ReceiverStatus {
 
 impl Receiver {
     fn status(&self) -> ReceiverStatus {
+        let running = self.running.load(Ordering::SeqCst);
+        let paired = self.token.lock().map(|t| t.is_some()).unwrap_or(false);
+        let (last_seen_secs, host) = self
+            .activity
+            .lock()
+            .map(|a| (a.last_seen.map(|t| t.elapsed().as_secs()), a.host.clone()))
+            .unwrap_or((None, None));
+        let connected = running
+            && paired
+            && last_seen_secs.map_or(false, |s| s < COMPANION_CONNECT_WINDOW_SECS);
         ReceiverStatus {
-            running: self.running.load(Ordering::SeqCst),
+            running,
             pair_code: self.pair_code.clone(),
             http_port: self.http_port,
-            paired: self.token.lock().map(|t| t.is_some()).unwrap_or(false),
+            paired,
             companion_urls: companion_urls_for_lan(self.http_port),
+            companion_connected: connected,
+            companion_host: if connected { host } else { None },
+            companion_last_seen_secs: last_seen_secs,
+            active_install: if connected {
+                crate::services::remote_companion::latest_install_summary()
+            } else {
+                None
+            },
         }
     }
 
@@ -833,10 +916,11 @@ fn http_loop(
     token: Arc<Mutex<Option<String>>>,
     code: String,
     name: String,
+    activity: Arc<Mutex<CompanionActivity>>,
 ) {
     while running.load(Ordering::SeqCst) {
         match server.recv_timeout(Duration::from_millis(500)) {
-            Ok(Some(req)) => handle_request(req, &token, &code, &name),
+            Ok(Some(req)) => handle_request(req, &token, &code, &name, &activity),
             Ok(None) => continue,
             Err(_) => break,
         }
@@ -848,11 +932,18 @@ fn handle_request(
     token: &Arc<Mutex<Option<String>>>,
     code: &str,
     name: &str,
+    activity: &Arc<Mutex<CompanionActivity>>,
 ) {
     let url = req.url().to_string();
     let is_get = req.method() == &tiny_http::Method::Get;
     let is_post = req.method() == &tiny_http::Method::Post;
     let is_options = req.method() == &tiny_http::Method::Options;
+
+    // Any authenticated request means a paired companion is live — record it so
+    // the device can show an accurate "connected to companion" state.
+    if authorized(&req, token) {
+        touch_companion_activity(activity, &req);
+    }
 
     if is_options {
         let cors_methods =
@@ -891,6 +982,18 @@ fn handle_request(
         })
         .to_string();
         let _ = req.respond(json_response(200, body));
+        return;
+    }
+
+    // Lightweight authenticated keepalive: the companion calls this on a timer
+    // so the device knows the connection is still live even when the user isn't
+    // actively browsing. Activity is recorded by the touch above.
+    if is_get && url.starts_with("/heartbeat") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        let _ = req.respond(json_response(200, serde_json::json!({ "ok": true }).to_string()));
         return;
     }
 
@@ -1067,6 +1170,15 @@ fn handle_request(
             return;
         }
         respond_library_uninstall(req);
+        return;
+    }
+
+    if is_post && url.starts_with("/library/mod/reorder") {
+        if !authorized(&req, token) {
+            unauthorized(req);
+            return;
+        }
+        respond_library_reorder(req);
         return;
     }
 
